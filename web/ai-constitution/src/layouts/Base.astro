@@ -1,0 +1,63 @@
+---
+import '../styles/brand.css';
+
+interface Props {
+  title: string;
+  description?: string;
+}
+
+const { title, description = 'A personal AI Constitution as a product — install it, answer a guided interview, be governed by a personalized constitution in 30 minutes.' } = Astro.props;
+const canonical = new URL(Astro.url.pathname, Astro.site).toString();
+---
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title} — aiConstitution</title>
+    <meta name="description" content={description} />
+    <link rel="canonical" href={canonical} />
+    <!-- Open Graph -->
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content={canonical} />
+    <meta property="og:site_name" content="aiConstitution" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  </head>
+  <body>
+    <header class="cs-page" style="padding-block-start: var(--space-6); padding-block-end: var(--space-4); border-bottom: 1px solid var(--border);">
+      <nav style="display: flex; align-items: baseline; gap: var(--space-8);">
+        <a href="/" style="text-decoration: none; color: inherit;">
+          <span class="cs-wordmark" style="font-size: 1.25rem;">aiConstitution</span>
+        </a>
+        <div style="display: flex; gap: var(--space-6); font-size: 0.95rem; flex-wrap: wrap;">
+          <a href="/install">Install</a>
+          <a href="/methodology">Methodology</a>
+          <a href="/spec">Spec</a>
+          <a href="/goals">Goals</a>
+          <a href="/architecture">Architecture</a>
+          <a href="/changelog">Changelog</a>
+          <a href="/community">Community</a>
+        </div>
+      </nav>
+    </header>
+    <main class="cs-page">
+      <slot />
+    </main>
+    <footer class="cs-page" style="margin-top: var(--space-24); padding-block: var(--space-6); border-top: 1px solid var(--border); color: var(--text-muted); font-size: 0.85rem;">
+      <p>
+        <span class="cs-section-label">Convergent Systems</span><br />
+        Civilization-Grade Software for a Converging World.
+      </p>
+      <p>
+        Brand:
+        <a href="https://brand-atoms.com/brands/convergent-systems">convergent-systems@1.0.0</a> ·
+        Code:
+        <a href="https://github.com/convergent-systems-co/aiConstitution">github.com/convergent-systems-co/aiConstitution</a> ·
+        License: AGPL-3.0
+      </p>
+    </footer>
+  </body>
+</html>

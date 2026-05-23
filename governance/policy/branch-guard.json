@@ -1,0 +1,5 @@
+{
+  "_note": "Canonical protected-branch policy. Consumed by hooks/branch-guard.py. Per ~/.ai/Common.md §2.2 (protected-branch gate).",
+  "names": ["main", "master"],
+  "patterns": ["release/*"]
+}

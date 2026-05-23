@@ -256,3 +256,34 @@ web/**/.env.*.local
 *.pem
 *.key
 ### END: go-app-template
+
+### START: aiConstitution project-specific
+# Per SPEC.md §15: audit interaction JSONL is local-only, never tracked.
+audit/interactions/*.jsonl
+audit/interactions/*.jsonl.gz
+
+# Per hooks/patterns.json: local pattern extensions are user-private.
+hooks/patterns.local.json
+hooks/command-wrappers.local.toml
+
+# Transient lockfile (concurrent-op guard).
+.lock
+
+# bin/ is broadly ignored by the scaffold (build artifacts go there in
+# many templates), but we intentionally ship a small set of helper
+# scripts. Un-ignore them explicitly.
+!bin/
+!bin/ai
+!bin/clone
+!bin/audit-rotate.sh
+!bin/git.template
+!bin/gh.template
+
+# Per SPEC.md §15: ~/.config/aiConstitution/ is never in-repo, but
+# guard against accidents.
+.config/aiConstitution/
+
+# Astro local artifacts (re-affirmed; the scaffold already ignores
+# these globally but the web/ai-constitution/.gitignore is the
+# authoritative source for the per-site rules).
+### END: aiConstitution project-specific

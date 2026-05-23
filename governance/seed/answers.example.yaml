@@ -1,0 +1,94 @@
+# governance/seed/answers.example.yaml
+#
+# Example wizard answers, used for two purposes:
+#   1. `ai setup --non-interactive --answers=<file>` — script the
+#      wizard for fresh-machine bootstrap.
+#   2. Reference for what shapes a complete answers.yaml takes.
+#
+# Per SPEC.md §3.1 (non-interactive mode) and questions.yaml
+# (canonical taxonomy at the repo root).
+#
+# Keyed by qid (Q01..Q47.template). The value shape is either:
+#   - a single string (the selected option's `value`), OR
+#   - a list (for multi-select questions), OR
+#   - a free-text answer for questions with allow_free_text: true.
+
+wizard_version: "0.8"
+
+# P1 — Principal & Context
+Q01: "Example User"
+Q02: "engineer; writer; experimenter"
+Q03: "both"
+Q04: "no"
+Q05: "no"
+Q06: "real-name"
+
+# P2 — Domains
+Q07: "both"
+Q08:
+  Code:    ["infra", "web", "data-engineering"]
+  Writing: ["theology", "philosophy", "fiction"]
+
+# P3 — Prime Directives
+Q09: "canonical"
+Q10: "ack"
+Q11: "canonical"
+Q12: "ack"
+Q13: "canonical"
+
+# P4 — Autonomy
+Q14: "autonomous"
+Q15: "canonical"
+Q16: "canonical"
+Q17: "5"
+Q18: "100"
+Q19: "1"
+Q20: "canonical"
+Q21: "canonical"
+Q22: "canonical"
+
+# P5 — Override Protocol
+Q23: "canonical"
+Q24: "canonical"
+Q25: "ack"
+Q26: "no"
+
+# P6 — Audit Policy
+Q27: "all-events"
+Q28: "enabled"
+Q28a: "all-repos"
+Q28b: "false"
+Q29: "enabled"
+Q30: "enabled"
+Q30a: "git+gh"
+Q30b: "true"
+Q31: "indefinite"
+
+# P7 — Secret Handling
+Q32: "keychain"
+Q33: "auto"
+Q34: "canonical"
+Q35: "none"
+Q35a: "true"
+Q35b: "ask"
+
+# P8 — AI Tool Wiring
+Q36: ["claude-code", "copilot-cli"]
+Q36b: "skip"
+Q37: "starter"
+Q38: "cross-tool"
+Q39: "yes"
+Q40: "enabled"
+Q41: "80"
+Q41a: "none"
+
+# P9 — Sync & Restore
+Q42: "skip"
+Q42a: "accept"
+Q42b: "30"
+Q43: "on-amend"
+Q44: "enabled"
+Q45: "quarterly"
+
+# P10 — Brand & Domain Tail
+Q46: "convergent-systems"

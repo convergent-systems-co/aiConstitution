@@ -1,0 +1,89 @@
+# hooks/command-wrappers.toml — canonical wrapper config per
+# SPEC.md §10.5.2. The ~/.ai/bin/<command> wrappers (git, gh, opt-in
+# terraform/kubectl) read this file at startup and inject the listed
+# preHooks / commandHooks / postHooks into every invocation.
+#
+# Defense-in-depth, not security control — see SPEC.md §10.5.4.
+# Bypass via absolute path (/usr/bin/git) is always possible; the
+# wrapper produces an audit signal where one would normally appear,
+# so an absent audit line is itself visible in forensic review.
+
+schemaVersion = "0.1"
+
+# ─── git ──────────────────────────────────────────────────────────────────────
+[command.git]
+# realCommand is auto-resolved by `which`-skip-self if blank. A
+# non-empty value pins a specific binary path; useful in unusual
+# layouts (e.g., distro-packaged /usr/local/bin/git).
+realCommand = ""
+
+[[command.git.preHooks]]
+script = "~/.ai/hooks/branch-guard.py"
+subcommands = ["commit", "merge", "rebase", "cherry-pick", "revert", "am", "pull", "push"]
+description = "Deny direct mutation of protected branches (Common.md §2.2)"
+
+[[command.git.preHooks]]
+script = "~/.ai/hooks/secret-precommit.py"
+subcommands = ["commit"]
+description = "Pre-commit secret scan against patterns.json (SPEC.md §10.2)"
+
+[[command.git.preHooks]]
+script = "~/.ai/hooks/no-verify-strip.py"
+subcommands = ["commit"]
+stripArgs = ["--no-verify", "-n"]
+description = "Strip --no-verify per settings.secret_scanning.allowNoVerifyBypass=false (SPEC.md §10.3)"
+
+[[command.git.preHooks]]
+script = "~/.ai/hooks/worktree-guard.py"
+subcommands = ["worktree"]
+description = "Enforce canonical worktree placement (Common.md §U17)"
+
+[[command.git.postHooks]]
+script = "~/.ai/hooks/audit-command.py"
+description = "Append every git invocation to audit/interactions/<YYYY-MM>.jsonl"
+
+# ─── gh (GitHub CLI) ──────────────────────────────────────────────────────────
+[command.gh]
+realCommand = ""
+
+[[command.gh.preHooks]]
+script = "~/.ai/hooks/destructive-gh-guard.py"
+subcommands = ["repo delete", "release delete", "secret delete", "auth logout"]
+description = "Gate destructive gh operations per Common.md §2.2"
+
+[[command.gh.postHooks]]
+script = "~/.ai/hooks/audit-command.py"
+description = "Append every gh invocation to the audit log"
+
+# ─── terraform (opt-in) ───────────────────────────────────────────────────────
+[command.terraform]
+enabled = false  # opt-in per wizard Q30a; flip in settings.toml or here
+
+[[command.terraform.preHooks]]
+script = "~/.ai/hooks/destructive-terraform-guard.py"
+subcommands = ["destroy", "apply"]
+description = "Gate terraform destroy/apply per Common.md §2.2"
+
+[[command.terraform.postHooks]]
+script = "~/.ai/hooks/audit-command.py"
+description = "Append every terraform invocation to the audit log"
+
+# ─── kubectl (opt-in) ─────────────────────────────────────────────────────────
+[command.kubectl]
+enabled = false
+
+[[command.kubectl.preHooks]]
+script = "~/.ai/hooks/destructive-kubectl-guard.py"
+subcommands = ["delete", "drain", "cordon"]
+description = "Gate destructive cluster operations"
+
+[[command.kubectl.postHooks]]
+script = "~/.ai/hooks/audit-command.py"
+description = "Append every kubectl invocation to the audit log"
+
+# End of canonical wrapper config.
+#
+# To extend with project-local additions, drop them into
+# ~/.config/aiConstitution/command-wrappers.local.toml; the loader
+# merges that file on top of this one. preHooks/postHooks from the
+# local file run AFTER the canonical ones (extension, not override).

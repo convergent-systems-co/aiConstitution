@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+# bin/gh.template — template for ~/.ai/bin/gh, the cross-tool
+# command-wrapper for `gh`. Per SPEC.md §10.5 + hooks/command-wrappers.toml.
+
+set -uo pipefail
+
+AI_ROOT="${AI_ROOT:-$HOME/.ai}"
+HOOKS="$AI_ROOT/hooks"
+WRAPPED_CMD="gh"
+WRAPPED_ARGV="$(python3 -c 'import json, sys; print(json.dumps(sys.argv[1:]))' "$@")"
+
+self="$(command -v -- "$0")"
+real_gh=""
+while IFS=: read -r -d : dir; do
+  cand="$dir/gh"
+  if [[ -x "$cand" && "$cand" != "$self" ]]; then
+    real_gh="$cand"
+    break
+  fi
+done <<< "${PATH}:"
+
+if [[ -z "$real_gh" ]]; then
+  echo "[ai/gh-wrapper] cannot locate real gh on PATH" >&2
+  exit 127
+fi
+
+# preHooks: destructive-gh-guard.
+if [[ -x "$HOOKS/destructive-gh-guard.py" ]]; then
+  if ! "$HOOKS/destructive-gh-guard.py" --mode=wrapper "$@" </dev/null; then
+    exit $?
+  fi
+fi
+
+start=$(date +%s)
+"$real_gh" "$@"
+exit_code=$?
+end=$(date +%s)
+duration=$((end - start))
+
+if [[ -x "$HOOKS/audit-command.py" ]]; then
+  WRAPPED_CMD="gh" \
+  WRAPPED_ARGV="$WRAPPED_ARGV" \
+  WRAPPED_EXIT="$exit_code" \
+  WRAPPED_DURATION="$duration" \
+  "$HOOKS/audit-command.py" </dev/null || true
+fi
+
+exit "$exit_code"

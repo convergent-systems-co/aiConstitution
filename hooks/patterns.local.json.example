@@ -1,0 +1,13 @@
+{
+  "_note": "Copy this file to patterns.local.json (gitignored) and add project-specific patterns. The loader merges patterns.local.json on top of patterns.json; matching is the union of both sets.",
+  "version": "1.0",
+  "patterns": [
+    {
+      "id": "example-internal-token",
+      "regex": "INTERNAL-[A-Z]{4}-[A-Za-z0-9]{32}",
+      "severity": "high",
+      "redaction": "[REDACTED:internal-token]",
+      "description": "Example pattern for an internal-only token format"
+    }
+  ]
+}
