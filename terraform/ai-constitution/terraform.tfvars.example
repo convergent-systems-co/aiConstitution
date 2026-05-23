@@ -1,22 +1,31 @@
 # terraform.tfvars.example — copy to terraform.tfvars and fill in.
 #
 # terraform.tfvars is .gitignored. Never commit live values.
+#
+# Note: account_token and dns_token are NOT in this file — they come
+# from 1Password via TF_VAR_account_token / TF_VAR_dns_token env vars,
+# loaded by the cs-tofu wrapper (or by `op item get` if you set them
+# manually). Keeping them out of tfvars keeps token values off disk
+# entirely.
 
 # Convergent Systems Cloudflare account ID.
 # This is the same account ID used by every core-infra composition; the
 # subdomain before .r2.cloudflarestorage.com in any core-infra backend
 # block IS the account id. Cross-check by running:
 #
-#   cf-api accounts | jq -r '.result[] | .id + " " + .name'
+#   curl -H "Authorization: Bearer $TOKEN" \
+#     https://api.cloudflare.com/client/v4/accounts | jq -r '.result[] | .id + " " + .name'
 #
 cloudflare_account_id = "e1fe0f0ce8ff18da4edc118372c30022"
 
 # Cloudflare zone ID for convergent-systems.co. Look up via:
 #
-#   cf-api 'zones?name=convergent-systems.co' | jq -r '.result[].id'
+#   curl -H "Authorization: Bearer $DNS_TOKEN" \
+#     'https://api.cloudflare.com/client/v4/zones?name=convergent-systems.co' \
+#     | jq -r '.result[0].id'
 #
-# or from the core-infra dns-token module outputs after applying it.
-zone_id = "FILL-IN-CONVERGENT-SYSTEMS-CO-ZONE-ID"
+# Current value (2026-05-23):
+zone_id = "c0de0a0d5982b7c640211d8d921f2fd6"
 
 # Optional overrides (defaults shown for reference; remove the lines to
 # use the defaults).
