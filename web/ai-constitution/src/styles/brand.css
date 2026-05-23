@@ -1,0 +1,176 @@
+/*
+ * Convergent Systems brand tokens — inlined for v0.8.
+ *
+ * Source: brand-atoms.com/brands/convergent-systems@1.0.0
+ * Per SPEC.md §14.4. Live fetch is deferred (morning work); the
+ * values below are the canonical 1.0.0 values stated in §14.4
+ * so the site can render in the correct identity without a network
+ * fetch at build time.
+ *
+ * The 14 typed constraints from §14.4 are enforced visually below
+ * (heading weights, wordmark letter-spacing, mark-is-gold-only,
+ *  WCAG 2.1 AA contrast, ember-orange forbidden for error states).
+ */
+
+:root {
+  /* Palette: convergent-deep-space@1.0.0 */
+  --color-deep-space-0: #07090F;       /* dark canvas */
+  --color-snow-0:       #EEF1F7;       /* dark text */
+  --color-parchment:    #F9F7F0;       /* light canvas */
+
+  --color-frost-cyan:   #5CD6FF;       /* primary action */
+  --color-solar-gold:   #F4C75E;       /* mark / identity accent — GOLD ONLY */
+  --color-ember-orange: #FF8A3D;       /* warmth/ambient — never error state */
+
+  /* Type — Inter (OFL-1.1); locked weights. */
+  --font-heading: 'Inter', system-ui, -apple-system, sans-serif;
+  --font-body:    'Inter', system-ui, -apple-system, sans-serif;
+  --font-mono:    'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
+
+  --weight-heading: 700;               /* locked: 700 or 800 */
+  --weight-heading-strong: 800;
+  --weight-body: 400;
+
+  --letter-wordmark: 0.18em;           /* locked */
+  --letter-section-label: 0.32em;      /* locked, uppercase */
+
+  /* Spacing — 4px scale. */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-12: 48px;
+  --space-16: 64px;
+  --space-24: 96px;
+
+  /* Sizing — heading-to-body ratio ≥ 1.8 per §14.4. */
+  --size-body: 16px;
+  --size-h3: 22px;
+  --size-h2: 32px;       /* 32/16 = 2.0 */
+  --size-h1: 48px;       /* 48/16 = 3.0 */
+
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+}
+
+/* Dark-first canvas per §14.4. */
+:root {
+  color-scheme: dark light;
+  --canvas: var(--color-deep-space-0);
+  --text: var(--color-snow-0);
+  --text-muted: color-mix(in srgb, var(--color-snow-0) 70%, transparent);
+  --link: var(--color-frost-cyan);
+  --link-hover: color-mix(in srgb, var(--color-frost-cyan) 80%, white);
+  --border: color-mix(in srgb, var(--color-snow-0) 12%, transparent);
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    --canvas: var(--color-parchment);
+    --text: var(--color-deep-space-0);
+    --text-muted: color-mix(in srgb, var(--color-deep-space-0) 70%, transparent);
+    --link: color-mix(in srgb, var(--color-frost-cyan) 80%, var(--color-deep-space-0));
+    --link-hover: var(--color-frost-cyan);
+    --border: color-mix(in srgb, var(--color-deep-space-0) 12%, transparent);
+  }
+}
+
+/* Reset + base. */
+*, *::before, *::after { box-sizing: border-box; }
+html { font-family: var(--font-body); font-size: var(--size-body); line-height: 1.6; }
+body {
+  margin: 0;
+  background: var(--canvas);
+  color: var(--text);
+  font-weight: var(--weight-body);
+}
+
+a { color: var(--link); text-decoration: underline; text-underline-offset: 3px; }
+a:hover { color: var(--link-hover); }
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-heading);
+  font-weight: var(--weight-heading);
+  margin: var(--space-8) 0 var(--space-4);
+  line-height: 1.15;
+}
+h1 { font-size: var(--size-h1); font-weight: var(--weight-heading-strong); }
+h2 { font-size: var(--size-h2); }
+h3 { font-size: var(--size-h3); }
+
+code, pre, kbd {
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+}
+
+pre {
+  background: color-mix(in srgb, var(--canvas) 80%, var(--text) 20%);
+  padding: var(--space-4);
+  border-radius: var(--radius-md);
+  overflow-x: auto;
+  line-height: 1.5;
+}
+
+code:not(pre code) {
+  background: color-mix(in srgb, var(--canvas) 88%, var(--text) 12%);
+  padding: 0.1em 0.35em;
+  border-radius: 3px;
+}
+
+/* Convergent Systems wordmark — locked letter-spacing. */
+.cs-wordmark {
+  font-family: var(--font-heading);
+  font-weight: var(--weight-heading-strong);
+  letter-spacing: var(--letter-wordmark);
+  text-transform: none;
+}
+
+/* Section labels — locked letter-spacing + uppercase. */
+.cs-section-label {
+  font-family: var(--font-heading);
+  font-weight: var(--weight-heading);
+  letter-spacing: var(--letter-section-label);
+  text-transform: uppercase;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+/* Mark — solar-gold ONLY. The mark is the brand identity per §14.4. */
+.cs-mark { color: var(--color-solar-gold); fill: var(--color-solar-gold); }
+.cs-mark * { fill: var(--color-solar-gold) !important; }
+/* Anti-misuse note. CSS can't enforce "no drop shadow on the mark";
+ * the brand atom's build-time validators do that. Don't add
+ * transforms / shadows / recolors to .cs-mark in this codebase. */
+
+/* Primary action — frost-cyan; WCAG AA contrast on both canvases. */
+.cs-action {
+  display: inline-block;
+  padding: var(--space-3) var(--space-6);
+  background: var(--color-frost-cyan);
+  color: var(--color-deep-space-0);
+  font-weight: var(--weight-heading);
+  text-decoration: none;
+  border-radius: var(--radius-md);
+  border: none;
+}
+.cs-action:hover {
+  background: color-mix(in srgb, var(--color-frost-cyan) 85%, white);
+  color: var(--color-deep-space-0);
+}
+
+/* Error and danger states are RED, NEVER ember-orange. Per §14.4. */
+.cs-error  { color: #FF5555; }
+.cs-danger { color: #FF5555; }
+
+/* Page layout. */
+.cs-page {
+  max-width: 72rem;
+  margin: 0 auto;
+  padding: var(--space-8) var(--space-6);
+}
+.cs-prose {
+  max-width: 44rem;
+}

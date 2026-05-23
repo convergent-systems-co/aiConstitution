@@ -1,0 +1,73 @@
+---
+import Base from '../layouts/Base.astro';
+---
+<Base title="Community — aiConstitution">
+  <section class="cs-prose">
+    <p class="cs-section-label">Community contributions</p>
+    <h1>Contribute hooks, findings, and atoms</h1>
+    <p>
+      The aiConstitution system is meant to be contributed to. Each
+      contribution type has its own upstream repo and issue template.
+    </p>
+
+    <h2>Hooks &amp; findings — this repo</h2>
+    <p>
+      The <code>ai</code> binary itself, the Python hook library, and
+      the methodology spec all live at
+      <a href="https://github.com/convergent-systems-co/aiConstitution">
+        convergent-systems-co/aiConstitution
+      </a>. File:
+    </p>
+    <ul>
+      <li>
+        <a href="https://github.com/convergent-systems-co/aiConstitution/issues/new?template=hook.md"><strong>Hook contribution</strong></a>
+        — a new hook (or improvement to an existing one), typically grown from a logged finding.
+        Filed automatically by <code>ai hooks share &lt;name&gt;</code>.
+      </li>
+      <li>
+        <a href="https://github.com/convergent-systems-co/aiConstitution/issues/new?template=finding.md"><strong>Finding</strong></a>
+        — a recurring pattern or behavior worth tracking, not yet a hook.
+      </li>
+      <li>
+        <a href="https://github.com/convergent-systems-co/aiConstitution/issues/new?template=epic.md"><strong>Epic</strong></a> /
+        <a href="https://github.com/convergent-systems-co/aiConstitution/issues/new?template=feature.md"><strong>Feature</strong></a> /
+        <a href="https://github.com/convergent-systems-co/aiConstitution/issues/new?template=story.md"><strong>Story</strong></a> /
+        <a href="https://github.com/convergent-systems-co/aiConstitution/issues/new?template=task.md"><strong>Task</strong></a>
+        — the canonical work-decomposition hierarchy.
+      </li>
+    </ul>
+
+    <h2>Atoms — sibling repos</h2>
+    <ul>
+      <li>
+        <strong>Persona atoms</strong>: <code>persona-atoms.com</code>.
+        Repo: <a href="https://github.com/convergent-systems-co/persona-atoms"><code>convergent-systems-co/persona-atoms</code></a>.
+        Submit via <code>ai persona share &lt;name&gt;</code> (agentic) or with <code>--domain</code> (reviewer).
+      </li>
+      <li>
+        <strong>Profile atoms</strong>: <code>profile-atoms.com</code>.
+        Repo: <a href="https://github.com/convergent-systems-co/profile-atoms"><code>convergent-systems-co/profile-atoms</code></a>.
+        Submit via <code>ai profile share &lt;name&gt;</code>.
+      </li>
+      <li>
+        <strong>Skill atoms</strong>: <code>skill-atoms.com</code>.
+        Repo: <a href="https://github.com/convergent-systems-co/skill-atoms"><code>convergent-systems-co/skill-atoms</code></a>.
+        Submit via <code>ai skills share &lt;name&gt;</code>.
+      </li>
+      <li>
+        <strong>Brand atoms</strong>: <code>brand-atoms.com</code>.
+        Repo: <a href="https://github.com/convergent-systems-co/branding-library"><code>convergent-systems-co/branding-library</code></a>.
+      </li>
+    </ul>
+
+    <h2>What about security?</h2>
+    <p>
+      <strong>Do not</strong> open a public issue for a security
+      finding. Email
+      <a href="mailto:security@convergent-systems.co">security@convergent-systems.co</a>
+      instead. The contact link is also wired into the repo's
+      <code>.github/ISSUE_TEMPLATE/config.yml</code> so the in-repo
+      issue picker surfaces it directly.
+    </p>
+  </section>
+</Base>

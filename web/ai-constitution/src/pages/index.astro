@@ -1,0 +1,100 @@
+---
+import Base from '../layouts/Base.astro';
+---
+<Base title="A personal AI Constitution — installable, portable, auditable">
+  <section class="cs-prose">
+    <p class="cs-section-label">Methodology · CLI · TUI · Community</p>
+    <h1>
+      A personal AI Constitution.<br />
+      <span class="cs-mark">Installable.</span> Portable. Auditable.
+    </h1>
+    <p>
+      <code>ai</code> turns the four-file personal AI Constitution
+      (<code>Constitution.md</code> · <code>Common.md</code> ·
+      <code>Code.md</code> · <code>Writing.md</code>) into a product.
+      Install it. Answer a guided interview. Have a personalized
+      constitution governing every AI tool on your machine — within
+      thirty minutes.
+    </p>
+    <p style="display: flex; gap: var(--space-4); margin-block-start: var(--space-8);">
+      <a class="cs-action" href="/install">Install</a>
+      <a href="/spec" style="align-self: center;">Read the spec →</a>
+    </p>
+  </section>
+
+  <section style="margin-block-start: var(--space-24);">
+    <p class="cs-section-label">What ships</p>
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(20rem, 1fr)); gap: var(--space-6); margin-block-start: var(--space-4);">
+      <div>
+        <h3>CLI surface</h3>
+        <p>
+          <code>ai setup</code>, <code>ai review</code>,
+          <code>ai doctor</code>, <code>ai sync</code>,
+          <code>ai restore</code>, <code>ai mode</code>,
+          <code>ai profile</code>, <code>ai persona</code>,
+          <code>ai skills</code>, <code>ai hooks</code>,
+          <code>ai settings</code>, <code>ai issue file</code> — every
+          verb from the spec is on a single binary.
+        </p>
+      </div>
+      <div>
+        <h3>Bubble Tea wizard</h3>
+        <p>
+          A guided interview that produces a personalized
+          <code>Constitution.md</code> with no fabrication. Every
+          question offers presets, a free-text answer, or a "chat with
+          the assistant" handoff.
+        </p>
+      </div>
+      <div>
+        <h3>Atoms ecosystem</h3>
+        <p>
+          Personas, profiles, skills, and brand identity are versioned,
+          immutable, content-addressable atoms — fetched from four
+          public registries (<code>persona-atoms.com</code>,
+          <code>profile-atoms.com</code>, <code>skill-atoms.com</code>,
+          <code>brand-atoms.com</code>) and cached locally.
+        </p>
+      </div>
+      <div>
+        <h3>Cross-tool enforcement</h3>
+        <p>
+          The command-wrapper facade enforces governance at the
+          <em>command</em> layer (<code>git</code>, <code>gh</code>,
+          opt-in <code>terraform</code> / <code>kubectl</code>) — so
+          Claude Code, Copilot CLI, Cursor, and human shell sessions
+          all get the same hooks regardless of which tool issued the
+          command.
+        </p>
+      </div>
+      <div>
+        <h3>Audit by default</h3>
+        <p>
+          Every override, every self-noticed violation, every focus
+          change leaves a permanent typed record under
+          <code>~/.ai/audit/</code>. Local-only. Never synced raw.
+        </p>
+      </div>
+      <div>
+        <h3>Self-repairing</h3>
+        <p>
+          <code>ai doctor</code> detects and fixes the predictable
+          failure modes — broken symlinks, missing hooks, dirty
+          working tree, stale binary — without conversation.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <section style="margin-block-start: var(--space-24);">
+    <p class="cs-section-label">Status</p>
+    <h2>Draft v0.8 — implementation in progress</h2>
+    <p>
+      This site, the CLI binary, the hook library, and the atom
+      registries are being built in parallel. The
+      <a href="/spec">authoritative spec</a> is current at draft v0.8.
+      Source lives at
+      <a href="https://github.com/convergent-systems-co/aiConstitution">github.com/convergent-systems-co/aiConstitution</a>.
+    </p>
+  </section>
+</Base>

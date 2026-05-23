@@ -1,0 +1,22 @@
+{
+  "name": "@convergent-systems-co/ai-constitution-site",
+  "version": "0.1.0",
+  "private": true,
+  "description": "ai-constitution.convergent-systems.co — methodology, spec, installer, community for the aiConstitution system",
+  "type": "module",
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview",
+    "check": "astro check"
+  },
+  "dependencies": {
+    "astro": "^5.0.0",
+    "@astrojs/mdx": "^4.0.0",
+    "@astrojs/sitemap": "^3.2.0"
+  },
+  "devDependencies": {
+    "@astrojs/check": "^0.9.0",
+    "typescript": "^5.5.0"
+  }
+}

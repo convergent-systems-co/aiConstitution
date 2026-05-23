@@ -1,0 +1,45 @@
+---
+import Base from '../layouts/Base.astro';
+---
+<Base title="Install — aiConstitution">
+  <section class="cs-prose">
+    <p class="cs-section-label">Install · macOS · Linux · Windows</p>
+    <h1>Install <code>ai</code></h1>
+    <p>
+      The <code>ai</code> binary is distributed through your system
+      package manager. Per <a href="/spec#15-file-layout-v08">SPEC §15</a>,
+      <code>~/.ai/bin/</code> does not contain the binary — only helper
+      wrappers — so updates flow through <code>brew</code> /
+      <code>scoop</code> / <code>winget</code> and the migration prompt
+      in <code>ai update --migrate</code>.
+    </p>
+
+    <h3>macOS / Linux (Homebrew)</h3>
+<pre><code>brew install convergent-systems-co/tap/ai</code></pre>
+
+    <h3>Windows (Scoop)</h3>
+<pre><code>scoop bucket add convergent-systems-co https://github.com/convergent-systems-co/scoop-bucket
+scoop install ai</code></pre>
+
+    <h3>Windows (winget)</h3>
+<pre><code>winget install convergent-systems-co.ai</code></pre>
+
+    <h3>From source</h3>
+<pre><code>git clone https://github.com/convergent-systems-co/aiConstitution.git
+cd aiConstitution
+make build      # produces dist/ai
+./dist/ai version</code></pre>
+
+    <h2>First run</h2>
+<pre><code>ai setup        # guided wizard
+ai --tui        # same, explicit
+ai doctor       # verify the install</code></pre>
+
+    <p>
+      After setup, the four canonical files are at <code>~/.ai/</code>,
+      the hook library is wired into your AI tool of choice, and a
+      <code>~/.config/aiConstitution/</code> directory holds your
+      per-machine mutable state (settings, mode, cache).
+    </p>
+  </section>
+</Base>
