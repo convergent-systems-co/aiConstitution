@@ -1,0 +1,23 @@
+name: RFC
+description: Design proposal
+title: "[RFC] "
+labels: ["kind/rfc", "status/triage"]
+body:
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+    validations: { required: true }
+  - type: textarea
+    id: decision
+    attributes:
+      label: Proposed decision
+    validations: { required: true }
+  - type: textarea
+    id: consequences
+    attributes:
+      label: Consequences
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered

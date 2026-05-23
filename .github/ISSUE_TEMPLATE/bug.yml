@@ -1,0 +1,32 @@
+name: Bug
+description: Something is broken
+title: "[Bug] "
+labels: ["kind/bug", "status/triage"]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: Describe the broken behavior.
+    validations: { required: true }
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations: { required: true }
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: Minimal repro. Commands, inputs, environment.
+    validations: { required: true }
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Severity
+      options: [low, medium, high, critical]
+  - type: textarea
+    id: env
+    attributes:
+      label: Environment
+      description: Version, OS, anything relevant.

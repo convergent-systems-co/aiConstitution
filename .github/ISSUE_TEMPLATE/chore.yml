@@ -1,0 +1,10 @@
+name: Chore
+description: Build, CI, tooling, housekeeping (no user-visible change)
+title: "[Chore] "
+labels: ["kind/chore", "status/triage"]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What needs to change
+    validations: { required: true }

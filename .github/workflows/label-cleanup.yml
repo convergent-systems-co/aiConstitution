@@ -1,0 +1,22 @@
+name: Label cleanup
+
+on:
+  schedule:
+    - cron: "0 8 * * 1"
+  workflow_dispatch:
+    inputs:
+      dry-run: { type: boolean, default: false }
+      report-only: { type: boolean, default: false }
+
+permissions:
+  issues: write
+  contents: read
+
+jobs:
+  cleanup:
+    uses: convergent-systems-co/repo-standards/.github/workflows/label-cleanup.yml@v1
+    with:
+      dry-run: ${{ inputs.dry-run || false }}
+      labels-ref: v1
+      aliases-ref: v1
+      report-only: ${{ inputs.report-only || false }}

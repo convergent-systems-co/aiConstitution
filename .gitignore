@@ -207,3 +207,52 @@ http-client.private.env.json
 # Built Visual Studio Code Extensions
 *.vsix
 ### END: Global/VisualStudioCode
+
+### START: go-app-template (Go workspace + Astro/Node + secrets)
+# Build artifacts
+dist/
+bin/
+*.exe
+
+# Go
+*.test
+*.out
+go.work.sum
+
+# Node / Astro (web/<site>/)
+web/**/node_modules/
+web/**/dist/
+web/**/.astro/
+web/**/.output/
+web/**/.vercel/
+web/**/.netlify/
+web/**/.cache/
+web/**/.vite/
+web/**/.turbo/
+web/**/.next/
+web/**/.svelte-kit/
+web/**/coverage/
+web/**/*.log
+web/**/npm-debug.log*
+web/**/yarn-debug.log*
+web/**/yarn-error.log*
+web/**/pnpm-debug.log*
+
+# IDE
+.idea/
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Local secrets
+.env
+.env.local
+.env.*.local
+web/**/.env
+web/**/.env.local
+web/**/.env.*.local
+*.pem
+*.key
+### END: go-app-template
