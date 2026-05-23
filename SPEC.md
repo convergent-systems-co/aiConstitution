@@ -2,7 +2,7 @@
 # AI-CONSTITUTION-SPEC.md — Personal AI Constitution System
 
 **Audience:** Implementers (Thomas Polliard, future AI assistants tasked with carrying this work forward, contributors to `convergent-systems-co/ai`).
-**Status:** Draft v0.8. Four corrections from the v0.7 review. (1) Atom kind terminology reverts: `kind: "reviewer"` replaces v0.7's `kind: "panel"` — reviewer is the right shape (the concept *is* the classification; panel was a wrapper-of-a-wrapper). (2) `domain` field becomes `domains[]` array — a reviewer atom can span multiple subject areas (e.g., a `secure-coding-reviewer` covering both `engineering` and `security`). (3) GitHub YAML Issue Forms conversion is **deferred** — `.github/ISSUE_TEMPLATE/*.md` stays through v0.8, conversion happens later as its own filed-issue work. (4) The Convergent Systems brand is now explicitly pinned: all five sites consume `[email protected]` from `brand-atoms.com/brands/convergent-systems`, dark-first canvas with Frost Cyan (#5CD6FF) primary and Solar Gold (#F4C75E) mark — see §14. The plans/specs-in-`~/.ai/` placement (§16.1) is reaffirmed despite the mutability tension: sync-worthy work products are a documented carve-out from the "mutable lives in `~/.config/`" rule.
+**Status:** Draft v0.10. Splits the v0.9 single `workflow-atoms` registry into three sibling registries — `action-atoms.com`, `workflow-atoms.com`, `pipeline-atoms.com` — matching the GitHub Actions trinity (atoms / workflows / pipelines). Adds the canonical-identity-vs-consumption-form model (§7.11.1): atoms.com URLs are the human/CLI/docs identity, GHA's `uses:` grammar gets the `owner/repo@ref` form, the CLI translates at file-write time. Drops the atom-action data-fetcher (per 2026-05-23 directive; it conflated runtime data fetching with workflow-atom consumption, which is structurally impossible because GHA parses YAML at init). Wizard adds Q36d–g for the three new registries. Seven atom registries; eight Convergent Systems Astro sites. Previously, v0.8: four corrections from the v0.7 review. (1) Atom kind terminology reverts: `kind: "reviewer"` replaces v0.7's `kind: "panel"` — reviewer is the right shape (the concept *is* the classification; panel was a wrapper-of-a-wrapper). (2) `domain` field becomes `domains[]` array — a reviewer atom can span multiple subject areas (e.g., a `secure-coding-reviewer` covering both `engineering` and `security`). (3) GitHub YAML Issue Forms conversion is **deferred** — `.github/ISSUE_TEMPLATE/*.md` stays through v0.8, conversion happens later as its own filed-issue work. (4) The Convergent Systems brand is now explicitly pinned: all five sites consume `[email protected]` from `brand-atoms.com/brands/convergent-systems`, dark-first canvas with Frost Cyan (#5CD6FF) primary and Solar Gold (#F4C75E) mark — see §14. The plans/specs-in-`~/.ai/` placement (§16.1) is reaffirmed despite the mutability tension: sync-worthy work products are a documented carve-out from the "mutable lives in `~/.config/`" rule.
 **Inherits from:** `~/.ai/Constitution.md` (governance meta-rules), `~/.ai/Common.md §5` (Governance Storage), `~/.ai/GOALS.md` (G1 deterministic core, G2 cross-tool, G3 audit, G4 hook-driven enforcement).
 **Authoritative source for the implementation:** this document, until merged into the four-file canon.
 
@@ -19,23 +19,32 @@ The four-file constitution is good for one expert author who already knows what 
 5. **`ai restore`** is `ai setup` re-bound to a sync URL: it pulls the previously-synced tree and re-asserts the symlink/hook topology on a fresh machine.
 **Mutable-state rule (v0.6).** All per-machine mutable state lives under `~/.config/aiConstitution/`. `~/.ai/` holds canonical governance content, audit records, memory, hooks, and atom *references* — no transient or session state, no caches, no checkpoints. This is the architectural principle that simplifies sync / restore / doctor / backup; v0.6 closes the last leaks (notably `checkpoints/`).
 
-**Atoms ecosystem (v0.9, five registries).**
+**Atoms ecosystem (v0.10, seven registries — the GitHub Actions trinity splits the v0.9 `workflow-atoms` into three).**
 
 | Registry | Hosts | Schema |
 |---|---|---|
 | `brand-atoms.com` | Palettes, fonts, brand compositions | W3C design tokens |
-| `persona-atoms.com` | **Two kinds**: `kind: "agentic"` (Markdown personas, loaded by `ai mode`) and `kind: "reviewer"` (YAML reviewer personas, invoked by review panels in `/spawn` workflows). Reviewer personas additionally carry a `domains: [...]` array naming subject areas the reviewer covers (engineering, security, architecture, documentation, finops, data). A single reviewer atom can span multiple domains. | Kind-tagged in atom metadata |
+| `persona-atoms.com` | **Two kinds**: `kind: "agentic"` (Markdown personas, loaded by `ai mode`) and `kind: "reviewer"` (YAML reviewer personas, invoked by review panels in `/spawn` workflows). Reviewer personas additionally carry a `domains: [...]` array naming subject areas the reviewer covers. | Kind-tagged in atom metadata |
 | `profile-atoms.com` | Profile compositions (recipes pinning atom@version refs) | TOML |
 | `skill-atoms.com` | Skill bundles (SKILL.md + templates + assets), versioned, content-hashed | Tarballs with manifest |
-| `workflow-atoms.com` | **Reusable GitHub Actions workflows.** `kind: "reusable"` atoms (callable via `uses: convergent-systems-co/workflow-atoms/<name>@<version>` from any repo's `.github/workflows/<file>.yml`); `kind: "composite"` atoms (callable as composite action steps). Examples: `cloudflare-pages-deploy`, `release-goreleaser`, `secret-scan-patterns`, `astro-build`. | YAML workflows + action.yml |
+| `action-atoms.com` (v0.10) | **Atomic CI actions** — one step's worth of work. Typed sub-namespaces: `/github/composite/`, `/github/javascript/`, `/github/docker/`. Future: `/gitlab/...`, `/circleci/...`. Example canonical URL: `https://action-atoms.com/github/composite/cs-page-deployment@1.0.0`. | `action.yml` per atom |
+| `workflow-atoms.com` (revised v0.10) | **Reusable workflows** — one job's worth of work, composes actions. Typed sub-namespaces: `/github/reusable/`. Example: `https://workflow-atoms.com/github/reusable/release-goreleaser@1.0.0`. | `workflow.yml` per atom |
+| `pipeline-atoms.com` (v0.10) | **Pipelines** — workflows that compose other workflows (aggregate orchestration). Typed sub-namespaces: `/github/pipeline/`. Example: `https://pipeline-atoms.com/github/pipeline/release-train@1.0.0`. | `workflow.yml` (top-level, calls reusables) |
 
-All five follow the same pattern: versioned, immutable, content-addressable, cached locally, mutation-impossible at the published version. Per `§14.1` each registry is also a sibling Astro site (`brand-atoms.com`, `persona-atoms.com`, `profile-atoms.com`, `skill-atoms.com`, `workflow-atoms.com`) under the Convergent Systems visual identity.
+All seven follow the same pattern: versioned, immutable, content-addressable, cached locally, mutation-impossible at the published version. Per `§14.1` each registry is also a sibling Astro site (`brand-atoms.com`, `persona-atoms.com`, `profile-atoms.com`, `skill-atoms.com`, `action-atoms.com`, `workflow-atoms.com`, `pipeline-atoms.com`) under the Convergent Systems visual identity.
+
+**Canonical-identity vs. consumption-form (v0.10).** GitHub Actions' `uses:` grammar accepts only `owner/repo@ref`, `owner/repo/path@ref`, `./local`, or `docker://…`. **It cannot resolve an HTTPS URL.** The atoms ecosystem honors this constraint by giving every action/workflow/pipeline atom **two equivalent references**:
+
+- **Canonical identity** (what humans, the catalog, the CLI, and docs see): `https://<registry>.com/<sub-namespace>/<name>@<version>`.
+- **Backing consumption form** (what GHA `uses:` actually receives): `convergent-systems-co/<registry>/<…>@<tag>`.
+
+The two are kept in lockstep — each atom version corresponds to exactly one git tag on the backing repo. The `ai {action,workflow,pipeline} install` command lets the user type the canonical URL; the CLI writes the GH-grammar form into `.github/workflows/<file>.yml` at install time. `ai doctor` surfaces drift if the two ever disagree.
 
 6. **`ai mode <name>`** resolves a profile or persona reference from `profile-atoms.com` / `persona-atoms.com` (agentic namespace), cache-first. Profile TOML recipes pin `<atom>@<version>` references. The active mode lives in `~/.config/aiConstitution/mode.json` (JSON, machine state only). See §7.9 for atoms architecture; §7.10 for skill atoms.
 7. **`ai update --migrate`** runs automatically on first invocation after `brew update`, `scoop update`, or `ai update`. It compares the shipped hook / skill / persona / question set against the user's current install and prompts to wire anything new — never silently — and to re-evaluate existing hooks.
 8. **`ai hooks propose <name>`** scaffolds a new hook from a finding; on completion, offers to file the hook upstream as an issue on the public repo, gated by `shareNewHooks` in `~/.config/aiConstitution/settings.toml`.
 9. **Pre-commit secret scanning** ships as `hooks/secret-precommit.py`, driven by the same `hooks/patterns.json` that powers the existing `hooks/secret-block.py`. No trufflehog in CI. **And** — per §10.5 — the same `~/.ai/bin/` wrapper pattern that strips `--no-verify` generalizes into a **cross-tool command wrapper facade**: `bin/git`, `bin/gh`, `bin/terraform`, etc. wrap their underlying tools and inject `preHooks` / `postHooks` / `commandHooks` uniformly across AI tools. Claude has clean native hooks; Copilot does not. Wrapping the commands papers over Copilot's gap so the same enforcement fires regardless of which AI tool invoked it.
-9a. **GitHub Actions workflows are consumed from `workflow-atoms.com`** (the 5th atom registry, new in v0.9). Each repo's `.github/workflows/*.yml` files prefer a one-line `uses: convergent-systems-co/workflow-atoms/<name>@<version>` reference over inline YAML, the same way profiles consume persona atoms. `ai setup` asks which workflow atoms to install during Phase 8 (see Q36d in `questions.yaml` v0.9). The aiConstitution repo itself ships an inline `deploy-ai-constitution.yml` for v0.8 as a transitional measure; migration to a `cloudflare-pages-deploy` atom is tracked as a feature issue.
+9a. **GitHub Actions atoms split across three registries (v0.10).** `action-atoms.com` hosts atomic actions (one step's worth of work); `workflow-atoms.com` hosts reusable workflows (one job's worth, composes actions); `pipeline-atoms.com` hosts pipelines (workflows that compose other workflows). Each repo's `.github/workflows/*.yml` files prefer one-line `uses:` references to these atoms over inline YAML. The CLI presents canonical atoms.com URLs to humans and translates to the GH-grammar `uses:` form at file-write time (see "Canonical-identity vs consumption-form" above). `ai setup` asks which atoms to install during Phase 8 (Q36d/e/f/g in `questions.yaml` v0.10). The aiConstitution repo itself ships an inline `deploy-ai-constitution.yml` for v0.8 as a transitional measure; migration to an `action-atoms.com/github/composite/cs-page-deployment` atom is tracked at issue #6.
 10. **`~/.config/aiConstitution/settings.toml`** holds user preferences (`shareNewHooks`, `review.cadenceDays`, `update.autoMigratePrompt`, `telemetry.installPing`, secret-scanning scope, default persona). The wizard offers to accept defaults on setup; accepting sets `shareNewHooks = true` so the user is never re-asked.
 11. **`aiConstitution.convergent-systems.co`** publishes the methodology, the installer, and a `hook` issue type for community-contributed hooks. Lives inside the Convergent Systems visual identity sourced from `brand-atoms.com` (W3C design tokens, real CSS variables, no recolored screenshots).
 
@@ -233,13 +242,32 @@ ai skills upgrade <name> [<version>] # Bump manifest, refetch, re-symlink
 ai skills upgrade --all              # Upgrade every installed skill to latest stable
 ai skills share <name>               # File a skill draft upstream
 
-# New in v0.9 — workflow atoms (5th registry):
+# New in v0.10 — GitHub Actions trinity (action / workflow / pipeline atoms):
+ai action list                       # Browse action-atoms.com catalog
+ai action show <name>[@<version>]    # Render an atom's body inline
+ai action install <name>[@<version>] # Write a workflow step that uses the action
+ai action upgrade <name> [<version>] # Bump the pinned uses: ref
+ai action upgrade --all              # Bump every installed action atom
+ai action share <name>               # File an action draft upstream
+
 ai workflow list                     # Browse workflow-atoms.com catalog
 ai workflow show <name>[@<version>]  # Render an atom's body inline
 ai workflow install <name>[@<version>] # Write .github/workflows/<name>.yml using: the atom
 ai workflow upgrade <name> [<version>] # Bump the pinned uses: ref
 ai workflow upgrade --all            # Bump every installed workflow atom
 ai workflow share <name>             # File a workflow draft upstream
+
+ai pipeline list                     # Browse pipeline-atoms.com catalog
+ai pipeline show <name>[@<version>]  # Render an atom's body inline
+ai pipeline install <name>[@<version>] # Write .github/workflows/<name>.yml using: the atom
+ai pipeline upgrade <name> [<version>] # Bump the pinned uses: ref
+ai pipeline upgrade --all            # Bump every installed pipeline atom
+ai pipeline share <name>             # File a pipeline draft upstream
+
+# All three accept the canonical atoms.com URL as the <name> arg, e.g.:
+#   ai action install https://action-atoms.com/github/composite/cs-page-deployment@1.0.0
+# The CLI translates to the appropriate GH-grammar `uses:` form when
+# writing into .github/workflows/<file>.yml.
 
 ai plugins list                      # Show available Claude plugins (superpowers, ...)
 ai plugins enable <name>             # Enable a Claude plugin per its plugin-specific install path
@@ -771,7 +799,7 @@ The atoms architecture is the v0.5 mutation-prevention story. It extends the est
 
 #### 7.9.1 What an atom is (and what types of personas exist)
 
-An atom is a versioned, immutable, content-addressable unit of authority. The Convergent Systems atoms family has **five registries** (as of v0.9; was four through v0.8); the persona registry hosts **two kinds** under one domain, and the workflow registry hosts **two kinds** (reusable workflows and composite actions):
+An atom is a versioned, immutable, content-addressable unit of authority. The Convergent Systems atoms family has **seven registries** (as of v0.10; was five in v0.9, four through v0.8); the persona registry hosts **two kinds** under one domain, and each of the three GitHub Actions registries (action-atoms, workflow-atoms, pipeline-atoms) sub-namespaces by consumer platform + primitive type (`/github/composite/`, `/github/javascript/`, `/github/docker/`, `/github/reusable/`, `/github/pipeline/`):
 
 ```
 https://persona-atoms.com/agentic/<name>/<semver>/persona.md
@@ -886,7 +914,7 @@ Each catalog page renders the atom's current content and links to all versions p
 | `/submit` | PR submission documentation |
 | `/index.json` | Full catalog (for offline-bootstrap during `ai restore`) |
 
-The shape match means a single resolver implementation in `bin/ai` handles **four** of the five registries (brand / persona / profile / skill) — only the URL template and the content type differ. The fifth (`workflow-atoms.com`) is consumed directly by GitHub Actions via `uses:`; `bin/ai` resolves it only for the catalog-browsing / `ai workflow install <name>` flow (which writes `.github/workflows/<name>.yml` referencing the chosen atom). See §7.11.
+The shape match means a single resolver implementation in `bin/ai` handles **four** of the seven registries (brand / persona / profile / skill) — only the URL template and the content type differ. The remaining three (`action-atoms.com`, `workflow-atoms.com`, `pipeline-atoms.com`) are consumed directly by GitHub Actions via `uses:`; `bin/ai` resolves them only for the catalog-browsing / `ai {action,workflow,pipeline} install <name>` flow, which writes `.github/workflows/<name>.yml` (or a step `uses:`) referencing the chosen atom in GH-grammar form. See §7.11.
 
 #### 7.9.3 Publication flow
 
@@ -1080,93 +1108,164 @@ Existing skills under `~/.ai/skills/<name>/` get transactional migration in `ai 
 
 `ai backup` runs first; the migration is rollback-safe.
 
-### 7.11 Workflow Atoms — the fifth registry (v0.9)
+### 7.11 Action, Workflow, and Pipeline Atoms — the GitHub Actions trinity (v0.10)
 
-GitHub Actions workflows are the last remaining inline-YAML surface in
-each Convergent Systems repo. Per the user directive 2026-05-23,
-workflows now come from `workflow-atoms.com` the same way personas
-come from `persona-atoms.com`. Two atom kinds:
+GitHub Actions is the last remaining inline-YAML surface in each
+Convergent Systems repo. v0.9 collapsed it into one `workflow-atoms.com`
+registry with two `kind:`s; v0.10 splits it into **three sibling
+registries**, matching how GitHub itself layers the primitives:
 
-| | **Reusable workflow** (`kind: "reusable"`) | **Composite action** (`kind: "composite"`) |
-|---|---|---|
-| URL path | `/reusable/<name>/<version>/workflow.yml` | `/composite/<name>/<version>/action.yml` |
-| Consumed by | Top-level `jobs.<id>.uses:` in a caller workflow | A `step.uses:` inside any job |
-| Versioning surface | `uses: convergent-systems-co/workflow-atoms/.github/workflows/<name>.yml@<tag-or-sha>` | `uses: convergent-systems-co/workflow-atoms/composite/<name>@<tag-or-sha>` |
-| Examples | `astro-build`, `cloudflare-pages-deploy`, `goreleaser-tag`, `gh-issue-from-finding` | `secret-scan-patterns`, `setup-cs-tofu`, `redact-and-redact` |
+| Level | Registry | What it is | GH primitive | Consumed at | Composes |
+|---|---|---|---|---|---|
+| **Action** | `action-atoms.com` | One step's worth of work | composite / JS / Docker action | `steps[].uses:` | nothing (leaf) |
+| **Workflow** | `workflow-atoms.com` | One job's worth of work | reusable workflow (`workflow_call:`) | `jobs.<id>.uses:` | one or more actions |
+| **Pipeline** | `pipeline-atoms.com` | Aggregate of workflows | a top-level workflow whose jobs `uses:` reusable workflows | top-level `on:` trigger; `jobs.<id>.uses:` | one or more workflows |
 
-#### 7.11.1 Why a fifth registry and not skills/plugins/something else
-
-Skills are slash-commands the assistant invokes. Plugins are Claude
-multi-step workflows. Profiles are persona compositions. None of
-those fit GitHub Actions reusable workflows — those are explicitly
-consumed by `uses:` in `.github/workflows/*.yml`, are versioned via
-git tag/SHA on the upstream repo, and have their own well-defined
-GitHub-native composition model. Rather than mash them into one of
-the existing four registries, v0.9 adds a fifth that maps cleanly to
-GitHub's existing surface.
-
-#### 7.11.2 CLI surface
+Each registry's catalog routes are sub-namespaced by CI platform and
+primitive type so other CI systems can join later (`/gitlab/...`,
+`/circleci/...`, etc.). For GitHub specifically:
 
 ```
-ai workflow list                       # browse workflow-atoms.com catalog
-ai workflow show <name>[@<version>]    # render an atom's body inline
-ai workflow install <name>[@<version>] # write .github/workflows/<name>.yml
-                                       # that uses: the atom; pinned to version
-ai workflow share <name>               # file an atom draft against
-                                       # convergent-systems-co/workflow-atoms
-ai workflow upgrade <name> [<version>] # bump the pinned `uses:` ref
-ai workflow upgrade --all              # bump every installed workflow atom
+action-atoms.com   /github/composite/<name>@<version>
+                   /github/javascript/<name>@<version>
+                   /github/docker/<name>@<version>
+
+workflow-atoms.com /github/reusable/<name>@<version>
+
+pipeline-atoms.com /github/pipeline/<name>@<version>
 ```
 
-`ai workflow install` writes a minimal stub at
-`.github/workflows/<name>.yml`:
+Examples:
+
+```
+https://action-atoms.com/github/composite/cs-page-deployment@1.0.0
+https://action-atoms.com/github/composite/secret-scan-patterns@1.0.0
+https://workflow-atoms.com/github/reusable/astro-build@1.0.0
+https://workflow-atoms.com/github/reusable/release-goreleaser@1.0.0
+https://pipeline-atoms.com/github/pipeline/release-train@1.0.0
+```
+
+#### 7.11.1 Canonical identity vs. consumption form
+
+**GitHub Actions' `uses:` grammar cannot resolve an HTTPS URL.** It
+accepts only:
+
+- `owner/repo@ref`
+- `owner/repo/path@ref`
+- `./local-path`
+- `docker://image:tag`
+
+This is a syntax constraint, not an org-policy restriction. The
+atoms ecosystem honors it by giving every action/workflow/pipeline
+atom two **equivalent** references:
+
+| Form | Where it shows up |
+|---|---|
+| `https://<registry>.com/<sub-namespace>/<name>@<version>` | The catalog, the CLI, docs, conversation — everywhere a human reads or types it. |
+| `convergent-systems-co/<registry>/<…>@<tag>` | Inside `.github/workflows/*.yml`, where GHA can actually resolve it. |
+
+Each atom version corresponds to exactly one git tag on the backing
+repo at `github.com/convergent-systems-co/<registry>`. The
+`ai action/workflow/pipeline install` commands accept the canonical
+URL as their argument; the CLI translates to the GH-grammar form at
+file-write time. `ai doctor` surfaces drift if the canonical version
+and the backing tag ever disagree.
+
+#### 7.11.2 Why three registries and not one
+
+Composition pressure points up. An **action** is a leaf — it cannot
+compose anything else of its own kind. A **workflow** composes
+actions but cannot compose other workflows from inside its own job
+body. A **pipeline** is the only level that composes workflows
+(via job-level `uses:` to reusable workflows). Browsing
+`workflow-atoms.com` for a "deploy" thing and finding actions mixed
+with multi-job pipelines under one catalog blurs that distinction.
+Splitting by level (a) makes the catalog browsable by what you can
+actually compose at each layer, (b) gives each registry a tighter
+naming convention (`composite/cs-page-deployment` is unambiguously
+a single step; `pipeline/release-train` is unambiguously a top-level
+workflow), and (c) lets `ai doctor` validate each layer's
+composition rules independently.
+
+The decision was made 2026-05-23 after the v0.9 spec landed; the
+v0.9 "two kinds under one registry" pattern hadn't yet seen any
+atoms published. No migration burden.
+
+#### 7.11.3 CLI surface
+
+Same shape across all three; only the verb differs:
+
+```
+ai action  list / show / install / upgrade / share
+ai workflow list / show / install / upgrade / share
+ai pipeline list / show / install / upgrade / share
+```
+
+`ai <verb> install` accepts either the canonical URL or a short
+name (resolved against the active registry):
+
+```
+ai action install https://action-atoms.com/github/composite/cs-page-deployment@1.0.0
+ai action install cs-page-deployment@1.0.0     # short form; --kind defaults to composite
+```
+
+For action atoms, install writes a `steps[].uses:` snippet into
+the named target workflow (`--target=.github/workflows/<file>.yml --job=<id>`)
+or prints the snippet to stdout if no target given.
+
+For workflow / pipeline atoms, install writes a new
+`.github/workflows/<name>.yml` whose job(s) `uses:` the atom:
 
 ```yaml
-name: <human-friendly title>
+# Written by `ai workflow install astro-build@1.0.0`.
+name: astro-build
 on:
-  push:
-    branches: [main]
+  push: { branches: [main] }
 jobs:
-  <name>:
-    uses: convergent-systems-co/workflow-atoms/.github/workflows/<name>.yml@<version>
+  astro-build:
+    uses: convergent-systems-co/workflow-atoms/.github/workflows/astro-build.yml@v1.0.0
     with:
       # filled per the atom's expected inputs
-      ...
     secrets: inherit
 ```
 
 Pinning is **mandatory** — `uses: ...@main` would defeat the
 immutability invariant. The CLI refuses to write an unpinned
-reference and the `ai doctor` check surfaces any that drifted.
+reference; `ai doctor` surfaces any that drifted in by hand.
 
-#### 7.11.3 Wizard question (Q36d)
+#### 7.11.4 Wizard questions (Q36d/e/f/g)
 
-A new question fires during Phase 8 (AI Tool Wiring) per
-`questions.yaml` v0.9:
+Phase 8 (AI Tool Wiring) gains four questions in `questions.yaml`
+v0.10:
 
-| qid | Question | Presets |
+| qid | Question | Notes |
 |---|---|---|
-| Q36d | Install workflow atoms from `workflow-atoms.com` now? | "Yes — pick from the recommended set" / "Yes — multi-select all available" / "Skip — install later with `ai workflow install <name>`" / chat |
-| Q36e | (if Q36d != skip) Which workflow atoms? | Multi-select checklist of recommended atoms; falls back to "none" / chat |
+| Q36d | Install GitHub Actions atoms during setup? | "Yes — pick from each layer" / "Yes — recommended starter set" / "Skip" |
+| Q36e | (if Q36d != skip) Which **action** atoms? | Multi-select against `action-atoms.com` catalog |
+| Q36f | (if Q36d != skip) Which **workflow** atoms? | Multi-select against `workflow-atoms.com` |
+| Q36g | (if Q36d != skip) Which **pipeline** atoms? | Multi-select against `pipeline-atoms.com` |
 
-Recommended starter set (proposed; final list lives at
-`workflow-atoms.com/recommended-starter.json`):
-`astro-build`, `cloudflare-pages-deploy`, `goreleaser-tag`,
-`secret-scan-patterns`, `ci-go-workspace`.
+Recommended starter set (lives at
+`<registry>.com/recommended-starter.json` per registry; updated as
+atoms ship):
 
-#### 7.11.4 Migration from inline workflows
+- **action**: `secret-scan-patterns`, `setup-cs-tofu`, `redact-and-redact`
+- **workflow**: `astro-build`, `ci-go-workspace`, `release-goreleaser`
+- **pipeline**: `release-train`, `web-deploy`
 
-For users with pre-v0.9 inline `.github/workflows/*.yml` content,
-`ai update --migrate` to v0.9 walks the workflow directory and offers
-to swap each file for an atom reference where a matching atom exists.
-Hash-equivalent inline workflows migrate silently; differences are
-surfaced for review per the same protocol §7.9.7 uses for personas.
+#### 7.11.5 Migration from inline workflows
+
+For users with pre-v0.10 inline `.github/workflows/*.yml` content,
+`ai update --migrate` to v0.10 walks the workflow directory and
+offers to swap each file for an atom reference where a matching atom
+exists. Hash-equivalent inline workflows migrate silently;
+differences are surfaced for review per the same protocol §7.9.7
+uses for personas.
 
 The aiConstitution repo itself ships `.github/workflows/deploy-ai-constitution.yml`
-inline for v0.8 as a transitional measure — the atom won't exist
-until `workflow-atoms.com/reusable/cloudflare-pages-deploy/` is
-published. The migration to that atom is tracked as an upstream
-issue against this repo.
+inline for v0.8/v0.9 as a transitional measure — the atom won't exist
+until `action-atoms.com/github/composite/cs-page-deployment@1.0.0`
+is published. The migration to that atom is tracked at issue #6.
 
 ---
 
@@ -1799,9 +1898,9 @@ Environment overrides exist so CI runs and scripted setups can pin behavior with
 
 ## 14. Brand Integration and Public Sites
 
-### 14.1 One stack: Astro everywhere (v0.7, expanded in v0.9)
+### 14.1 One stack: Astro everywhere (v0.7, expanded in v0.9, expanded again in v0.10)
 
-All six Convergent Systems web properties share one stack and one design system:
+All eight Convergent Systems web properties share one stack and one design system:
 
 | Site | Purpose | Stack | Builder |
 |---|---|---|---|
@@ -1809,10 +1908,12 @@ All six Convergent Systems web properties share one stack and one design system:
 | `persona-atoms.com` | Agentic + reviewer persona catalogs | Astro | `/builder` |
 | `profile-atoms.com` | Profile compositions | Astro | `/builder` |
 | `skill-atoms.com` | Skill bundles | Astro | `/builder` |
-| `workflow-atoms.com` (new in v0.9) | Reusable + composite GitHub Actions workflow atoms | Astro | `/builder` — guided workflow composition |
+| `action-atoms.com` (new in v0.10) | Atomic CI actions (composite / JS / Docker) | Astro | `/builder` — guided action authoring |
+| `workflow-atoms.com` (added v0.9, refocused v0.10) | Reusable workflows (one job's worth, composes actions) | Astro | `/builder` — guided workflow composition |
+| `pipeline-atoms.com` (new in v0.10) | Pipelines (workflows that compose other workflows) | Astro | `/builder` — guided pipeline composition |
 | `aiConstitution.convergent-systems.co` (canonical: `ai-constitution.convergent-systems.co`) | Spec, usage, methodology, installer | Astro | `/builder` — guided constitution + profile creation |
 
-All six sites pull design tokens from `brand-atoms.com` and inherit the same Astro components, page chrome, and builder mechanism. The `aiConstitution` site is two things in one: (a) **the spec and usage docs** (machine-friendly, deep-linkable, full of the canonical text), and (b) **the public-facing landing** (what someone hits when curious about the methodology, before they install).
+All eight sites pull design tokens from `brand-atoms.com` and inherit the same Astro components, page chrome, and builder mechanism. The `aiConstitution` site is two things in one: (a) **the spec and usage docs** (machine-friendly, deep-linkable, full of the canonical text), and (b) **the public-facing landing** (what someone hits when curious about the methodology, before they install).
 
 The v0.6 plan to "keep mkdocs for `convergent-systems-co.github.io/ai/`" is **retired in v0.7**. Two doc stacks for one project is a maintenance tax with no benefit once the Astro stack carries the brand consistently. The existing mkdocs content (governance symlinks, ai-cli docs, tools docs) ports to Astro as part of Phase F.
 
@@ -1845,7 +1946,7 @@ The YAML conversion remains a v1.x goal; the structured fields it enables (typed
 
 ### 14.4 Brand tokens — pinned to `[email protected]`
 
-All five Convergent Systems web properties consume the `convergent-systems` brand atom from `brand-atoms.com`:
+All eight Convergent Systems web properties consume the `convergent-systems` brand atom from `brand-atoms.com`:
 
 ```
 https://brand-atoms.com/brands/convergent-systems
@@ -2139,6 +2240,7 @@ Phases A–F unchanged from v0.1. New phases:
 
 ## 19. Changelog
 
+- **0.10** — **GitHub Actions trinity.** The v0.9 single `workflow-atoms` registry splits into three sibling registries — `action-atoms.com` (atomic actions, one step's worth, with typed sub-namespaces `/github/composite/`, `/github/javascript/`, `/github/docker/`), `workflow-atoms.com` (reusable workflows, one job's worth, composes actions, `/github/reusable/`), and `pipeline-atoms.com` (pipelines, aggregates workflows, `/github/pipeline/`). Seven atom registries total; eight Convergent Systems Astro sites (§14.1 enumerated). **Canonical-identity vs consumption-form** added (§7.11.1): atoms.com URLs are the canonical identity humans/CLI/docs use; GHA's `uses:` grammar accepts only `owner/repo@ref`, so the CLI translates atoms.com URLs to the GH-grammar form at file-write time, keeping each atom version in lockstep with a git tag on the backing `convergent-systems-co/<registry>` repo. `ai doctor` surfaces drift. CLI gains `ai action` and `ai pipeline` verbs alongside the existing `ai workflow` (§3 + §7.11.3); all three accept the canonical URL as the install arg. Wizard gains Q36d/e/f/g in Phase 8 (§7.11.4). The atom-action data-fetcher proposed during the v0.9 discussion is **dropped** — it conflated runtime data-atom fetching (still useful, but a separate concern) with workflow-atom consumption (which can't be runtime-fetched because GHA parses YAML at workflow-init time). The aiConstitution repo's own deploy workflow remains inline until `action-atoms.com/github/composite/cs-page-deployment@1.0.0` ships; migration tracked at #6.
 - **0.9** — Workflow atoms join the family. `workflow-atoms.com` is the 5th sibling registry alongside brand / persona / profile / skill, hosting reusable GitHub Actions workflows (`kind: "reusable"`) and composite actions (`kind: "composite"`). Six Convergent Systems Astro sites now (§14.1 enumerated). New CLI verbs `ai workflow {list,show,install,upgrade,share}` (§3 + §7.11.2) ship under the same single-resolver pattern, with the wrinkle that GitHub Actions itself does the runtime fetch via `uses:` — `bin/ai`'s role is catalog browsing and writing the pinned `.github/workflows/<name>.yml` stub. Mandatory version pinning enforced; `ai doctor` surfaces any unpinned `uses:` refs as drift. Wizard gains Q36d/Q36e in Phase 8 to pick workflow atoms during setup. Settings adds `[atoms].workflowRegistry` + `[atoms.cache.workflow]`. Migration path for pre-v0.9 inline workflows is hash-equivalent-silent / differences-prompted, mirroring §7.9.7. The aiConstitution repo's own `.github/workflows/deploy-ai-constitution.yml` ships inline as a transitional measure until `workflow-atoms.com/reusable/cloudflare-pages-deploy/` is published; the migration is an upstream-tracked feature.
 - **0.8** — Four corrections from the v0.7 review. (1) **Reviewer terminology re-reversed**: v0.6 used `kind: "domain"`, v0.7 reversed to `kind: "panel"` on the argument that reviewer was the name not the kind, v0.8 re-reverses to `kind: "reviewer"` — the user's correction is that reviewer *is* the right shape (it's the concept the YAML files already encode; panel was a wrapper-of-a-wrapper). URL paths, drafts, cache directories all follow: `/reviewer/`, `reviewer-drafts/`, `.persona-cache/reviewer/`. (2) **`domains[]` array, not singleton**: a reviewer atom can span multiple subject areas (e.g., a `secure-coding-reviewer` covering both `engineering` and `security`). Schema enforces `domains: string[]` with minimum length 1. (3) **YAML Issue Forms conversion deferred**: `.github/ISSUE_TEMPLATE/*.md` stays through v0.8; conversion to `.yml` is its own filed-issue work, not a blocker for shipping atoms or plugins. (4) **Convergent Systems brand explicitly pinned**: §13.4 now documents `[email protected]` from `brand-atoms.com/brands/convergent-systems` as the canonical brand for all five Convergent Systems sites — Frost Cyan (#5CD6FF) primary, Solar Gold (#F4C75E) mark, deep-space dark canvas, Inter typography, 12 typed error-severity rules enforced at build time. The mark-is-gold-only rule is non-negotiable across every site. Also: §17.1 reaffirms the plans/specs-in-`~/.ai/` carve-out with explicit "mutable vs sync" rationale — sync-worthy work products live in `~/.ai/` despite being technically mutable, because per-machine `~/.config/` doesn't sync.
 - **0.7** — Eight resolutions from the v0.6 re-review. Kind terminology `agentic` + `panel` (revised to `reviewer` in v0.8). Astro everywhere; mkdocs retired. Plans and specs at `~/.ai/` top level. Repo-root integration files documented (`CLAUDE.md`, `.claude/`, `.github/copilot-instructions.md`, `AGENTS.md`, `.cursor/rules/`). `bin/ai` removed from `~/.ai/bin/`. Per-type cache TTLs added. YAML Issue Forms proposed (deferred in v0.8). New §11 with five plugin candidates (`amendment-author`, `hook-author`, `atom-publisher`, `review-panel`, `memory-curator`).

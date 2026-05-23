@@ -15,7 +15,7 @@
 #
 # Schema: governance/schemas/settings.schema.json (versioned with schemaVersion below)
 
-schemaVersion = "0.3"
+schemaVersion = "0.4"
 
 
 # ─── upstream contribution ────────────────────────────────────────────────────
@@ -131,12 +131,20 @@ personaRegistry  = "https://persona-atoms.com"   # both /agentic/ and /reviewer/
 profileRegistry  = "https://profile-atoms.com"
 skillRegistry    = "https://skill-atoms.com"     # NEW v0.6
 brandRegistry    = "https://brand-atoms.com"
-workflowRegistry = "https://workflow-atoms.com"  # NEW v0.9 — GitHub Actions reusable + composite atoms
+actionRegistry   = "https://action-atoms.com"    # NEW v0.10 — atomic CI actions (composite/JS/Docker)
+workflowRegistry = "https://workflow-atoms.com"  # v0.9; refocused v0.10 — reusable workflows only
+pipelineRegistry = "https://pipeline-atoms.com"  # NEW v0.10 — pipelines (workflows of workflows)
 
-# Verify SHA-256 content hash on every cache load. Workflow atoms are
-# verified by GitHub Actions itself at uses-time (the `uses:` line pins
-# a SHA or tag); the binary's hash check applies only when the workflow
-# atom is read for the catalog browser / install command.
+# Default install behavior for the GitHub Actions trinity at setup
+# time. Q36d in the wizard sets this. Per-layer details below in
+# [action] / [workflow] / [pipeline].
+install = "skip"   # "pick-per-layer" | "recommended" | "skip"
+
+# Verify SHA-256 content hash on every cache load. action / workflow /
+# pipeline atoms are verified by GitHub Actions itself at uses-time
+# (the `uses:` line pins a SHA or tag); the binary's hash check
+# applies only when an atom is read for the catalog browser / install
+# command.
 verifyContentHash = true
 
 
@@ -165,12 +173,21 @@ gcUnusedDays = 90
 freshnessCheckDays = 30
 gcUnusedDays = 180
 
-# Workflow atoms (v0.9). Cache governs catalog browsing and the
-# `ai workflow install` stub generator. The actual workflow content
-# is fetched by GitHub Actions at uses-time from the upstream repo,
-# so this TTL is operationally about the local catalog freshness,
-# not about deploy-time correctness.
+# Action / workflow / pipeline atoms (v0.10 — was just `workflow` in
+# v0.9). Cache governs catalog browsing and the `ai {action,workflow,
+# pipeline} install` stub generator. The actual content is fetched
+# by GitHub Actions at uses-time from the upstream repo, so these
+# TTLs are operationally about local catalog freshness, not
+# deploy-time correctness.
+[atoms.cache.action]
+freshnessCheckDays = 7
+gcUnusedDays = 90
+
 [atoms.cache.workflow]
+freshnessCheckDays = 7
+gcUnusedDays = 90
+
+[atoms.cache.pipeline]
 freshnessCheckDays = 7
 gcUnusedDays = 90
 
@@ -200,26 +217,40 @@ enabled = []
 plannerPersonaFallback = true
 
 
-# ─── workflow atoms (v0.9, per spec §7.11) ───────────────────────────────────
-[workflow]
+# ─── action / workflow / pipeline atoms (v0.10, per spec §7.11) ──────────────
+# Three sibling sections — same shape per registry. Q36e/f/g populate
+# them. Mandatory `uses:` pinning is enforced under [atoms.gh] below.
 
-# `ai workflow install` writes .github/workflows/<name>.yml that
-# `uses:` the named atom. The `enabled` list is what the wizard
-# offered (Q36e) and what `ai update --migrate` will re-evaluate on
-# each upgrade. Empty list = no workflow atoms installed.
-install = "skip"   # "recommended" | "all" | "skip"
+[action]
+# Atoms installed from action-atoms.com (`steps[].uses:` consumers).
 enabled = []
 # Example after wizard:
 # enabled = [
-#   "astro-build",
-#   "cloudflare-pages-deploy",
 #   "secret-scan-patterns",
+#   "setup-cs-tofu",
+#   "cs-page-deployment",
 # ]
 
-# Require pinning every `uses: convergent-systems-co/workflow-atoms/...`
+[workflow]
+# `ai workflow install` writes .github/workflows/<name>.yml that
+# `uses:` the named atom. The `enabled` list is what the wizard
+# offered (Q36f) and what `ai update --migrate` will re-evaluate on
+# each upgrade.
+enabled = []
+# Example after wizard:
+# enabled = ["astro-build", "ci-go-workspace"]
+
+[pipeline]
+# Atoms installed from pipeline-atoms.com (top-level workflow
+# composers). Q36g populates this.
+enabled = []
+# Example: enabled = ["release-train"]
+
+# Require pinning every `uses: convergent-systems-co/<registry>/...`
 # to a specific version (tag or SHA), never `@main`. `ai doctor`
 # surfaces violations. Off-the-record fix is editing the file by hand,
-# but per spec §7.11.2 mandatory pinning is the immutability invariant.
+# but per spec §7.11.3 mandatory pinning is the immutability invariant.
+[atoms.gh]
 requirePinning = true
 
 
@@ -253,7 +284,7 @@ preferStableVersions = true
 # Version of governance/wizard/questions.yaml the user's answers.yaml was
 # generated against. `ai update --migrate` reads this to detect new questions
 # added since the last setup.
-lastSeenWizardVersion = "0.9"
+lastSeenWizardVersion = "0.10"
 
 
 # ─── sync ─────────────────────────────────────────────────────────────────────
