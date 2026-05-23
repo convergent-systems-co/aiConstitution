@@ -1,0 +1,22 @@
+name: Triage
+
+on:
+  issues:
+    types: [opened, edited, reopened]
+  issue_comment:
+    types: [created]
+  workflow_dispatch:
+    inputs:
+      issue_number: { required: true, type: number }
+
+permissions:
+  issues: write
+  contents: read
+
+jobs:
+  triage:
+    uses: convergent-systems-co/repo-standards/.github/workflows/triage.yml@v1
+    with:
+      agent_mode: copilot-then-rest
+      rubric-ref: v1
+      confidence-threshold: "0.6"

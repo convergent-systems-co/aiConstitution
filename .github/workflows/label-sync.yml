@@ -1,0 +1,15 @@
+name: Label sync
+
+on:
+  repository_dispatch:
+    types: [label-sync]
+
+permissions:
+  issues: write
+  contents: read
+
+jobs:
+  sync:
+    uses: convergent-systems-co/repo-standards/.github/workflows/label-sync.yml@v1
+    with:
+      labels-ref: ${{ github.event.client_payload.labels-ref || 'v1' }}

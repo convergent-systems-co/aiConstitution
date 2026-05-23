@@ -1,0 +1,68 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.22"
+      - run: go work sync
+      - name: Compute workspace lint targets
+        id: targets
+        shell: bash
+        run: |
+          set -euo pipefail
+          targets=""
+          while IFS= read -r dir; do
+            if (cd "$dir" && go list ./... 2>/dev/null | grep -q .); then
+              rel="${dir#"$GITHUB_WORKSPACE/"}"
+              targets+="./${rel}/... "
+            fi
+          done < <(go list -m -f '{{.Dir}}')
+          echo "args=${targets% }" >> "$GITHUB_OUTPUT"
+      - uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.12.2
+          args: ${{ steps.targets.outputs.args }}
+
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        go: ["1.22", "1.23"]
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version: ${{ matrix.go }}
+      - run: go work sync
+      - name: Test (workspace modules)
+        shell: bash
+        run: |
+          set -euo pipefail
+          while IFS= read -r dir; do
+            if (cd "$dir" && go list ./... 2>/dev/null | grep -q .); then
+              ( cd "$dir" && go test ./... -race -cover )
+            else
+              echo "skip $dir (no packages)"
+            fi
+          done < <(go list -m -f '{{.Dir}}')
+
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.22"
+      - run: make build
