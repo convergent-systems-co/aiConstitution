@@ -13,6 +13,8 @@ package atoms
 // Kind enumerates the atom kinds.
 type Kind string
 
+// Atom kind values. Each value corresponds to one URL template under
+// the appropriate Convergent Systems atom registry.
 const (
 	KindAgentic  Kind = "agentic"  // persona-atoms.com/agentic/<name>/<ver>/persona.md
 	KindReviewer Kind = "reviewer" // persona-atoms.com/reviewer/<name>/<ver>/reviewer.yaml

@@ -86,28 +86,65 @@ func ConfigDir() string {
 	return filepath.Join(cfg, "aiConstitution")
 }
 
-// AuditDir, MemoryDir, HooksDir, GovernanceDir, PlansDir, SpecsDir,
-// SkillsManifestDir, MetadataDir return paths under AIRoot().
-func AuditDir() string            { return filepath.Join(AIRoot(), "audit") }
-func MemoryDir() string           { return filepath.Join(AIRoot(), "memory") }
-func HooksDir() string            { return filepath.Join(AIRoot(), "hooks") }
-func GovernanceDir() string       { return filepath.Join(AIRoot(), "governance") }
-func PlansDir() string            { return filepath.Join(AIRoot(), "plans") }
-func SpecsDir() string            { return filepath.Join(AIRoot(), "specs") }
-func SkillsManifestDir() string   { return filepath.Join(AIRoot(), "skills") }
-func MetadataDir() string         { return filepath.Join(AIRoot(), "metadata") }
-func BinDir() string              { return filepath.Join(AIRoot(), "bin") }
+// AuditDir returns ~/.ai/audit/.
+func AuditDir() string { return filepath.Join(AIRoot(), "audit") }
 
-// Per-machine paths under ConfigDir().
-func SettingsTOML() string        { return filepath.Join(ConfigDir(), "settings.toml") }
-func ModeJSON() string            { return filepath.Join(ConfigDir(), "mode.json") }
-func StateJSON() string           { return filepath.Join(ConfigDir(), "state.json") }
-func PersonaDraftsDir() string    { return filepath.Join(ConfigDir(), "persona-drafts") }
-func ReviewerDraftsDir() string   { return filepath.Join(ConfigDir(), "reviewer-drafts") }
-func ProfileDraftsDir() string    { return filepath.Join(ConfigDir(), "profile-drafts") }
-func SkillDraftsDir() string      { return filepath.Join(ConfigDir(), "skill-drafts") }
-func PersonaCacheDir() string     { return filepath.Join(ConfigDir(), ".persona-cache") }
-func ProfileCacheDir() string     { return filepath.Join(ConfigDir(), ".profile-cache") }
-func SkillCacheDir() string       { return filepath.Join(ConfigDir(), ".skill-cache") }
-func BrandCacheDir() string       { return filepath.Join(ConfigDir(), ".brand-cache") }
-func CheckpointsDir() string      { return filepath.Join(ConfigDir(), "checkpoints") }
+// MemoryDir returns ~/.ai/memory/.
+func MemoryDir() string { return filepath.Join(AIRoot(), "memory") }
+
+// HooksDir returns ~/.ai/hooks/.
+func HooksDir() string { return filepath.Join(AIRoot(), "hooks") }
+
+// GovernanceDir returns ~/.ai/governance/.
+func GovernanceDir() string { return filepath.Join(AIRoot(), "governance") }
+
+// PlansDir returns ~/.ai/plans/.
+func PlansDir() string { return filepath.Join(AIRoot(), "plans") }
+
+// SpecsDir returns ~/.ai/specs/.
+func SpecsDir() string { return filepath.Join(AIRoot(), "specs") }
+
+// SkillsManifestDir returns ~/.ai/skills/ (manifest files, not skill content).
+func SkillsManifestDir() string { return filepath.Join(AIRoot(), "skills") }
+
+// MetadataDir returns ~/.ai/metadata/.
+func MetadataDir() string { return filepath.Join(AIRoot(), "metadata") }
+
+// BinDir returns ~/.ai/bin/ (helper scripts; not the `ai` binary itself).
+func BinDir() string { return filepath.Join(AIRoot(), "bin") }
+
+// SettingsTOML returns the canonical settings.toml path under ConfigDir().
+func SettingsTOML() string { return filepath.Join(ConfigDir(), "settings.toml") }
+
+// ModeJSON returns the per-session mode.json path under ConfigDir().
+func ModeJSON() string { return filepath.Join(ConfigDir(), "mode.json") }
+
+// StateJSON returns the consolidated state.json path under ConfigDir().
+func StateJSON() string { return filepath.Join(ConfigDir(), "state.json") }
+
+// PersonaDraftsDir returns the pre-publication agentic-persona drafts dir.
+func PersonaDraftsDir() string { return filepath.Join(ConfigDir(), "persona-drafts") }
+
+// ReviewerDraftsDir returns the pre-publication reviewer-persona drafts dir.
+func ReviewerDraftsDir() string { return filepath.Join(ConfigDir(), "reviewer-drafts") }
+
+// ProfileDraftsDir returns the pre-publication profile drafts dir.
+func ProfileDraftsDir() string { return filepath.Join(ConfigDir(), "profile-drafts") }
+
+// SkillDraftsDir returns the pre-publication skill drafts dir.
+func SkillDraftsDir() string { return filepath.Join(ConfigDir(), "skill-drafts") }
+
+// PersonaCacheDir returns the cached persona-atoms tree (content-addressed).
+func PersonaCacheDir() string { return filepath.Join(ConfigDir(), ".persona-cache") }
+
+// ProfileCacheDir returns the cached profile-atoms tree (content-addressed).
+func ProfileCacheDir() string { return filepath.Join(ConfigDir(), ".profile-cache") }
+
+// SkillCacheDir returns the cached skill-atoms tree (content-addressed).
+func SkillCacheDir() string { return filepath.Join(ConfigDir(), ".skill-cache") }
+
+// BrandCacheDir returns the cached brand-atoms tree.
+func BrandCacheDir() string { return filepath.Join(ConfigDir(), ".brand-cache") }
+
+// CheckpointsDir returns the per-project HANDOFF.md checkpoint dir.
+func CheckpointsDir() string { return filepath.Join(ConfigDir(), "checkpoints") }

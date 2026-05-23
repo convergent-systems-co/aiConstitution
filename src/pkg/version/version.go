@@ -21,14 +21,15 @@ const QuestionsVersion = "0.8"
 // config loader expects on read.
 const SettingsSchemaVersion = "0.2"
 
-// CanonicalRegistries are the four atom registry roots, as a tabular
-// constant. settings.toml [atoms] may override any of them; this is
-// the compiled-in default.
+// Registry is one of the four Convergent Systems atom registry roots.
 type Registry struct {
 	Name string
 	URL  string
 }
 
+// CanonicalRegistries are the four atom registry roots, as a tabular
+// constant. settings.toml [atoms] may override any of them; this is
+// the compiled-in default.
 var CanonicalRegistries = []Registry{
 	{"brand-atoms", "https://brand-atoms.com"},
 	{"persona-atoms", "https://persona-atoms.com"},

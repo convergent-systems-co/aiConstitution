@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 )
@@ -105,11 +106,13 @@ func (s *Set) Redact(input string) string {
 
 // Load parses a patterns.json file from disk and compiles every regex.
 func Load(path string) (*Set, error) {
-	f, err := os.Open(path)
+	// gosec G304: caller supplies the path; filepath.Clean is the
+	// conventional acknowledgement that this is intentional.
+	f, err := os.Open(filepath.Clean(path))
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	return ReadFrom(f)
 }
 

@@ -20,23 +20,27 @@ import "time"
 // plus the SPEC.md §6.6 focus-change addition.
 type Kind string
 
+// Interaction-log event kinds. The vocabulary is deliberately distinct
+// from Claude/Copilot internal log terms so audit lines stay greppable
+// independent of any one tool's idioms.
 const (
-	KindRequest             Kind = "request"
-	KindEmission            Kind = "emission"
-	KindInvocationAttempt   Kind = "invocation-attempt"
-	KindInvocationResult    Kind = "invocation-result"
-	KindTraceOpen           Kind = "trace-open"
-	KindTraceClose          Kind = "trace-close"
-	KindSignal              Kind = "signal"
-	KindSubagentEmission    Kind = "subagent-emission"
-	KindCompactionAttempt   Kind = "compaction-attempt"
-	KindFocusChange         Kind = "focus-change"
-	KindFocusMergeOverride  Kind = "focus-merge-override"
+	KindRequest            Kind = "request"
+	KindEmission           Kind = "emission"
+	KindInvocationAttempt  Kind = "invocation-attempt"
+	KindInvocationResult   Kind = "invocation-result"
+	KindTraceOpen          Kind = "trace-open"
+	KindTraceClose         Kind = "trace-close"
+	KindSignal             Kind = "signal"
+	KindSubagentEmission   Kind = "subagent-emission"
+	KindCompactionAttempt  Kind = "compaction-attempt"
+	KindFocusChange        Kind = "focus-change"
+	KindFocusMergeOverride Kind = "focus-merge-override"
 )
 
 // Actor enumerates the canonical actors.
 type Actor string
 
+// Canonical actor values for audit events.
 const (
 	ActorHuman     Actor = "human"
 	ActorAssistant Actor = "assistant"
