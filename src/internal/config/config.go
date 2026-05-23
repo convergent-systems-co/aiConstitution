@@ -11,6 +11,15 @@
 //  3. Compiled-in defaults.
 package config
 
+import (
+	"os"
+	"path/filepath"
+	"strconv"
+
+	"github.com/BurntSushi/toml"
+	"github.com/convergent-systems-co/aiConstitution/src/internal/paths"
+)
+
 // Settings is the in-memory representation of settings.toml.
 //
 // TBD: the full struct mirrors settings.toml.example at the repo
@@ -186,17 +195,61 @@ func Defaults() Settings {
 	}
 }
 
-// Load reads ~/.config/aiConstitution/settings.toml and returns the
-// parsed Settings, layered atop Defaults().
-//
-// TBD: actual TOML parsing + env-var overlay. Stub for v0.8.
+// Load reads ~/.config/aiConstitution/settings.toml, layers it atop
+// Defaults(), then applies environment-variable overrides.
 func Load() (Settings, error) {
-	return Defaults(), nil
+	s := Defaults()
+
+	settingsPath := paths.SettingsTOML()
+	data, err := os.ReadFile(settingsPath)
+	if err != nil && !os.IsNotExist(err) {
+		return s, err
+	}
+	if err == nil {
+		if _, err2 := toml.Decode(string(data), &s); err2 != nil {
+			return s, err2
+		}
+	}
+
+	applyEnvOverrides(&s)
+	return s, nil
 }
 
-// Save writes Settings to ~/.config/aiConstitution/settings.toml.
-//
-// TBD for v0.8.
-func Save(_ Settings) error {
-	return nil
+// Save writes s to ~/.config/aiConstitution/settings.toml atomically.
+func Save(s Settings) error {
+	dir := paths.ConfigDir()
+	if err := os.MkdirAll(dir, 0o750); err != nil {
+		return err
+	}
+	f, err := os.CreateTemp(dir, "settings-*.toml.tmp")
+	if err != nil {
+		return err
+	}
+	tmpName := f.Name()
+	defer func() { _ = os.Remove(tmpName) }()
+
+	enc := toml.NewEncoder(f)
+	if err := enc.Encode(s); err != nil {
+		_ = f.Close()
+		return err
+	}
+	if err := f.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmpName, filepath.Join(dir, "settings.toml"))
+}
+
+// applyEnvOverrides overlays AICONST_* environment variables onto s.
+func applyEnvOverrides(s *Settings) {
+	if v := os.Getenv("AICONST_REVIEW_CADENCE_DAYS"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			s.Review.CadenceDays = n
+		}
+	}
+	if v := os.Getenv("AICONST_AI_ROOT"); v != "" {
+		s.Paths.AIRoot = v
+	}
+	if v := os.Getenv("AICONST_CONFIG_DIR"); v != "" {
+		s.Paths.ConfigDir = v
+	}
 }
