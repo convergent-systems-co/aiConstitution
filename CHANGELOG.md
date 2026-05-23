@@ -12,6 +12,31 @@ binary version independently — the binary tracks `SemVer` over the
 
 ## [Unreleased]
 
+### Changed — refactor: single-binary distribution
+
+- **Hook library is now embedded into the `ai` binary** via `//go:embed`
+  (see `src/cmd/ai/embed/`). Repo-root `hooks/` and `bin/` directories
+  removed. The 15 hook files + wrapper templates + patterns.json
+  + command-wrappers.toml live at `src/cmd/ai/embed/{hooks,wrappers}/`.
+  Extracted onto disk at install time via `ai setup` or
+  `ai hooks install --all` / `ai hooks install command-wrappers`.
+- **`ai clone <url>`** subcommand replaces `bin/clone` shell script.
+  Identity-routing against `metadata/projects.json` is stubbed for
+  v0.8; the v0.8 implementation runs `git clone` and installs the
+  pre-commit secret hook into the clone.
+- **`ai audit rotate`** subcommand replaces `bin/audit-rotate.sh`.
+  Same behavior (gzip prior-month JSONLs); `--dry-run` flag honored.
+- **`ai hooks install`** is now the canonical surface for materializing
+  the embedded library: `--all`, `<name>`, or `command-wrappers`.
+  Idempotent; `--force` to overwrite.
+- **`bin/ai` PATH-shim removed.** A misconfigured PATH already yields
+  a clear "command not found"; the stub provided no signal beyond that.
+- **`.goreleaser.yaml` ldflags fixed.** Previously targeted
+  `main.version` (no such var); now stamps
+  `.../internal/buildinfo.{version,commit,date}` correctly.
+  `ai version` output:
+  `v0.8.0  (commit abc1234, built 2026-05-23T08:00:00Z)`.
+
 ### Added
 
 - `SPEC.md` v0.8 — authoritative implementation specification.

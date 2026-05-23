@@ -1,6 +1,15 @@
 package cmd
 
-import "github.com/spf13/cobra"
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"sort"
+
+	"github.com/convergent-systems-co/aiConstitution/src/cmd/ai/embed"
+
+	"github.com/spf13/cobra"
+)
 
 // newHooksCmd implements `ai hooks {list,evaluate,propose,share,install}`.
 // See SPEC.md §3.10 + §9.
@@ -20,8 +29,19 @@ See SPEC.md §3.10 + §9.`,
 		Use:   "list",
 		Short: "All installed hooks + wiring status",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			notice("hooks list")
-			return stub("hooks list", "§3.10")
+			names, err := embed.HookNames()
+			if err != nil {
+				return err
+			}
+			sort.Strings(names)
+			fmt.Println("Embedded hooks available for `ai hooks install`:")
+			for _, n := range names {
+				fmt.Println("  " + n)
+			}
+			fmt.Println()
+			fmt.Println("Wrappers available for `ai hooks install command-wrappers`:")
+			fmt.Println("  git, gh")
+			return nil
 		},
 	})
 
@@ -61,21 +81,145 @@ See SPEC.md §3.10 + §9.`,
 		},
 	})
 
-	// install
+	// install — extracts from the embedded FS to ~/.ai/hooks/ (hooks)
+	// or ~/.ai/bin/ (command-wrappers). Special target names:
+	//   --all                    → every embedded hook
+	//   command-wrappers         → both wrapper templates (git, gh)
+	//   <name.ext>               → that one embedded hook
 	var installRepo string
 	var installAll bool
+	var installAllHooks bool
+	var installForce bool
 	install := &cobra.Command{
-		Use:   "install <name>",
-		Short: "Install a hook into the wiring (idempotent)",
-		Args:  cobra.ExactArgs(1),
+		Use:   "install [<name>]",
+		Short: "Extract embedded hook(s) / wrappers to ~/.ai/ (idempotent)",
+		Long: `install materializes embedded assets onto disk.
+
+  ai hooks install --all                  extract every embedded hook
+                                          into ~/.ai/hooks/
+  ai hooks install command-wrappers       extract bin/git and bin/gh
+                                          into ~/.ai/bin/
+  ai hooks install <name>                 extract a single embedded
+                                          hook (e.g. secret-block.py)
+
+  --force        overwrite existing files
+  --repo=<path>  (with no positional) install a pre-commit hook into
+                 the specified repo's .git/hooks/ that defers to
+                 ~/.ai/hooks/secret-precommit.py
+
+Per SPEC.md §3.10 + §10.2.`,
+		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			notice("hooks install:", args[0], "repo:", installRepo, "all:", installAll)
-			return stub("hooks install", "§3.10 + §10.2")
+			target := ""
+			if len(args) == 1 {
+				target = args[0]
+			}
+			return runHooksInstall(installRepo, target, installAllHooks || installAll, installForce)
 		},
 	}
-	install.Flags().StringVar(&installRepo, "repo", "", "install pre-commit hook into a specific repo")
-	install.Flags().BoolVar(&installAll, "all-future-clones", false, "wire into bin/clone so every fresh clone gets the hook")
+	install.Flags().StringVar(&installRepo, "repo", "", "install a pre-commit shim into the specified repo")
+	install.Flags().BoolVar(&installAll, "all-future-clones", false, "(reserved; wires into `ai clone` per SPEC §10.2)")
+	install.Flags().BoolVar(&installAllHooks, "all", false, "extract every embedded hook to ~/.ai/hooks/")
+	install.Flags().BoolVar(&installForce, "force", false, "overwrite existing files")
 
 	c.AddCommand(propose, install)
 	return c
+}
+
+// runHooksInstall is the top-level dispatcher for the various
+// install modes. Extracted from newHooksCmd's RunE closure to keep
+// the cobra constructor under gocyclo's threshold.
+func runHooksInstall(repo, target string, all, force bool) error {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return err
+	}
+	aiRoot := os.Getenv("AI_ROOT")
+	if aiRoot == "" {
+		aiRoot = filepath.Join(home, ".ai")
+	}
+	hooksDir := filepath.Join(aiRoot, "hooks")
+	binDir := filepath.Join(aiRoot, "bin")
+
+	if repo != "" {
+		return installRepoPrecommit(repo, hooksDir)
+	}
+	if all {
+		return installAllHooks(hooksDir, force)
+	}
+	if target == "command-wrappers" {
+		return installWrappers(binDir, force)
+	}
+	if target != "" {
+		return installOneHook(target, hooksDir, force)
+	}
+	return fmt.Errorf("specify a hook name, --all, or `command-wrappers`. See `ai hooks install --help`")
+}
+
+func installAllHooks(hooksDir string, force bool) error {
+	written, err := embed.ExtractAllHooks(hooksDir, force)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("Extracted %d hook(s) to %s\n", len(written), hooksDir)
+	for _, p := range written {
+		fmt.Println("  " + p)
+	}
+	return nil
+}
+
+func installWrappers(binDir string, force bool) error {
+	written, err := embed.ExtractWrappers(binDir, force)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("Extracted %d wrapper(s) to %s\n", len(written), binDir)
+	for _, p := range written {
+		fmt.Println("  " + p)
+	}
+	if len(written) > 0 {
+		fmt.Println("\nNote: add", binDir, "early to your $PATH for wrapper interception to fire.")
+	}
+	return nil
+}
+
+func installOneHook(name, hooksDir string, force bool) error {
+	p, err := embed.ExtractHook(name, hooksDir, force)
+	if err != nil {
+		return err
+	}
+	fmt.Println("Extracted " + p)
+	return nil
+}
+
+// installRepoPrecommit writes <repo>/.git/hooks/pre-commit that defers
+// to the canonical ~/.ai/hooks/secret-precommit.py. Idempotent.
+func installRepoPrecommit(repoDir, hooksDir string) error {
+	gitDir := filepath.Join(repoDir, ".git")
+	if _, err := os.Stat(gitDir); err != nil {
+		return fmt.Errorf("%s is not a git repo (.git/ missing)", repoDir)
+	}
+	hookPath := filepath.Clean(filepath.Join(hooksDir, "secret-precommit.py"))
+	if _, err := os.Stat(hookPath); err != nil {
+		return fmt.Errorf("canonical %s missing — run `ai hooks install --all` first", hookPath)
+	}
+	dst := filepath.Clean(filepath.Join(gitDir, "hooks", "pre-commit"))
+	if _, err := os.Stat(dst); err == nil {
+		fmt.Println("pre-commit already present at", dst, "— leaving in place")
+		return nil
+	}
+	body := fmt.Sprintf(`#!/usr/bin/env bash
+# Installed by `+"`"+`ai hooks install --repo=%s`+"`"+` (SPEC.md §10.2).
+exec python3 %q "$@"
+`, repoDir, hookPath)
+	if err := os.MkdirAll(filepath.Dir(dst), 0o750); err != nil {
+		return err
+	}
+	// 0o755 is intentional: this IS a git pre-commit hook; git
+	// requires the executable bit to invoke it.
+	if err := os.WriteFile(dst, []byte(body), 0o755); err != nil { //nolint:gosec // G306: required executable
+		return err
+	}
+	fmt.Println("installed", dst)
+	return nil
 }
