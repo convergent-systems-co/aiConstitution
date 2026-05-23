@@ -1,5 +1,11 @@
 version: 2
 
+# Per SPEC.md §15: the single distribution unit is the `ai` binary.
+# Hooks, wrapper templates, and pattern sets are embedded into the
+# binary via //go:embed (see src/cmd/ai/embed/) and extracted onto
+# disk at install time via `ai hooks install --all` /
+# `ai hooks install command-wrappers`. No separate shell scripts ship.
+
 before:
   hooks:
     - go work sync
@@ -11,19 +17,27 @@ builds:
     binary: ai
     env: [CGO_ENABLED=0]
     flags: [-trimpath]
-    ldflags: [-s, -w, -X main.version={{.Version}}, -X main.commit={{.Commit}}]
+    # Stamp the version + commit into internal/buildinfo, the package
+    # that `ai version` reads from. Earlier draft targeted `main` —
+    # which has no `version` var — so the stamp silently did nothing.
+    ldflags:
+      - -s
+      - -w
+      - -X github.com/convergent-systems-co/aiConstitution/src/cmd/ai/internal/buildinfo.version=v{{.Version}}
+      - -X github.com/convergent-systems-co/aiConstitution/src/cmd/ai/internal/buildinfo.commit={{.Commit}}
+      - -X github.com/convergent-systems-co/aiConstitution/src/cmd/ai/internal/buildinfo.date={{.Date}}
     goos: [linux, darwin]
     goarch: [amd64, arm64]
 
 archives:
-  - format: tar.gz
+  - formats: [tar.gz]
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
 
 checksum:
   name_template: "checksums.txt"
 
 snapshot:
-  name_template: "{{ incpatch .Version }}-next"
+  version_template: "{{ incpatch .Version }}-next"
 
 changelog:
   use: github
