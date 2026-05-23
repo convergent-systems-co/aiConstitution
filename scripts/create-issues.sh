@@ -46,12 +46,12 @@ create_issue() {
     return
   fi
   sleep 0.8
-  local num
-  num=$(gh issue create --repo "$REPO" \
+  local url num
+  url=$(gh issue create --repo "$REPO" \
     --title "$title" \
     --body "$body" \
-    --label "$labels" \
-    --json number --jq '.number')
+    --label "$labels")
+  num="${url##*/}"
   jq --arg t "$title" --argjson n "$num" '. + {($t): $n}' "$MAP_FILE" > "${MAP_FILE}.tmp"
   mv "${MAP_FILE}.tmp" "$MAP_FILE"
   echo "  created #${num}: $title" >&2
