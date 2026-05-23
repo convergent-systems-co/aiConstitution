@@ -15,7 +15,7 @@
 #
 # Schema: governance/schemas/settings.schema.json (versioned with schemaVersion below)
 
-schemaVersion = "0.2"
+schemaVersion = "0.3"
 
 
 # ─── upstream contribution ────────────────────────────────────────────────────
@@ -123,16 +123,20 @@ terraform = "disabled"   # opt-in; many environments don't have terraform
 kubectl = "disabled"     # opt-in
 
 
-# ─── atoms registry (per spec §7.9 + §7.10) ──────────────────────────────────
+# ─── atoms registry (per spec §7.9 + §7.10 + §7.11) ──────────────────────────
 [atoms]
 
 # Where to resolve atoms. Override for private mirrors that serve the same API.
-personaRegistry = "https://persona-atoms.com"   # both /agentic/ and /panel/ resolve under this
-profileRegistry = "https://profile-atoms.com"
-skillRegistry   = "https://skill-atoms.com"     # NEW v0.6
-brandRegistry   = "https://brand-atoms.com"
+personaRegistry  = "https://persona-atoms.com"   # both /agentic/ and /reviewer/ resolve under this
+profileRegistry  = "https://profile-atoms.com"
+skillRegistry    = "https://skill-atoms.com"     # NEW v0.6
+brandRegistry    = "https://brand-atoms.com"
+workflowRegistry = "https://workflow-atoms.com"  # NEW v0.9 — GitHub Actions reusable + composite atoms
 
-# Verify SHA-256 content hash on every cache load.
+# Verify SHA-256 content hash on every cache load. Workflow atoms are
+# verified by GitHub Actions itself at uses-time (the `uses:` line pins
+# a SHA or tag); the binary's hash check applies only when the workflow
+# atom is read for the catalog browser / install command.
 verifyContentHash = true
 
 
@@ -161,6 +165,15 @@ gcUnusedDays = 90
 freshnessCheckDays = 30
 gcUnusedDays = 180
 
+# Workflow atoms (v0.9). Cache governs catalog browsing and the
+# `ai workflow install` stub generator. The actual workflow content
+# is fetched by GitHub Actions at uses-time from the upstream repo,
+# so this TTL is operationally about the local catalog freshness,
+# not about deploy-time correctness.
+[atoms.cache.workflow]
+freshnessCheckDays = 7
+gcUnusedDays = 90
+
 [atoms.cache]
 # Never GC a version that's actively referenced by any profile, skill manifest,
 # panel composition, or active mode.json — regardless of gcUnusedDays age.
@@ -172,6 +185,11 @@ gcRespectReferences = true
 
 # Plugins offered during wizard Q36b/c. Listed plugins are eligible for
 # `ai plugins enable`. The five candidates spec'd in §11.1 plus `superpowers`.
+
+# ─── workflow atoms (v0.9, per spec §7.11) ───────────────────────────────────
+# Note: this block lives BELOW [plugins] and ABOVE [drafts] in the
+# canonical settings.toml shape. Splitting the comment up here to keep
+# the auto-generated examples readable.
 enabled = []
 # Example after setup:
 # enabled = ["superpowers"]
@@ -180,6 +198,29 @@ enabled = []
 # When true, declining a plugin during setup activates the matching agentic
 # persona that provides degraded-but-functional guidance for the same workflow.
 plannerPersonaFallback = true
+
+
+# ─── workflow atoms (v0.9, per spec §7.11) ───────────────────────────────────
+[workflow]
+
+# `ai workflow install` writes .github/workflows/<name>.yml that
+# `uses:` the named atom. The `enabled` list is what the wizard
+# offered (Q36e) and what `ai update --migrate` will re-evaluate on
+# each upgrade. Empty list = no workflow atoms installed.
+install = "skip"   # "recommended" | "all" | "skip"
+enabled = []
+# Example after wizard:
+# enabled = [
+#   "astro-build",
+#   "cloudflare-pages-deploy",
+#   "secret-scan-patterns",
+# ]
+
+# Require pinning every `uses: convergent-systems-co/workflow-atoms/...`
+# to a specific version (tag or SHA), never `@main`. `ai doctor`
+# surfaces violations. Off-the-record fix is editing the file by hand,
+# but per spec §7.11.2 mandatory pinning is the immutability invariant.
+requirePinning = true
 
 
 [drafts]
@@ -212,7 +253,7 @@ preferStableVersions = true
 # Version of governance/wizard/questions.yaml the user's answers.yaml was
 # generated against. `ai update --migrate` reads this to detect new questions
 # added since the last setup.
-lastSeenWizardVersion = "0.2"
+lastSeenWizardVersion = "0.9"
 
 
 # ─── sync ─────────────────────────────────────────────────────────────────────
