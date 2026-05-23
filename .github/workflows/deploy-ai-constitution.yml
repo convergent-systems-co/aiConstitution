@@ -2,17 +2,16 @@ name: Deploy ai-constitution.convergent-systems.co
 
 # Cloudflare Pages direct-upload deploy of web/ai-constitution/.
 # Terraform creates the Pages PROJECT (see terraform/ai-constitution/);
-# this workflow uploads the built artifact via wrangler.
+# this workflow uploads the built artifact via the
+# cs-page-deployment composite action from action-atoms.
 #
-# TODO #6: this workflow is inline today.
-# Once `workflow-atoms.com/reusable/cloudflare-pages-deploy/` ships,
-# replace the body of this file with a `uses:` reference to that
-# reusable workflow. Same way persona/profile/skill atoms are consumed
-# from their respective `*-atoms.com` registries, GitHub Actions
-# workflows will be consumed from `workflow-atoms.com`.
-# See SPEC.md §7.11 (workflow atoms architecture) and §14.1 (six
-# Convergent Systems Astro sites including workflow-atoms.com).
-# Tracked by github.com/convergent-systems-co/aiConstitution/issues/6.
+# Canonical atom URL (SPEC.md §7.11):
+#   https://action-atoms.com/github/composite/cs-page-deployment@1.0.0
+#
+# The `uses:` form below is the GH-grammar equivalent. Per the spec's
+# canonical-identity-vs-consumption-form model (§7.11.1), the two
+# refer to the same artifact; the atoms.com URL is the human/CLI
+# form, the `uses:` form is what GHA actually resolves.
 
 on:
   push:
@@ -42,43 +41,30 @@ jobs:
       name: production
       url: https://ai-constitution.convergent-systems.co
     env:
-      # Required GitHub Actions secrets:
-      #   CLOUDFLARE_API_TOKEN  — Pages Edit scope
-      #   CLOUDFLARE_ACCOUNT_ID — Convergent Systems CF account id
+      # cs-page-deployment reads these from the env.
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-      # Pull dispatch input into env per
-      # https://github.blog/security/vulnerability-research/how-to-catch-github-actions-workflow-injections-before-attackers-do/
+      # Workflow-dispatch input pulled into env (injection-safe per
+      # https://github.blog/security/vulnerability-research/how-to-catch-github-actions-workflow-injections-before-attackers-do/).
       PREVIEW: ${{ github.event.inputs.preview }}
-    defaults:
-      run:
-        working-directory: web/ai-constitution
-
     steps:
       - uses: actions/checkout@v6
 
-      - uses: actions/setup-node@v6
-        with:
-          node-version: '22'
-          cache: 'npm'
-          cache-dependency-path: web/ai-constitution/package-lock.json
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Build site
-        run: npm run build
-
-      - name: Deploy to Cloudflare Pages
+      - name: Compute deploy branch label
+        id: branch
+        shell: bash
         run: |
-          # Production deploy unless workflow_dispatch.preview=true.
-          # Wrangler v4 takes --branch=main to mark a deploy as production;
-          # any other --branch produces a preview URL.
+          # cs-page-deployment takes `branch` as a single input.
+          # "main" → production; anything else → preview URL.
           if [ "$PREVIEW" = "true" ]; then
-            branch="preview-$(date -u +%Y%m%d-%H%M%S)"
+            echo "label=preview-$(date -u +%Y%m%d-%H%M%S)" >> "$GITHUB_OUTPUT"
           else
-            branch="main"
+            echo "label=main" >> "$GITHUB_OUTPUT"
           fi
-          npx wrangler@4 pages deploy dist \
-            --project-name=ai-constitution \
-            --branch="$branch"
+
+      - uses: convergent-systems-co/action-atoms/composite/cs-page-deployment@v1.0.0
+        with:
+          site-dir: web/ai-constitution
+          project-name: ai-constitution
+          branch: ${{ steps.branch.outputs.label }}
+          # node-version: '22'  # default; explicit only if overriding
