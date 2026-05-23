@@ -19,8 +19,9 @@ issue_number() {
   if [[ -n "$cached" ]]; then echo "$cached"; return; fi
   local found
   found=$(gh issue list --repo "$REPO" --search "\"$title\" in:title" \
-    --json number,title --jq \
-    --arg t "$title" '.[] | select(.title == $t) | .number' 2>/dev/null | head -1)
+    --json number,title 2>/dev/null \
+    | jq -r --arg t "$title" '.[] | select(.title == $t) | .number' \
+    | head -1) || true
   if [[ -n "$found" ]]; then
     jq --arg t "$title" --argjson n "$found" '. + {($t): $n}' "$MAP_FILE" > "${MAP_FILE}.tmp"
     mv "${MAP_FILE}.tmp" "$MAP_FILE"
@@ -64,7 +65,7 @@ add_sub_issue() {
   [[ "$parent" == "0" || "$child" == "0" ]] && return
   sleep 0.5
   gh api "repos/$REPO/issues/$parent/sub_issues" \
-    -X POST -f sub_issue_id="$child" --silent 2>/dev/null || true
+    -X POST -F sub_issue_id="$child" --silent 2>/dev/null || true
 }
 
 # ─── PASS 1: EPICS ──────────────────────────────────────────────────────────
@@ -150,7 +151,9 @@ declare -a FEATURE_DEFS=(
 declare -A FEATURE_NUMS
 
 for def in "${FEATURE_DEFS[@]}"; do
-  IFS='|' read -r title parent_key body <<< "$def"
+  title=$(echo "$def" | cut -d'|' -f1)
+  parent_key=$(echo "$def" | cut -d'|' -f2)
+  body=$(echo "$def" | cut -d'|' -f3-)
   parent_num="${EPIC_NUMS[$parent_key]}"
   num=$(create_issue "$title" "$body" "agile/feature,status/triage")
   FEATURE_NUMS["$title"]="$num"
@@ -247,7 +250,9 @@ declare -a STORY_DEFS=(
 declare -A STORY_NUMS
 
 for def in "${STORY_DEFS[@]}"; do
-  IFS='|' read -r title parent_feature body <<< "$def"
+  title=$(echo "$def" | cut -d'|' -f1)
+  parent_feature=$(echo "$def" | cut -d'|' -f2)
+  body=$(echo "$def" | cut -d'|' -f3-)
   parent_num="${FEATURE_NUMS[$parent_feature]:-}"
   num=$(create_issue "$title" "$body" "agile/story,status/triage")
   STORY_NUMS["$title"]="$num"
