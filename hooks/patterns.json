@@ -1,0 +1,167 @@
+{
+  "version": "1.0",
+  "_note": "Single canonical secret-pattern source. Consumed by secret-block.py (PreToolUse), secret-precommit.py (git pre-commit), the bin/ai pre-sync scan (src/pkg/patterns Go binding), and the redaction pass in `ai issue file`. Per SPEC.md §10.1 + §10.4. To extend locally without committing, drop additional entries into hooks/patterns.local.json (gitignored).",
+  "patterns": [
+    {
+      "id": "github-token",
+      "regex": "(ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{36,}",
+      "severity": "high",
+      "redaction": "[REDACTED:github-token]",
+      "description": "GitHub personal/OAuth/user-to-server/server-to-server/refresh token"
+    },
+    {
+      "id": "github-fine-grained-pat",
+      "regex": "github_pat_[A-Za-z0-9_]{60,}",
+      "severity": "high",
+      "redaction": "[REDACTED:github-fine-grained-pat]",
+      "description": "GitHub fine-grained personal access token"
+    },
+    {
+      "id": "aws-access-key",
+      "regex": "(?:AKIA|ASIA)[0-9A-Z]{16}",
+      "severity": "high",
+      "redaction": "[REDACTED:aws-access-key]",
+      "description": "AWS access key id (long-lived or session)"
+    },
+    {
+      "id": "google-api-key",
+      "regex": "AIza[0-9A-Za-z\\-_]{35}",
+      "severity": "high",
+      "redaction": "[REDACTED:google-api-key]",
+      "description": "Google Cloud API key"
+    },
+    {
+      "id": "slack-token",
+      "regex": "xox[abprs]-[0-9A-Za-z\\-]{10,}",
+      "severity": "high",
+      "redaction": "[REDACTED:slack-token]",
+      "description": "Slack bot / user / app / refresh / signing token"
+    },
+    {
+      "id": "stripe-live-secret",
+      "regex": "sk_live_[A-Za-z0-9]{20,}",
+      "severity": "high",
+      "redaction": "[REDACTED:stripe-live-key]",
+      "description": "Stripe live secret key"
+    },
+    {
+      "id": "stripe-restricted",
+      "regex": "rk_live_[A-Za-z0-9]{20,}",
+      "severity": "high",
+      "redaction": "[REDACTED:stripe-restricted-key]",
+      "description": "Stripe restricted key"
+    },
+    {
+      "id": "anthropic-api-key",
+      "regex": "sk-ant-[A-Za-z0-9\\-_]{20,}",
+      "severity": "high",
+      "redaction": "[REDACTED:anthropic-api-key]",
+      "description": "Anthropic API key"
+    },
+    {
+      "id": "openai-api-key",
+      "regex": "sk-(?:proj-)?[A-Za-z0-9_\\-]{30,}",
+      "severity": "high",
+      "redaction": "[REDACTED:openai-api-key]",
+      "description": "OpenAI API key (legacy or project-scoped)"
+    },
+    {
+      "id": "npm-token",
+      "regex": "npm_[A-Za-z0-9]{36}",
+      "severity": "high",
+      "redaction": "[REDACTED:npm-token]",
+      "description": "npm publish token"
+    },
+    {
+      "id": "huggingface-token",
+      "regex": "hf_[A-Za-z0-9]{30,}",
+      "severity": "high",
+      "redaction": "[REDACTED:huggingface-token]",
+      "description": "Hugging Face access token"
+    },
+    {
+      "id": "pem-private-key-marker",
+      "regex": "-----BEGIN (?:RSA |EC |DSA |OPENSSH |ENCRYPTED |PGP )?PRIVATE KEY-----",
+      "severity": "high",
+      "redaction": "[REDACTED:private-key-marker]",
+      "description": "PEM private-key header"
+    },
+    {
+      "id": "ssh-private-key-marker",
+      "regex": "-----BEGIN OPENSSH PRIVATE KEY-----",
+      "severity": "high",
+      "redaction": "[REDACTED:ssh-private-key-marker]",
+      "description": "OpenSSH private-key header"
+    },
+    {
+      "id": "jwt-token",
+      "regex": "eyJ[A-Za-z0-9_\\-]{10,}\\.[A-Za-z0-9_\\-]{10,}\\.[A-Za-z0-9_\\-]{10,}",
+      "severity": "medium",
+      "redaction": "[REDACTED:jwt]",
+      "description": "JSON Web Token (three base64 segments). Medium severity to limit false positives on long encoded values."
+    },
+    {
+      "id": "db-url-credentialed",
+      "regex": "(?:postgres(?:ql)?|mysql|mongodb(?:\\+srv)?|redis|amqp)://[^:\\s]+:[^@\\s]+@",
+      "severity": "high",
+      "redaction": "[REDACTED:db-url-with-credentials]",
+      "description": "Database connection URL with embedded credentials"
+    },
+    {
+      "id": "https-credentialed",
+      "regex": "https?://[^:\\s/@]+:[^@\\s]+@[A-Za-z0-9.\\-]+",
+      "severity": "high",
+      "redaction": "[REDACTED:url-with-credentials]",
+      "description": "URL with embedded credentials (e.g., token-trick URL — see Common.md §4.8)"
+    },
+    {
+      "id": "azure-storage-sas",
+      "regex": "(?:sig|signature)=[A-Za-z0-9%]{40,}",
+      "severity": "medium",
+      "redaction": "[REDACTED:azure-sas-signature]",
+      "description": "Azure Storage SAS signature segment"
+    },
+    {
+      "id": "google-oauth-refresh",
+      "regex": "1//0[A-Za-z0-9_\\-]{40,}",
+      "severity": "high",
+      "redaction": "[REDACTED:google-oauth-refresh]",
+      "description": "Google OAuth refresh token"
+    },
+    {
+      "id": "discord-bot-token",
+      "regex": "[MNO][A-Za-z0-9]{23}\\.[A-Za-z0-9_\\-]{6}\\.[A-Za-z0-9_\\-]{27,}",
+      "severity": "high",
+      "redaction": "[REDACTED:discord-bot-token]",
+      "description": "Discord bot token"
+    },
+    {
+      "id": "twilio-account-sid",
+      "regex": "AC[a-f0-9]{32}",
+      "severity": "medium",
+      "redaction": "[REDACTED:twilio-account-sid]",
+      "description": "Twilio Account SID (low-risk by itself; pair with auth token to weaponize)"
+    },
+    {
+      "id": "sendgrid-api-key",
+      "regex": "SG\\.[A-Za-z0-9_\\-]{22}\\.[A-Za-z0-9_\\-]{43}",
+      "severity": "high",
+      "redaction": "[REDACTED:sendgrid-api-key]",
+      "description": "SendGrid API key"
+    },
+    {
+      "id": "linear-api-key",
+      "regex": "lin_api_[A-Za-z0-9]{40}",
+      "severity": "high",
+      "redaction": "[REDACTED:linear-api-key]",
+      "description": "Linear API key"
+    },
+    {
+      "id": "asana-pat",
+      "regex": "[12]/[0-9]+:[A-Za-z0-9]{32}",
+      "severity": "high",
+      "redaction": "[REDACTED:asana-pat]",
+      "description": "Asana personal access token"
+    }
+  ]
+}
