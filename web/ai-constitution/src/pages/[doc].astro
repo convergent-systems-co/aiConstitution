@@ -1,0 +1,99 @@
+---
+import { getCollection, render } from 'astro:content';
+import Base from '../layouts/Base.astro';
+
+export async function getStaticPaths() {
+  const docs = await getCollection('docs');
+  return docs.map((doc) => ({
+    // SPEC.md → /spec, GOALS.md → /goals, etc. (lowercase slug)
+    params: { doc: doc.id.toLowerCase() },
+    props: { doc },
+  }));
+}
+
+const { doc } = Astro.props;
+const { Content, headings } = await render(doc);
+
+// Title from the first H1 if available, else the file id.
+const title = headings.find((h) => h.depth === 1)?.text ?? doc.id;
+
+// Sibling docs for the in-page table-of-contents-style nav.
+const all = await getCollection('docs');
+const others = all
+  .filter((d) => d.id !== doc.id)
+  .sort((a, b) => a.id.localeCompare(b.id));
+---
+<Base title={title}>
+  <section class="cs-prose">
+    <p class="cs-section-label">{doc.id} · canonical source</p>
+    <article class="md-rendered">
+      <Content />
+    </article>
+  </section>
+
+  <section style="margin-block-start: var(--space-16); padding-block-start: var(--space-6); border-top: 1px solid var(--border);">
+    <p class="cs-section-label">Companion documents</p>
+    <ul style="list-style: none; padding: 0; display: flex; flex-wrap: wrap; gap: var(--space-4); margin-block-start: var(--space-4);">
+      {others.map((d) => (
+        <li><a href={`/${d.id.toLowerCase()}`}><code>{d.id}</code></a></li>
+      ))}
+    </ul>
+  </section>
+</Base>
+
+<style is:global>
+  /* Make rendered markdown legible inside the cs-prose container. */
+  .md-rendered { max-width: 56rem; }
+  .md-rendered h1 { font-size: var(--size-h1); margin-block-start: var(--space-8); }
+  .md-rendered h2 {
+    font-size: var(--size-h2);
+    margin-block-start: var(--space-16);
+    padding-block-start: var(--space-6);
+    border-top: 1px solid var(--border);
+  }
+  .md-rendered h3 { font-size: var(--size-h3); margin-block-start: var(--space-8); }
+  .md-rendered h4 { font-size: 1.1rem; margin-block-start: var(--space-6); }
+  .md-rendered hr {
+    border: 0;
+    border-top: 1px solid var(--border);
+    margin-block: var(--space-12);
+  }
+  .md-rendered blockquote {
+    border-left: 3px solid var(--color-frost-cyan);
+    padding-inline-start: var(--space-4);
+    margin-inline-start: 0;
+    color: var(--text-muted);
+  }
+  .md-rendered table {
+    border-collapse: collapse;
+    margin-block: var(--space-4);
+    font-size: 0.92rem;
+  }
+  .md-rendered th, .md-rendered td {
+    border: 1px solid var(--border);
+    padding: var(--space-2) var(--space-3);
+    text-align: left;
+    vertical-align: top;
+  }
+  .md-rendered th {
+    background: color-mix(in srgb, var(--canvas) 80%, var(--text) 20%);
+    font-weight: var(--weight-heading);
+  }
+  .md-rendered ul, .md-rendered ol {
+    padding-inline-start: var(--space-6);
+  }
+  .md-rendered li { margin-block: var(--space-1); }
+  .md-rendered :is(h1, h2, h3, h4):target {
+    /* Anchor-target highlight, accessible at low contrast. */
+    scroll-margin-block-start: var(--space-12);
+    background: color-mix(in srgb, var(--color-solar-gold) 18%, transparent);
+    padding-inline: var(--space-2);
+    border-radius: var(--radius-sm);
+  }
+  /* Mermaid blocks aren't rendered here (would require adding
+     rehype-mermaid); fall back to a styled <pre> so the source is
+     still legible. */
+  .md-rendered pre.astro-code {
+    background: color-mix(in srgb, var(--canvas) 80%, var(--text) 20%);
+  }
+</style>
