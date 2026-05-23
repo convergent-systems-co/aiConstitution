@@ -201,7 +201,7 @@ func Load() (Settings, error) {
 	s := Defaults()
 
 	settingsPath := paths.SettingsTOML()
-	data, err := os.ReadFile(settingsPath)
+	data, err := os.ReadFile(settingsPath) //nolint:gosec // G304: path is derived from user config dir, not user input
 	if err != nil && !os.IsNotExist(err) {
 		return s, err
 	}

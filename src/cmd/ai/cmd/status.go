@@ -26,19 +26,20 @@ func newStatusCmd() *cobra.Command {
 See SPEC.md §3.2 + §3.3.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			root := paths.AIRoot()
-			fmt.Fprintf(cmd.OutOrStdout(), "AI Root: %s\n\n", root)
+			out := cmd.OutOrStdout()
+			_, _ = fmt.Fprintf(out, "AI Root: %s\n\n", root)
 
-			fmt.Fprintln(cmd.OutOrStdout(), "Constitution files:")
+			_, _ = fmt.Fprintln(out, "Constitution files:")
 			status := constitution.FileStatus(root)
 			for _, name := range constitution.FileNames {
 				mark := "present"
 				if !status[name] {
 					mark = "MISSING"
 				}
-				fmt.Fprintf(cmd.OutOrStdout(), "  %-30s %s\n", name, mark)
+				_, _ = fmt.Fprintf(out, "  %-30s %s\n", name, mark)
 			}
 			if status["Constitution.local.md"] {
-				fmt.Fprintf(cmd.OutOrStdout(), "  %-30s %s\n", "Constitution.local.md", "present (local override)")
+				_, _ = fmt.Fprintf(out, "  %-30s %s\n", "Constitution.local.md", "present (local override)")
 			}
 			return nil
 		},

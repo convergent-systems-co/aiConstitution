@@ -68,6 +68,6 @@ func runSetupNonInteractive(cmd *cobra.Command) error {
 		return fmt.Errorf("setup: save settings: %w", err)
 	}
 
-	fmt.Fprintln(cmd.OutOrStdout(), "Setup complete. Run 'ai status' to verify.")
+	_, _ = fmt.Fprintln(cmd.OutOrStdout(), "Setup complete. Run 'ai status' to verify.")
 	return nil
 }

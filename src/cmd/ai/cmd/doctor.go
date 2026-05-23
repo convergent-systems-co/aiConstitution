@@ -28,6 +28,7 @@ See SPEC.md §3.3 for the full 10-point check list (in progress).`,
 			_ = resetHead
 			root := paths.AIRoot()
 			status := constitution.FileStatus(root)
+			out := cmd.OutOrStdout()
 
 			allOK := true
 			for _, name := range constitution.FileNames {
@@ -37,15 +38,15 @@ See SPEC.md §3.3 for the full 10-point check list (in progress).`,
 					mark = "✗"
 					allOK = false
 				}
-				fmt.Fprintf(cmd.OutOrStdout(), "  [%s] %s\n", mark, name)
+				_, _ = fmt.Fprintf(out, "  [%s] %s\n", mark, name)
 			}
-			if localPresent := status["Constitution.local.md"]; localPresent {
-				fmt.Fprintf(cmd.OutOrStdout(), "  [✓] Constitution.local.md (local override)\n")
+			if status["Constitution.local.md"] {
+				_, _ = fmt.Fprintf(out, "  [✓] Constitution.local.md (local override)\n")
 			}
 			if !allOK {
 				return fmt.Errorf("doctor: missing required constitution files in %s", root)
 			}
-			fmt.Fprintln(cmd.OutOrStdout(), "Constitution files: OK")
+			_, _ = fmt.Fprintln(out, "Constitution files: OK")
 			return nil
 		},
 	}

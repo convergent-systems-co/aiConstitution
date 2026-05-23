@@ -56,7 +56,7 @@ func Load(root string) (Files, error) {
 	}
 
 	for _, m := range mapping {
-		data, err := os.ReadFile(filepath.Join(root, m.name))
+		data, err := os.ReadFile(filepath.Join(root, m.name)) //nolint:gosec // G304: m.name is a hardcoded constant from FileNames, not user input
 		if err != nil {
 			return Files{}, fmt.Errorf("constitution: required file %q missing from %q: %w", m.name, root, err)
 		}
