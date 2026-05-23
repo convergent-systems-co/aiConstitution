@@ -12,6 +12,33 @@ binary version independently — the binary tracks `SemVer` over the
 
 ## [Unreleased]
 
+### Spec — v0.10: GitHub Actions trinity
+
+- `workflow-atoms.com` (introduced v0.9) splits into three sibling
+  registries (`action-atoms.com`, `workflow-atoms.com`,
+  `pipeline-atoms.com`) matching how GitHub layers actions / workflows
+  / pipelines. Seven atom registries total; eight Convergent Systems
+  Astro sites (SPEC §14.1).
+- **Canonical-identity vs consumption-form** (SPEC §7.11.1): atoms.com
+  URLs are the canonical identity humans/CLI/docs use; GHA's `uses:`
+  accepts only `owner/repo@ref`; the CLI translates atoms.com URLs
+  to the GH-grammar form at file-write time. Each atom version
+  corresponds to exactly one git tag on the backing repo;
+  `ai doctor` surfaces drift.
+- New CLI verbs: `ai action` and `ai pipeline` (same shape as
+  `ai workflow`). All three accept the canonical atoms.com URL form
+  as the install argument.
+- Wizard adds Q36d/e/f/g in Phase 8 (one per layer plus the
+  install-mode prompt).
+- `settings.toml` v0.4: adds `actionRegistry`, `pipelineRegistry`,
+  `[action]`, `[pipeline]`, `[atoms.cache.action]`,
+  `[atoms.cache.pipeline]`; the v0.9 `[workflow] install` moves to
+  `[atoms] install` (cross-layer setting).
+- The v0.9 `atom-action` data-fetcher idea is dropped — it
+  conflated runtime data-atom fetching (still useful, but a separate
+  concern) with workflow-atom consumption (which can't be
+  runtime-fetched because GHA parses YAML at workflow-init time).
+
 ### Changed — refactor: single-binary distribution
 
 - **Hook library is now embedded into the `ai` binary** via `//go:embed`

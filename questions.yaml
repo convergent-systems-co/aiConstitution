@@ -26,7 +26,7 @@
 #       persists_to:         which canonical file the answer shapes
 #       persists_to_section: file-relative section reference
 
-version: 0.9
+version: "0.10"
 
 phases:
 
@@ -845,52 +845,99 @@ phases:
         persists_to_section: "[plugins] enabled"
 
       - qid: Q36d
-        prompt: "Install workflow atoms from workflow-atoms.com now?"
+        prompt: "Install GitHub Actions atoms from the action/workflow/pipeline registries now?"
         framing: >-
-          Workflow atoms are reusable GitHub Actions workflows + composite
-          actions (the 5th atom registry, new in v0.9 — see SPEC §7.11).
-          Each repo's `.github/workflows/*.yml` files prefer a one-line
-          `uses: convergent-systems-co/workflow-atoms/...@<version>` over
-          inline YAML, the same way profiles consume persona atoms.
-          You can install any time later with `ai workflow install <name>`.
-        time: "~20s"
+          The v0.10 spec splits GitHub Actions atoms across THREE
+          sibling registries (per SPEC §7.11):
+          action-atoms.com (one step's worth — composite/JS/Docker),
+          workflow-atoms.com (one job's worth — reusable workflows),
+          pipeline-atoms.com (aggregates of workflows). Each repo's
+          .github/workflows/*.yml files prefer one-line `uses:`
+          references over inline YAML. You can install any time later
+          via `ai {action,workflow,pipeline} install <name>`.
+        time: "~25s"
         options:
-          - { label: "Yes — pick from the recommended set",                 value: "recommended" }
-          - { label: "Yes — show full catalog (multi-select)",              value: "all" }
-          - { label: "Skip — install later with `ai workflow install`",     value: "skip" }
+          - { label: "Yes — pick from each layer (Q36e/f/g)",                value: "pick-per-layer" }
+          - { label: "Yes — recommended starter set across all three",       value: "recommended" }
+          - { label: "Skip — install later",                                  value: "skip" }
         allow_free_text: false
         allow_chat: true
         allow_defer: true
         persists_to: ~/.config/aiConstitution/settings.toml
-        persists_to_section: "[workflow] install"
+        persists_to_section: "[atoms] install"
 
       - qid: Q36e
-        prompt: "Which workflow atoms?"
+        prompt: "Which **action** atoms? (one step's worth — composite/JS/Docker)"
         framing: >-
-          Multi-select. The recommended starter set covers the common
-          repo-level CI/CD concerns: Astro build, Cloudflare Pages
-          deploy, goreleaser tag-release, secret-scan with patterns.json,
-          Go workspace CI. Declining any individual atom is fine — they
-          remain installable later via `ai workflow install <name>`.
-          Each atom is pinned to its current release version at install
-          time; bumps via `ai workflow upgrade` are explicit.
-        time: "~45s"
-        applies_when: "Q36d in [recommended, all]"
+          Multi-select against action-atoms.com. Actions are leaves —
+          they cannot compose other atoms; they're a single step
+          that goes inside a job. Each atom pinned to its current
+          release at install time; bumps via `ai action upgrade`.
+        time: "~30s"
+        applies_when: "Q36d in [pick-per-layer, recommended]"
         options:
-          - { label: "astro-build (reusable; build + cache deps for an Astro site)",        value: "astro-build" }
-          - { label: "cloudflare-pages-deploy (reusable; wrangler pages deploy)",            value: "cloudflare-pages-deploy" }
-          - { label: "goreleaser-tag (reusable; tag-triggered release pipeline)",            value: "goreleaser-tag" }
-          - { label: "secret-scan-patterns (reusable; patterns.json diff scan)",             value: "secret-scan-patterns" }
-          - { label: "ci-go-workspace (reusable; build/lint/test across go.work modules)",   value: "ci-go-workspace" }
+          - { label: "secret-scan-patterns (composite; patterns.json diff scan)",            value: "secret-scan-patterns" }
           - { label: "setup-cs-tofu (composite; loads R2 + CF creds from 1Password)",         value: "setup-cs-tofu" }
           - { label: "redact-and-redact (composite; runs patterns.json redact pass)",         value: "redact-and-redact" }
-          - { label: "gh-issue-from-finding (reusable; files a `finding` issue from a log)",  value: "gh-issue-from-finding" }
-          - { label: "Pick later — none of these now",                                        value: "none" }
+          - { label: "cs-page-deployment (composite; wrangler pages deploy)",                  value: "cs-page-deployment" }
+          - { label: "Pick later — none of these now",                                         value: "none" }
+        allow_free_text: false
+        allow_chat: true
+        allow_defer: true
+        persists_to: ~/.config/aiConstitution/settings.toml
+        persists_to_section: "[action] enabled"
+
+      - qid: Q36f
+        prompt: "Which **workflow** atoms? (one job's worth — reusable workflows)"
+        framing: >-
+          Multi-select against workflow-atoms.com. Workflows compose
+          actions and are callable via `jobs.<id>.uses:` from a caller
+          workflow. Each atom pinned to its current release at install
+          time; bumps via `ai workflow upgrade`.
+        time: "~30s"
+        applies_when: "Q36d in [pick-per-layer, recommended]"
+        options:
+          - { label: "astro-build (reusable; build + cache deps for an Astro site)",          value: "astro-build" }
+          - { label: "ci-go-workspace (reusable; build/lint/test across go.work modules)",    value: "ci-go-workspace" }
+          - { label: "release-goreleaser (reusable; tag-triggered release pipeline)",          value: "release-goreleaser" }
+          - { label: "gh-issue-from-finding (reusable; files a `finding` issue from a log)",   value: "gh-issue-from-finding" }
+          - { label: "Pick later — none of these now",                                         value: "none" }
         allow_free_text: false
         allow_chat: true
         allow_defer: true
         persists_to: ~/.config/aiConstitution/settings.toml
         persists_to_section: "[workflow] enabled"
+
+      - qid: Q36g
+        prompt: "Which **pipeline** atoms? (aggregates of workflows)"
+        framing: >-
+          Multi-select against pipeline-atoms.com. Pipelines are
+          top-level workflows that compose multiple reusable workflows
+          via `jobs.<id>.uses:`. Each atom pinned at install; bumps via
+          `ai pipeline upgrade`.
+        time: "~30s"
+        applies_when: "Q36d in [pick-per-layer, recommended]"
+        options:
+          - { label: "release-train (pipeline; ci → lint → test → tag → release)",            value: "release-train" }
+          - { label: "web-deploy (pipeline; build + secret-scan + cs-page-deployment)",       value: "web-deploy" }
+          - { label: "Pick later — none of these now",                                         value: "none" }
+        allow_free_text: false
+        allow_chat: true
+        allow_defer: true
+        persists_to: ~/.config/aiConstitution/settings.toml
+        persists_to_section: "[pipeline] enabled"
+
+      # Repurposing notice (2026-05-23): Q36d/Q36e were introduced in
+      # v0.9 for the single workflow-atoms.com registry. v0.10 splits
+      # that into three (action/workflow/pipeline), so Q36d/Q36e are
+      # repurposed (broader Q36d; action-specific Q36e), and Q36f/Q36g
+      # are new. The qid-contract at the end of this file says retired
+      # qids stay reserved — but v0.9 shipped 2026-05-23 with zero
+      # answered Q36d/Q36e in the wild, so the repurposing risk is nil.
+      # `ai update --migrate` to v0.10 carries the old answer keys
+      # forward into the new schema: a v0.9 "Q36e = cloudflare-pages-deploy"
+      # becomes a v0.10 "Q36e (action) = cs-page-deployment" (renamed
+      # and re-classified as composite-action).
 
       - qid: Q37
         prompt: "Default skills to install?"
