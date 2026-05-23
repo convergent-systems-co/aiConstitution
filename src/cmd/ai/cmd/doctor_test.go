@@ -47,7 +47,10 @@ func TestDoctorReportsMissingFile(t *testing.T) {
 	root.SetOut(buf)
 	root.SetErr(buf)
 	root.SetArgs([]string{"doctor"})
-	root.Execute() //nolint:errcheck
+	err := root.Execute()
+	if err == nil {
+		t.Error("doctor should return error when required files are missing")
+	}
 	if !bytes.Contains(buf.Bytes(), []byte("Writing.md")) {
 		t.Errorf("expected 'Writing.md' in output, got:\n%s", buf)
 	}

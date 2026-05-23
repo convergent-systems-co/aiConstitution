@@ -51,16 +51,17 @@ func runSetupNonInteractive(cmd *cobra.Command) error {
 		return fmt.Errorf("setup: load question taxonomy: %w", err)
 	}
 
-	// No seeds: use all defaults.
-	answers, err := wizard.RunNonInteractive(tax, nil)
-	if err != nil {
+	// No seeds: use all defaults. Answers are collected but not yet persisted
+	// to settings fields (future work); the call validates required question
+	// defaults before saving.
+	if _, err := wizard.RunNonInteractive(tax, nil); err != nil {
 		return fmt.Errorf("setup: non-interactive wizard: %w", err)
 	}
 
 	s := config.Defaults()
-	// Apply any wizard answers that map to settings fields.
-	if v, ok := answers["wizard_version"]; ok {
-		s.Wizard.LastSeenWizardVersion = v
+	// Use the taxonomy version to record which wizard schema was run.
+	if tax.Version != "" {
+		s.Wizard.LastSeenWizardVersion = tax.Version
 	}
 
 	if err := config.Save(s); err != nil {

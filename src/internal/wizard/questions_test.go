@@ -42,6 +42,36 @@ func TestParseTaxonomyParsesQuestions(t *testing.T) {
 	}
 }
 
+const phasedTaxonomy = `
+version: "0.3"
+phases:
+  - id: identity
+    questions:
+      - qid: user_name
+        category: identity
+        type: text
+        prompt: "What is your full name?"
+        required: true
+      - qid: has_org
+        category: identity
+        type: confirm
+        prompt: "Do you work within an organization?"
+        required: false
+`
+
+func TestParseTaxonomyHandlesPhasedFormat(t *testing.T) {
+	tax, err := wizard.ParseTaxonomy([]byte(phasedTaxonomy))
+	if err != nil {
+		t.Fatalf("ParseTaxonomy() error = %v", err)
+	}
+	if len(tax.Questions) != 2 {
+		t.Errorf("len(Questions) = %d, want 2 (flattened from phases)", len(tax.Questions))
+	}
+	if tax.Questions[0].ID != "user_name" {
+		t.Errorf("Questions[0].ID = %q, want %q", tax.Questions[0].ID, "user_name")
+	}
+}
+
 func TestActiveQuestionsSkipsUnsatisfiedDependency(t *testing.T) {
 	tax, _ := wizard.ParseTaxonomy([]byte(sampleTaxonomy))
 	answers := map[string]string{
