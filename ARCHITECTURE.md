@@ -83,37 +83,39 @@ for the full table and rationale.
 
 ```
 .
-├── src/                    Go source — all of it
-│   ├── cmd/ai/             ai CLI entry point (single binary)
-│   ├── internal/           internal packages
-│   │   ├── config/         settings.toml load/save (TBD)
-│   │   ├── paths/          ~/.ai vs ~/.config/aiConstitution (TBD)
-│   │   ├── audit/          JSONL interaction log writer (TBD)
-│   │   ├── state/          state.json + mode.json (TBD)
-│   │   ├── hooks/          hook registration helpers (TBD)
-│   │   └── atoms/          atom resolver (TBD; *-atoms.com stubs)
-│   ├── pkg/                public packages
-│   │   ├── patterns/       patterns.json matcher
-│   │   └── version/        build-time version (ldflags)
-│   └── plugins/            Go-loadable plugins (future)
-├── hooks/                  Python hook library (stdlib-only)
-│   ├── patterns.json       canonical secret pattern set
-│   ├── audit.py            interaction logger
-│   ├── secret-block.py     PreToolUse secret denier
-│   ├── secret-precommit.py git pre-commit secret scanner
-│   ├── branch-guard.py     protected-branch enforcer
-│   ├── worktree-guard.py   §U17 placement enforcer
-│   ├── no-verify-strip.py  wrapper preHook (strips --no-verify)
-│   ├── destructive-*.py    gh / terraform / kubectl destructive guards
-│   ├── audit-command.py    wrapper postHook (records each invocation)
-│   ├── checkpoint-tick.py  30-min background HANDOFF.md tick
-│   └── command-wrappers.toml  ~/.ai/bin/<cmd> wrapper config
-├── bin/                    helper scripts (NO ai binary; ai lives on PATH)
-│   ├── clone               identity-routing wrapper for git clone
-│   ├── audit-rotate.sh     monthly JSONL rotation
-│   ├── git.template        ~/.ai/bin/git wrapper template
-│   └── gh.template         ~/.ai/bin/gh  wrapper template
-├── governance/             repo-shipped governance content
+├── src/                            Go source — all of it
+│   ├── cmd/ai/                     ai CLI entry point (single binary)
+│   │   ├── cmd/                    cobra subcommands (one per SPEC §3 verb)
+│   │   ├── embed/                  embedded assets bundled into the binary
+│   │   │   ├── embed.go            //go:embed directives + Extract* helpers
+│   │   │   ├── hooks/              Python hook source — extracted to ~/.ai/hooks/
+│   │   │   │   ├── patterns.json   canonical secret pattern set
+│   │   │   │   ├── audit.py        interaction logger
+│   │   │   │   ├── secret-block.py PreToolUse secret denier
+│   │   │   │   ├── secret-precommit.py  git pre-commit secret scanner
+│   │   │   │   ├── branch-guard.py protected-branch enforcer
+│   │   │   │   ├── worktree-guard.py    §U17 placement enforcer
+│   │   │   │   ├── no-verify-strip.py   wrapper preHook
+│   │   │   │   ├── destructive-*.py     gh / terraform / kubectl guards
+│   │   │   │   ├── audit-command.py     wrapper postHook
+│   │   │   │   ├── checkpoint-tick.py   30-min HANDOFF.md tick
+│   │   │   │   └── command-wrappers.toml   wrapper config
+│   │   │   └── wrappers/           extracted to ~/.ai/bin/
+│   │   │       ├── git             ~/.ai/bin/git wrapper
+│   │   │       └── gh              ~/.ai/bin/gh  wrapper
+│   │   └── internal/buildinfo/     ldflags-stamped version metadata
+│   ├── internal/                   workspace-internal packages
+│   │   ├── config/                 settings.toml load/save (TBD)
+│   │   ├── paths/                  ~/.ai vs ~/.config/aiConstitution
+│   │   ├── audit/                  JSONL interaction log writer (TBD)
+│   │   ├── state/                  state.json + mode.json (TBD)
+│   │   ├── hooks/                  hook registration helpers (TBD)
+│   │   └── atoms/                  atom resolver (TBD)
+│   ├── pkg/                        public packages
+│   │   ├── patterns/               patterns.json matcher
+│   │   └── version/                spec/wizard/schema version constants
+│   └── plugins/                    Go-loadable plugins (future)
+├── governance/                     repo-shipped governance content
 │   ├── policy/             branch-guard.json + other policy json
 │   ├── wizard/             pointer to ../../questions.yaml
 │   └── seed/               wizard goldens, answers.example.yaml

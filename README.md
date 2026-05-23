@@ -31,6 +31,10 @@ The binary surface is being built out from the spec.
 | `ai hooks propose <name>` | Scaffold a new hook from a finding |
 | `ai update --migrate` | Reconcile new hooks/personas/questions after upgrade |
 | `ai settings get/set/edit` | Manage `~/.config/aiConstitution/settings.toml` |
+| `ai clone <url>` | Identity-aware git clone + post-clone pre-commit secret hook install |
+| `ai audit rotate` | Gzip prior-month audit JSONLs (suitable for cron) |
+| `ai hooks install --all` | Extract all embedded hooks to `~/.ai/hooks/` |
+| `ai hooks install command-wrappers` | Extract embedded git/gh wrappers to `~/.ai/bin/` |
 
 See [`SPEC.md §3`](./SPEC.md#3-cli-surface) for the complete surface.
 
@@ -88,11 +92,14 @@ make lint            # golangci-lint
 ```
 src/                 Go source
   cmd/ai/            CLI entry point (single binary: ai)
-  internal/          internal packages
+    cmd/             cobra subcommands (one per SPEC §3 verb)
+    embed/           embedded assets — the canonical hook library
+      hooks/         Python hook source (extracted to ~/.ai/hooks/ at install)
+      wrappers/      git / gh wrapper templates (→ ~/.ai/bin/ at install)
+    internal/        binary-internal packages
+  internal/          workspace-internal packages
   pkg/               public packages
   plugins/           Go-loadable plugins (future)
-hooks/               Python hook library (stdlib-only)
-bin/                 helper scripts (NO ai binary)
 governance/          policy json + wizard pointers + seed answers
 web/ai-constitution/ Astro site (methodology + spec)
 docs/adr/            MADR-format architecture decisions
@@ -100,6 +107,12 @@ SPEC.md              authoritative implementation specification (draft v0.8)
 GOALS.md             G1-G7 goals, non-goals, anti-goals
 ARCHITECTURE.md      navigational architecture overview
 ```
+
+**One distribution unit.** Hooks, wrapper templates, and the canonical
+secret-pattern set are embedded into the `ai` binary at build time
+via `//go:embed` (see `src/cmd/ai/embed/`). They land on disk at
+install time via `ai setup` or `ai hooks install --all`. No separate
+shell scripts ship.
 
 See [`ARCHITECTURE.md`](./ARCHITECTURE.md) for the layout-with-context
 view and [`SPEC.md §15`](./SPEC.md#15-file-layout-v08) for the full

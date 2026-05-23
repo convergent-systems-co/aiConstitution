@@ -1830,20 +1830,23 @@ The repo-level integration files (`CLAUDE.md`, `.claude/`, `.github/copilot-inst
 │   ├── templates/
 │   ├── prompts/
 │   └── .claude/                     (repo-local Claude state; gitignored content)
-├── hooks/
+├── hooks/                           (RUNTIME — populated by `ai hooks install --all`;
+│                                     the canonical SOURCE is embedded into the
+│                                     `ai` binary at build time, see the impl repo's
+│                                     src/cmd/ai/embed/hooks/. Empty in fresh repo.)
 │   ├── audit.py
 │   ├── secret-block.py              (reads patterns.json)
 │   ├── secret-precommit.py          (NEW v0.4 — git pre-commit)
 │   ├── branch-guard.py
 │   ├── worktree-guard.py
 │   ├── checkpoint-tick.py           (writes to ~/.config/aiConstitution/checkpoints/ in v0.6)
-│   ├── copilot-checkpoint-tick.py
 │   ├── no-verify-strip.py           (NEW v0.4 — wrapper preHook)
 │   ├── destructive-gh-guard.py      (NEW v0.4)
 │   ├── destructive-terraform-guard.py (NEW v0.4 — opt-in)
 │   ├── destructive-kubectl-guard.py   (NEW v0.4 — opt-in)
 │   ├── audit-command.py             (NEW v0.4 — wrapper postHook)
 │   ├── patterns.json                (NEW v0.4 — shared secret pattern set)
+│   ├── patterns.local.json          (user-private; gitignored)
 │   └── command-wrappers.toml        (NEW v0.4 — wrapper config per §10.5.2)
 ├── memory/                          (cross-tool memory; symlinked from per-tool dirs)
 │   ├── MEMORY.md

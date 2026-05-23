@@ -269,21 +269,18 @@ hooks/command-wrappers.local.toml
 # Transient lockfile (concurrent-op guard).
 .lock
 
-# bin/ is broadly ignored by the scaffold (build artifacts go there in
-# many templates), but we intentionally ship a small set of helper
-# scripts. Un-ignore them explicitly.
-!bin/
-!bin/ai
-!bin/clone
-!bin/audit-rotate.sh
-!bin/git.template
-!bin/gh.template
+# bin/ and dist/ are gitignored above (lines 213, 214). The repo
+# now ships ZERO files under bin/ — what was previously there is
+# embedded into the `ai` binary at build time (see
+# src/cmd/ai/embed/) and extracted to ~/.ai/bin/ at install time
+# via `ai hooks install command-wrappers`. Same story for the
+# repo-root hooks/ tree: replaced by src/cmd/ai/embed/hooks/ +
+# `ai hooks install`.
 
 # Per SPEC.md §15: ~/.config/aiConstitution/ is never in-repo, but
 # guard against accidents.
 .config/aiConstitution/
 
-# Astro local artifacts (re-affirmed; the scaffold already ignores
-# these globally but the web/ai-constitution/.gitignore is the
-# authoritative source for the per-site rules).
+# Goreleaser ancillary logs.
+goreleaser-*.log
 ### END: aiConstitution project-specific
