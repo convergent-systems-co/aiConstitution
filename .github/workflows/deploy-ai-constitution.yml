@@ -1,0 +1,84 @@
+name: Deploy ai-constitution.convergent-systems.co
+
+# Cloudflare Pages direct-upload deploy of web/ai-constitution/.
+# Terraform creates the Pages PROJECT (see terraform/ai-constitution/);
+# this workflow uploads the built artifact via wrangler.
+#
+# TODO #6: this workflow is inline today.
+# Once `workflow-atoms.com/reusable/cloudflare-pages-deploy/` ships,
+# replace the body of this file with a `uses:` reference to that
+# reusable workflow. Same way persona/profile/skill atoms are consumed
+# from their respective `*-atoms.com` registries, GitHub Actions
+# workflows will be consumed from `workflow-atoms.com`.
+# See SPEC.md §7.11 (workflow atoms architecture) and §14.1 (six
+# Convergent Systems Astro sites including workflow-atoms.com).
+# Tracked by github.com/convergent-systems-co/aiConstitution/issues/6.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'web/ai-constitution/**'
+      - '.github/workflows/deploy-ai-constitution.yml'
+  workflow_dispatch:
+    inputs:
+      preview:
+        description: 'Deploy as a preview (separate URL) instead of production'
+        type: boolean
+        default: false
+
+# Pages deploys are race-sensitive — only one in flight per branch.
+concurrency:
+  group: pages-ai-constitution
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: https://ai-constitution.convergent-systems.co
+    env:
+      # Required GitHub Actions secrets:
+      #   CLOUDFLARE_API_TOKEN  — Pages Edit scope
+      #   CLOUDFLARE_ACCOUNT_ID — Convergent Systems CF account id
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      # Pull dispatch input into env per
+      # https://github.blog/security/vulnerability-research/how-to-catch-github-actions-workflow-injections-before-attackers-do/
+      PREVIEW: ${{ github.event.inputs.preview }}
+    defaults:
+      run:
+        working-directory: web/ai-constitution
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: web/ai-constitution/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build site
+        run: npm run build
+
+      - name: Deploy to Cloudflare Pages
+        run: |
+          # Production deploy unless workflow_dispatch.preview=true.
+          # Wrangler v4 takes --branch=main to mark a deploy as production;
+          # any other --branch produces a preview URL.
+          if [ "$PREVIEW" = "true" ]; then
+            branch="preview-$(date -u +%Y%m%d-%H%M%S)"
+          else
+            branch="main"
+          fi
+          npx wrangler@4 pages deploy dist \
+            --project-name=ai-constitution \
+            --branch="$branch"

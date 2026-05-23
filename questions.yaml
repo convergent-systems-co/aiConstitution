@@ -26,7 +26,7 @@
 #       persists_to:         which canonical file the answer shapes
 #       persists_to_section: file-relative section reference
 
-version: 0.8
+version: 0.9
 
 phases:
 
@@ -843,6 +843,54 @@ phases:
         allow_defer: true
         persists_to: ~/.config/aiConstitution/settings.toml
         persists_to_section: "[plugins] enabled"
+
+      - qid: Q36d
+        prompt: "Install workflow atoms from workflow-atoms.com now?"
+        framing: >-
+          Workflow atoms are reusable GitHub Actions workflows + composite
+          actions (the 5th atom registry, new in v0.9 — see SPEC §7.11).
+          Each repo's `.github/workflows/*.yml` files prefer a one-line
+          `uses: convergent-systems-co/workflow-atoms/...@<version>` over
+          inline YAML, the same way profiles consume persona atoms.
+          You can install any time later with `ai workflow install <name>`.
+        time: "~20s"
+        options:
+          - { label: "Yes — pick from the recommended set",                 value: "recommended" }
+          - { label: "Yes — show full catalog (multi-select)",              value: "all" }
+          - { label: "Skip — install later with `ai workflow install`",     value: "skip" }
+        allow_free_text: false
+        allow_chat: true
+        allow_defer: true
+        persists_to: ~/.config/aiConstitution/settings.toml
+        persists_to_section: "[workflow] install"
+
+      - qid: Q36e
+        prompt: "Which workflow atoms?"
+        framing: >-
+          Multi-select. The recommended starter set covers the common
+          repo-level CI/CD concerns: Astro build, Cloudflare Pages
+          deploy, goreleaser tag-release, secret-scan with patterns.json,
+          Go workspace CI. Declining any individual atom is fine — they
+          remain installable later via `ai workflow install <name>`.
+          Each atom is pinned to its current release version at install
+          time; bumps via `ai workflow upgrade` are explicit.
+        time: "~45s"
+        applies_when: "Q36d in [recommended, all]"
+        options:
+          - { label: "astro-build (reusable; build + cache deps for an Astro site)",        value: "astro-build" }
+          - { label: "cloudflare-pages-deploy (reusable; wrangler pages deploy)",            value: "cloudflare-pages-deploy" }
+          - { label: "goreleaser-tag (reusable; tag-triggered release pipeline)",            value: "goreleaser-tag" }
+          - { label: "secret-scan-patterns (reusable; patterns.json diff scan)",             value: "secret-scan-patterns" }
+          - { label: "ci-go-workspace (reusable; build/lint/test across go.work modules)",   value: "ci-go-workspace" }
+          - { label: "setup-cs-tofu (composite; loads R2 + CF creds from 1Password)",         value: "setup-cs-tofu" }
+          - { label: "redact-and-redact (composite; runs patterns.json redact pass)",         value: "redact-and-redact" }
+          - { label: "gh-issue-from-finding (reusable; files a `finding` issue from a log)",  value: "gh-issue-from-finding" }
+          - { label: "Pick later — none of these now",                                        value: "none" }
+        allow_free_text: false
+        allow_chat: true
+        allow_defer: true
+        persists_to: ~/.config/aiConstitution/settings.toml
+        persists_to_section: "[workflow] enabled"
 
       - qid: Q37
         prompt: "Default skills to install?"

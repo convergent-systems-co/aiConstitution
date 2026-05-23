@@ -1,0 +1,25 @@
+# terraform.tfvars.example — copy to terraform.tfvars and fill in.
+#
+# terraform.tfvars is .gitignored. Never commit live values.
+
+# Convergent Systems Cloudflare account ID.
+# This is the same account ID used by every core-infra composition; the
+# subdomain before .r2.cloudflarestorage.com in any core-infra backend
+# block IS the account id. Cross-check by running:
+#
+#   cf-api accounts | jq -r '.result[] | .id + " " + .name'
+#
+cloudflare_account_id = "e1fe0f0ce8ff18da4edc118372c30022"
+
+# Cloudflare zone ID for convergent-systems.co. Look up via:
+#
+#   cf-api 'zones?name=convergent-systems.co' | jq -r '.result[].id'
+#
+# or from the core-infra dns-token module outputs after applying it.
+zone_id = "FILL-IN-CONVERGENT-SYSTEMS-CO-ZONE-ID"
+
+# Optional overrides (defaults shown for reference; remove the lines to
+# use the defaults).
+# project_name      = "ai-constitution"
+# custom_domain     = "ai-constitution.convergent-systems.co"
+# production_branch = "main"
