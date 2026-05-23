@@ -1,0 +1,77 @@
+#!/usr/bin/env bash
+# bin/git.template — template for ~/.ai/bin/git, the cross-tool
+# command-wrapper for `git`. Per SPEC.md §10.5 + hooks/command-wrappers.toml.
+#
+# Installation: `ai hooks install command-wrappers` copies this file
+# to ~/.ai/bin/git, makes it executable, and the install verifies that
+# ~/.ai/bin/ is early on PATH (via `hash -r`).
+#
+# This template is the FALLBACK shell implementation. The Go
+# implementation in bin/ai (cmd/wrappers/) is preferred where Go is
+# available, because exit-code fidelity, signal handling, and
+# Windows compatibility are easier in Go.
+
+set -uo pipefail
+
+AI_ROOT="${AI_ROOT:-$HOME/.ai}"
+HOOKS="$AI_ROOT/hooks"
+WRAPPED_CMD="git"
+WRAPPED_ARGV="$(python3 -c 'import json, sys; print(json.dumps(sys.argv[1:]))' "$@")"
+
+# Locate the real git, skipping ourselves.
+self="$(command -v -- "$0")"
+real_git=""
+while IFS=: read -r -d : dir; do
+  cand="$dir/git"
+  if [[ -x "$cand" && "$cand" != "$self" ]]; then
+    real_git="$cand"
+    break
+  fi
+done <<< "${PATH}:"
+
+if [[ -z "$real_git" ]]; then
+  echo "[ai/git-wrapper] cannot locate real git on PATH" >&2
+  exit 127
+fi
+
+# Strip args (e.g., --no-verify on commit) per hooks/command-wrappers.toml.
+# For the shell fallback we do a single hardcoded strip; the Go
+# implementation reads the TOML.
+if [[ "${1:-}" == "commit" ]]; then
+  args=()
+  for a in "$@"; do
+    case "$a" in
+      --no-verify|-n) ;;  # strip
+      *) args+=("$a") ;;
+    esac
+  done
+  set -- "${args[@]}"
+fi
+
+# preHooks: branch-guard, worktree-guard, secret-precommit, no-verify-strip.
+# Order matters; first non-zero exit aborts.
+for h in branch-guard.py worktree-guard.py no-verify-strip.py; do
+  if [[ -x "$HOOKS/$h" ]]; then
+    if ! "$HOOKS/$h" --mode=wrapper "$@" </dev/null; then
+      exit $?
+    fi
+  fi
+done
+
+# Run the real git, capturing duration.
+start=$(date +%s)
+"$real_git" "$@"
+exit_code=$?
+end=$(date +%s)
+duration=$((end - start))
+
+# postHooks: audit-command.
+if [[ -x "$HOOKS/audit-command.py" ]]; then
+  WRAPPED_CMD="git" \
+  WRAPPED_ARGV="$WRAPPED_ARGV" \
+  WRAPPED_EXIT="$exit_code" \
+  WRAPPED_DURATION="$duration" \
+  "$HOOKS/audit-command.py" </dev/null || true
+fi
+
+exit "$exit_code"

@@ -1,0 +1,98 @@
+#!/usr/bin/env bash
+# bin/clone — identity-routing wrapper around `git clone`.
+#
+# Per SPEC.md §6 (Q05/Q35) and Common.md §4.7: clones are tagged with
+# the appropriate identity (GitHub account, credential helper) by
+# reading metadata/projects.json.
+#
+# Also installs the pre-commit secret hook into the freshly-cloned
+# repo when settings.toml [secret_scanning] installScope = "all-repos"
+# (the default).
+#
+# This is a thin wrapper meant to run BEFORE the real `git`. The
+# canonical install path is symlinking ~/.ai/bin/clone to ~/bin/clone
+# (or aliasing); call it with the same argv shape as `git clone`.
+#
+# Usage:
+#   clone <url> [<dir>]
+#   clone --identity=<name> <url> [<dir>]   # force a specific identity
+#   clone --help
+
+set -euo pipefail
+
+# Defaults
+AI_ROOT="${AI_ROOT:-$HOME/.ai}"
+METADATA="$AI_ROOT/metadata/projects.json"
+INSTALL_PRECOMMIT="${INSTALL_PRECOMMIT:-auto}"
+
+usage() {
+  cat <<'EOF'
+clone — identity-routing git-clone wrapper
+
+Usage:
+  clone <url> [<dir>]
+  clone --identity=<name> <url> [<dir>]
+
+Honors:
+  - $AI_ROOT/metadata/projects.json for routing rules
+  - $AI_ROOT/hooks/secret-precommit.py installation (if available)
+
+To bypass: invoke `git clone` directly (the wrapper is intentionally
+not on PATH for `git`; only for `clone`).
+EOF
+}
+
+identity=""
+positional=()
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -h|--help) usage; exit 0 ;;
+    --identity=*) identity="${1#--identity=}"; shift ;;
+    --identity) identity="$2"; shift 2 ;;
+    --no-precommit) INSTALL_PRECOMMIT="no"; shift ;;
+    --) shift; positional+=("$@"); break ;;
+    -*) positional+=("$1"); shift ;;
+    *) positional+=("$1"); shift ;;
+  esac
+done
+
+if [[ ${#positional[@]} -lt 1 ]]; then
+  usage
+  exit 2
+fi
+
+url="${positional[0]}"
+target="${positional[1]:-}"
+
+# TBD (morning work): resolve --identity against metadata/projects.json
+# and apply the §4.7 credential helper pattern. For v0.8 this wrapper
+# is a thin alias of `git clone` plus the post-clone precommit
+# install.
+if [[ -n "$identity" ]]; then
+  echo "[clone] identity routing for '$identity' is not yet implemented (v0.8)." >&2
+  echo "[clone] proceeding with system git identity; see SPEC.md §6 + Common.md §4.7." >&2
+fi
+
+# Pass-through to the real `git`. We deliberately call `git` (not an
+# absolute path) so the user's ~/.ai/bin/git wrapper, if installed,
+# fires its preHooks.
+git clone "$url" ${target:+"$target"}
+
+# Determine the target directory (git's default is the repo name).
+if [[ -z "$target" ]]; then
+  target=$(basename "$url" .git)
+fi
+
+# Install the pre-commit secret hook (idempotent).
+if [[ "$INSTALL_PRECOMMIT" != "no" && -f "$AI_ROOT/hooks/secret-precommit.py" ]]; then
+  hook_dst="$target/.git/hooks/pre-commit"
+  if [[ ! -f "$hook_dst" ]]; then
+    cat > "$hook_dst" <<EOF
+#!/usr/bin/env bash
+# Installed by ~/.ai/bin/clone (SPEC.md §10.2).
+exec python3 "$AI_ROOT/hooks/secret-precommit.py" "\$@"
+EOF
+    chmod +x "$hook_dst"
+    echo "[clone] installed pre-commit secret hook into $target" >&2
+  fi
+fi
