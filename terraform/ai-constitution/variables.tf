@@ -25,3 +25,20 @@ variable "production_branch" {
   type        = string
   default     = "main"
 }
+
+# Split tokens per the 2026-05-23 narrow-token convention (see
+# providers.tf). Both are CONCEALED in 1Password; the cs-tofu wrapper
+# loads them as TF_VAR_account_token / TF_VAR_dns_token before exec.
+# Marked sensitive so plan/apply output doesn't echo them.
+
+variable "account_token" {
+  description = "Cloudflare API token with Account → Cloudflare Pages → Edit. From 1Password 'Convergent Systems - Account'."
+  type        = string
+  sensitive   = true
+}
+
+variable "dns_token" {
+  description = "Cloudflare API token with Zone → DNS → Edit on convergent-systems.co. From 1Password 'Convergent Systems - DNS'."
+  type        = string
+  sensitive   = true
+}

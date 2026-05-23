@@ -56,11 +56,31 @@ cs-tofu -chdir=terraform/ai-constitution plan
 cs-tofu -chdir=terraform/ai-constitution apply
 ```
 
-For the Cloudflare provider itself you need `CLOUDFLARE_API_TOKEN`
-with these scopes:
+**Split-token format (2026-05-23 onward).** Each composition uses
+**two** Cloudflare provider configurations via aliases (see
+`ai-constitution/providers.tf`):
 
-- **Account → Cloudflare Pages → Edit**
-- **Zone → DNS → Edit** on the `convergent-systems.co` zone
+- `cloudflare.account` ← `var.account_token` ← `TF_VAR_account_token`
+  from `op item get "Convergent Systems - Account"`.
+  Scope: **Account → Cloudflare Pages → Edit**.
+- `cloudflare.dns`     ← `var.dns_token`     ← `TF_VAR_dns_token`
+  from `op item get "Convergent Systems - DNS"`.
+  Scope: **Zone → DNS → Edit** on `convergent-systems.co`.
+
+The `cs-tofu` wrapper at `~/bin/cs-tofu` does the 1Password fetch
+automatically for known module names. The `ai-constitution`
+composition isn't in the wrapper's mapping yet, so you have two
+choices:
+
+1. **Export manually** before `cs-tofu`:
+   ```bash
+   export TF_VAR_account_token=$(op item get "Convergent Systems - Account" --vault Developer --fields credential --reveal)
+   export TF_VAR_dns_token=$(op item get "Convergent Systems - DNS" --vault Developer --fields credential --reveal)
+   cs-tofu -chdir=terraform/ai-constitution plan
+   ```
+2. **Patch cs-tofu** to map `ai-constitution` → both tokens
+   (mirroring the `auth)` case in core-infra's wrapper). One-line
+   change; left as a follow-up.
 
 See `core-infra/terraform/cloudflare/pages-token/` and
 `core-infra/terraform/cloudflare/dns-token/` for the token-minting
@@ -69,10 +89,17 @@ modules.
 ## Workflow
 
 1. **First-time setup** — copy `terraform.tfvars.example` →
-   `terraform.tfvars`; fill in `zone_id`.
-2. **Plan** — `cs-tofu -chdir=terraform/ai-constitution init &&
+   `terraform.tfvars`. `zone_id` and `cloudflare_account_id` are
+   already filled with the canonical values; nothing to edit unless
+   you're pointing at a non-canonical account.
+2. **Load tokens** (see "Split-token format" above):
+   ```bash
+   export TF_VAR_account_token=$(op item get "Convergent Systems - Account" --vault Developer --fields credential --reveal)
+   export TF_VAR_dns_token=$(op item get "Convergent Systems - DNS" --vault Developer --fields credential --reveal)
+   ```
+3. **Plan** — `cs-tofu -chdir=terraform/ai-constitution init &&
    cs-tofu -chdir=terraform/ai-constitution plan`.
-3. **Apply** — `cs-tofu -chdir=terraform/ai-constitution apply`.
+4. **Apply** — `cs-tofu -chdir=terraform/ai-constitution apply`.
    Creates the Pages project + custom-domain attachment + proxied
    CNAME on `convergent-systems.co`.
 4. **Deploy site content** — pushed to `main` triggers
