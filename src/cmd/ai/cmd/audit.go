@@ -28,6 +28,7 @@ and §5.2 (violations).`,
 			notice("audit list:", "would tail ~/.ai/audit/overrides/ and ~/.ai/audit/violations/")
 			return stub("audit list", "Constitution.md §5")
 		}},
+		newAuditRotateCmd(),
 	)
 	return c
 }
