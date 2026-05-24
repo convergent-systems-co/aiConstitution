@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -98,7 +99,8 @@ See SPEC.md §3.10 + §9.`,
 		Long: `install materializes embedded assets onto disk.
 
   ai hooks install --all                  extract every embedded hook
-                                          into ~/.ai/hooks/
+                                          into ~/.ai/hooks/ and wire
+                                          them into ~/.claude/settings.json
   ai hooks install command-wrappers       extract bin/git and bin/gh
                                           into ~/.ai/bin/
   ai hooks install <name>                 extract a single embedded
@@ -179,7 +181,7 @@ func runHooksInstall(repo, target string, all, force bool) error {
 		return installRepoPrecommit(repo, hooksDir)
 	}
 	if all {
-		return installAllHooks(hooksDir, force)
+		return installAllHooksAndWire(hooksDir, home, force)
 	}
 	if target == "command-wrappers" {
 		return installWrappers(binDir, force)
@@ -190,7 +192,9 @@ func runHooksInstall(repo, target string, all, force bool) error {
 	return fmt.Errorf("specify a hook name, --all, or `command-wrappers`. See `ai hooks install --help`")
 }
 
-func installAllHooks(hooksDir string, force bool) error {
+// installAllHooksAndWire extracts all hooks to hooksDir and then updates
+// ~/.claude/settings.json with the correct event-to-hook wiring.
+func installAllHooksAndWire(hooksDir, home string, force bool) error {
 	written, err := embed.ExtractAllHooks(hooksDir, force)
 	if err != nil {
 		return err
@@ -198,6 +202,149 @@ func installAllHooks(hooksDir string, force bool) error {
 	fmt.Printf("Extracted %d hook(s) to %s\n", len(written), hooksDir)
 	for _, p := range written {
 		fmt.Println("  " + p)
+	}
+
+	// Wire hooks into ~/.claude/settings.json.
+	// CLAUDE_CONFIG_DIR overrides the default ~/.claude location for testing.
+	claudeConfigDir := os.Getenv("CLAUDE_CONFIG_DIR")
+	if claudeConfigDir == "" {
+		claudeConfigDir = filepath.Join(home, ".claude")
+	}
+	settingsPath := filepath.Join(claudeConfigDir, "settings.json")
+	if err := updateSettingsJSON(settingsPath, hooksDir); err != nil {
+		// Settings update is non-fatal — hooks still work if manually wired.
+		fmt.Printf("Warning: could not update %s: %v\n", settingsPath, err)
+		fmt.Println("Hooks extracted successfully. Wire them manually if needed.")
+		return nil
+	}
+	fmt.Printf("Updated %s with hook wiring.\n", settingsPath)
+	return nil
+}
+
+// hookEntry represents a single hook command entry in settings.json.
+type hookEntry struct {
+	Type    string `json:"type"`
+	Command string `json:"command"`
+}
+
+// hookGroup is one entry in the event's hook array (optional matcher + hooks slice).
+type hookGroup struct {
+	Matcher string      `json:"matcher,omitempty"`
+	Hooks   []hookEntry `json:"hooks"`
+}
+
+// eventHookSpec describes one event's desired wiring.
+type eventHookSpec struct {
+	event   string
+	matcher string // empty = all tools; "Bash" = Bash-only
+	hooks   []string
+}
+
+// canonicalWiring returns the authoritative event→hook mapping for stories #84+#96.
+// Each spec describes one hook group under an event; PreToolUse has two groups.
+func canonicalWiring(hooksDir string) []eventHookSpec {
+	h := func(names ...string) []string {
+		paths := make([]string, 0, len(names))
+		for _, n := range names {
+			paths = append(paths, filepath.Join(hooksDir, n))
+		}
+		return paths
+	}
+	return []eventHookSpec{
+		{event: "SessionStart", hooks: h("audit.py")},
+		{event: "UserPromptSubmit", hooks: h("audit.py")},
+		// PreToolUse: all-tools group
+		{event: "PreToolUse", matcher: "", hooks: h("audit.py", "secret-block.py", "worktree-guard.py")},
+		// PreToolUse: Bash-only group for branch-guard
+		{event: "PreToolUse", matcher: "Bash", hooks: h("branch-guard.py")},
+		{event: "PostToolUse", hooks: h("audit.py")},
+		{event: "Stop", hooks: h("audit.py", "checkpoint-tick.py")},
+		{event: "SessionEnd", hooks: h("audit.py")},
+		{event: "SubagentStop", hooks: h("audit.py")},
+		{event: "PreCompact", hooks: h("audit.py")},
+	}
+}
+
+// updateSettingsJSON reads settings.json (if present), merges the canonical
+// hook wiring, and writes the result back. Idempotent and non-destructive:
+// existing keys (model, enabledPlugins, etc.) are preserved.
+func updateSettingsJSON(settingsPath, hooksDir string) error {
+	// Read existing settings or start fresh.
+	var raw map[string]any
+	data, err := os.ReadFile(settingsPath)
+	if err == nil {
+		if jsonErr := json.Unmarshal(data, &raw); jsonErr != nil {
+			return fmt.Errorf("parse %s: %w", settingsPath, jsonErr)
+		}
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("read %s: %w", settingsPath, err)
+	}
+	if raw == nil {
+		raw = make(map[string]any)
+	}
+
+	// Fetch or initialise the hooks map.
+	hooksMap, _ := raw["hooks"].(map[string]any)
+	if hooksMap == nil {
+		hooksMap = make(map[string]any)
+	}
+
+	// Apply canonical wiring specs. Each spec is upserted into the hooks map.
+	for _, spec := range canonicalWiring(hooksDir) {
+		// Build the desired hook group for this spec.
+		desired := hookGroup{
+			Matcher: spec.matcher,
+			Hooks:   make([]hookEntry, 0, len(spec.hooks)),
+		}
+		for _, cmd := range spec.hooks {
+			desired.Hooks = append(desired.Hooks, hookEntry{Type: "command", Command: cmd})
+		}
+
+		// Load existing groups for this event.
+		var groups []hookGroup
+		if existing, ok := hooksMap[spec.event]; ok {
+			existingJSON, _ := json.Marshal(existing)
+			_ = json.Unmarshal(existingJSON, &groups)
+		}
+
+		// Check if an identical group (same matcher) is already present;
+		// if so, update it in place. Otherwise append.
+		found := false
+		for i, g := range groups {
+			if g.Matcher == spec.matcher {
+				// Merge: add any missing hook commands.
+				existingCmds := make(map[string]bool, len(g.Hooks))
+				for _, h := range g.Hooks {
+					existingCmds[h.Command] = true
+				}
+				for _, entry := range desired.Hooks {
+					if !existingCmds[entry.Command] {
+						groups[i].Hooks = append(groups[i].Hooks, entry)
+					}
+				}
+				found = true
+				break
+			}
+		}
+		if !found {
+			groups = append(groups, desired)
+		}
+
+		hooksMap[spec.event] = groups
+	}
+
+	raw["hooks"] = hooksMap
+
+	// Write back.
+	if err := os.MkdirAll(filepath.Dir(settingsPath), 0o750); err != nil {
+		return fmt.Errorf("mkdir %s: %w", filepath.Dir(settingsPath), err)
+	}
+	out, err := json.MarshalIndent(raw, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshal settings: %w", err)
+	}
+	if err := os.WriteFile(settingsPath, out, 0o644); err != nil { //nolint:gosec // G306: settings.json is user-readable
+		return fmt.Errorf("write %s: %w", settingsPath, err)
 	}
 	return nil
 }
