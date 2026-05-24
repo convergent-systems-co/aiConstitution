@@ -14,7 +14,16 @@
 // violations/ are tracked.
 package audit
 
-import "time"
+import (
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+	"time"
+
+	"github.com/convergent-systems-co/aiConstitution/src/internal/paths"
+)
 
 // Kind enumerates the interaction-log event types per Common.md §5.2
 // plus the SPEC.md §6.6 focus-change addition.
@@ -70,28 +79,105 @@ type Event struct {
 	FocusSource string `json:"focus_source,omitempty"`
 }
 
+// AppendEvent serializes e as a single JSONL line and appends it to
+// audit/interactions/<YYYY-MM>.jsonl under paths.AuditDir().
+// The directory is created with mode 0o750 if absent.
+// The file is opened with mode 0o600 (user-only write; common.md §4 —
+// secrets may appear in stimulus/probe_payload fields).
+func AppendEvent(e Event) error {
+	dir := filepath.Join(paths.AuditDir(), "interactions")
+	if err := os.MkdirAll(dir, 0o750); err != nil {
+		return fmt.Errorf("audit: mkdir interactions: %w", err)
+	}
+
+	line, err := json.Marshal(e)
+	if err != nil {
+		return fmt.Errorf("audit: marshal event: %w", err)
+	}
+	line = append(line, '\n')
+
+	path := filepath.Join(dir, e.Chronon.UTC().Format("2006-01")+".jsonl")
+	//nolint:gosec // G304: path is derived from paths.AuditDir() — not user-controlled
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+	if err != nil {
+		return fmt.Errorf("audit: open interactions file: %w", err)
+	}
+	defer func() { _ = f.Close() }()
+
+	if _, err := f.Write(line); err != nil {
+		return fmt.Errorf("audit: write event: %w", err)
+	}
+	return nil
+}
+
+// WriteViolation writes a violation markdown record to
+// audit/violations/<ts>-<slug>.md under paths.AuditDir().
+// ts is the current UTC time formatted as 20060102T150405Z.
+// slug is the first 32 characters of rule, lowercased, spaces replaced
+// with hyphens. The directory is created with 0o750 if absent.
+func WriteViolation(rule, whatHappened, howNoticed, remediation string) error {
+	dir := filepath.Join(paths.AuditDir(), "violations")
+	if err := os.MkdirAll(dir, 0o750); err != nil {
+		return fmt.Errorf("audit: mkdir violations: %w", err)
+	}
+
+	ts := time.Now().UTC().Format("20060102T150405Z")
+	slug := violationSlug(rule)
+	path := filepath.Join(dir, ts+"-"+slug+".md")
+
+	body := fmt.Sprintf(
+		"# Violation — %s\n\n- **File / Rule violated:** %s\n- **What happened:** %s\n- **How noticed:** %s\n- **Remediation:** %s\n- **Proposed amendment (if any):** \n",
+		ts, rule, whatHappened, howNoticed, remediation,
+	)
+
+	//nolint:gosec // G306: user config file (violation log); 0o600 is intentional
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		return fmt.Errorf("audit: write violation file: %w", err)
+	}
+	return nil
+}
+
+// violationSlug returns the first 32 characters of rule, lowercased,
+// with spaces and filesystem-unsafe characters replaced by hyphens.
+// Safe for use as a POSIX filename segment.
+func violationSlug(rule string) string {
+	s := strings.ToLower(rule)
+	// Replace whitespace, slashes, and other chars unsafe in filenames.
+	var b strings.Builder
+	for _, r := range s {
+		switch r { //nolint:staticcheck // QF1002: explicit case list is clearer here
+		case ' ', '/', '\\', ':', '*', '?', '"', '<', '>', '|':
+			b.WriteRune('-')
+		default:
+			b.WriteRune(r)
+		}
+	}
+	result := b.String()
+	if len(result) > 32 {
+		return result[:32]
+	}
+	return result
+}
+
 // Append serializes the event as a single JSONL line and appends it
-// to audit/interactions/<YYYY-MM>.jsonl. Returns the path written.
-//
-// TBD for v0.8: actual filesystem write. Stub returns the would-be
-// path so callers can validate routing.
-func Append(_ Event) (string, error) {
-	return "", nil
+// to audit/interactions/<YYYY-MM>.jsonl. Delegates to AppendEvent.
+// Kept for backward compatibility.
+func Append(e Event) (string, error) {
+	return "", AppendEvent(e)
 }
 
 // RecordOverride writes an override record to audit/overrides/<UTC>.md
 // per Constitution.md §5.1. The body is the principal-confirmed
 // override block.
 //
-// TBD for v0.8.
+// TBD: full structured implementation pending override-workflow task.
 func RecordOverride(_ string) (string, error) {
 	return "", nil
 }
 
 // RecordViolation writes a violation record to audit/violations/<UTC>.md
-// per Constitution.md §5.2.
-//
-// TBD for v0.8.
-func RecordViolation(_ string) (string, error) {
-	return "", nil
+// per Constitution.md §5.2. Delegates to WriteViolation.
+// Kept for backward compatibility.
+func RecordViolation(body string) (string, error) {
+	return "", WriteViolation(body, "", "tool-flagged", "")
 }
