@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -149,10 +150,35 @@ func runDoctor(cmd *cobra.Command) error {
 		}
 	}
 
+	// Check #11: Constitution.runtime.md staleness
+	checkRuntimeFresh(out, root)
+
 	if hasError {
 		return fmt.Errorf("doctor: one or more checks failed")
 	}
 	return nil
+}
+
+// checkRuntimeFresh checks that Constitution.runtime.md exists and is not
+// older than Constitution.md. Emits [⚠] warning (not [✗] error).
+func checkRuntimeFresh(out io.Writer, root string) {
+	constitutionPath := filepath.Join(root, "Constitution.md")
+	runtimePath := filepath.Join(root, "Constitution.runtime.md")
+
+	runtimeInfo, err := os.Stat(runtimePath)
+	if err != nil {
+		_, _ = fmt.Fprintln(out, "  [⚠] Constitution.runtime.md missing — run: ai generate runtime")
+		return
+	}
+	constitutionInfo, err := os.Stat(constitutionPath)
+	if err != nil {
+		return // constitution check handles this
+	}
+	if constitutionInfo.ModTime().After(runtimeInfo.ModTime()) {
+		_, _ = fmt.Fprintln(out, "  [⚠] Constitution.runtime.md is stale — run: ai generate runtime")
+		return
+	}
+	_, _ = fmt.Fprintln(out, "  [✓] Constitution.runtime.md is current")
 }
 
 // checkSettingsHooks verifies that audit.py is wired to SessionStart and

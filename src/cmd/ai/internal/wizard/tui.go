@@ -54,7 +54,7 @@ type Model struct {
 	answers map[string]string
 	idx     int
 	done    bool
-	state   map[string]*qstate // keyed by Question.ID
+	state   map[string]*qstate // keyed by Question.QID
 }
 
 // NewModel constructs a Model from a parsed Taxonomy.
@@ -115,7 +115,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case AnswerMsg:
 		active := m.tax.ActiveQuestions(m.answers)
 		if m.idx >= 0 && m.idx < len(active) {
-			m.answers[active[m.idx].ID] = msg.Value
+			m.answers[active[m.idx].QID] = msg.Value
 		}
 		return m, nil
 
@@ -135,7 +135,7 @@ func (m Model) handleKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	q := active[m.idx]
 	st := m.ensureState(q)
 
-	switch q.Type {
+	switch q.Type() {
 	case corewiz.TypeText:
 		return m.handleTextKey(k, q, st)
 	case corewiz.TypeConfirm:
@@ -150,12 +150,12 @@ func (m Model) handleKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 // ensureState returns the qstate for q, creating it on first visit.
 func (m Model) ensureState(q corewiz.Question) *qstate {
-	st, ok := m.state[q.ID]
+	st, ok := m.state[q.QID]
 	if ok {
 		return st
 	}
 	st = &qstate{selected: make(map[int]bool)}
-	m.state[q.ID] = st
+	m.state[q.QID] = st
 	return st
 }
 
@@ -176,7 +176,7 @@ func (m Model) handleTextKey(k tea.KeyMsg, q corewiz.Question, st *qstate) (tea.
 			st.textBuf = st.textBuf[:n-1]
 		}
 	case tea.KeyEnter:
-		m.answers[q.ID] = string(st.textBuf)
+		m.answers[q.QID] = string(st.textBuf)
 	}
 	return m, nil
 }
@@ -193,9 +193,9 @@ func (m Model) handleConfirmKey(k tea.KeyMsg, q corewiz.Question, st *qstate) (t
 		st.confirmIdx = 1 // no
 	case tea.KeyEnter:
 		if st.confirmIdx == 1 {
-			m.answers[q.ID] = "no"
+			m.answers[q.QID] = "no"
 		} else {
-			m.answers[q.ID] = "yes"
+			m.answers[q.QID] = "yes"
 		}
 	}
 	return m, nil
@@ -217,7 +217,7 @@ func (m Model) handleSelectKey(k tea.KeyMsg, q corewiz.Question, st *qstate) (te
 		}
 	case tea.KeyEnter:
 		if st.highlight >= 0 && st.highlight < len(q.Options) {
-			m.answers[q.ID] = q.Options[st.highlight].Value
+			m.answers[q.QID] = q.Options[st.highlight].Value
 		}
 	}
 	return m, nil
@@ -248,7 +248,7 @@ func (m Model) handleMultiSelectKey(k tea.KeyMsg, q corewiz.Question, st *qstate
 				vals = append(vals, opt.Value)
 			}
 		}
-		m.answers[q.ID] = strings.Join(vals, ",")
+		m.answers[q.QID] = strings.Join(vals, ",")
 	}
 	return m, nil
 }
@@ -271,7 +271,7 @@ func (m Model) View() string {
 		return "(out of range)"
 	}
 	q := active[m.idx]
-	st := m.state[q.ID]
+	st := m.state[q.QID]
 	if st == nil {
 		st = &qstate{selected: make(map[int]bool)}
 	}
@@ -283,7 +283,7 @@ func (m Model) View() string {
 }
 
 func renderQuestion(q corewiz.Question, st *qstate, answers map[string]string) string {
-	switch q.Type {
+	switch q.Type() {
 	case corewiz.TypeText:
 		return renderText(st)
 	case corewiz.TypeConfirm:
@@ -293,7 +293,7 @@ func renderQuestion(q corewiz.Question, st *qstate, answers map[string]string) s
 	case corewiz.TypeMultiSelect:
 		return renderMultiSelect(q, st)
 	default:
-		if ans, ok := answers[q.ID]; ok {
+		if ans, ok := answers[q.QID]; ok {
 			return fmt.Sprintf("  current: %s\n", ans)
 		}
 		return ""
@@ -346,10 +346,10 @@ func renderMultiSelect(q corewiz.Question, st *qstate) string {
 // active list has a recorded answer.
 func (m Model) allRequiredAnswered(active []corewiz.Question) bool {
 	for _, q := range active {
-		if !q.Required {
+		if !q.Required() {
 			continue
 		}
-		if _, ok := m.answers[q.ID]; !ok {
+		if _, ok := m.answers[q.QID]; !ok {
 			return false
 		}
 	}

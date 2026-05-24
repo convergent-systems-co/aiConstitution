@@ -222,3 +222,17 @@ func TestDoctor_AllChecks_Prints10Lines(t *testing.T) {
 		t.Errorf("expected at least 4 check lines, got %d\n%s", checkLines, out)
 	}
 }
+
+func TestDoctor_RuntimeStalenessCheck(t *testing.T) {
+	aiRoot := t.TempDir()
+	t.Setenv("AI_ROOT", aiRoot)
+
+	for _, f := range []string{"Constitution.md", "Common.md", "Code.md", "Writing.md"} {
+		_ = os.WriteFile(filepath.Join(aiRoot, f), []byte("# "+f+"\n\nContent."), 0o600)
+	}
+
+	out, _ := runDoctorCmd(t)
+	if !strings.Contains(strings.ToLower(out), "runtime") {
+		t.Errorf("expected runtime check in doctor output:\n%s", out)
+	}
+}

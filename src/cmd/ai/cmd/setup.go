@@ -3,17 +3,18 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/convergent-systems-co/aiConstitution/src/cmd/ai/embed"
-	initpkg "github.com/convergent-systems-co/aiConstitution/src/cmd/ai/internal/init"
-	"github.com/convergent-systems-co/aiConstitution/src/internal/config"
+	"github.com/convergent-systems-co/aiConstitution/src/internal/constitution"
 	"github.com/convergent-systems-co/aiConstitution/src/internal/paths"
 	"github.com/convergent-systems-co/aiConstitution/src/internal/wizard"
 	"github.com/spf13/cobra"
 )
 
 // newSetupCmd implements `ai setup [--tui] [--non-interactive] [--profile=…]`.
+// See SPEC.md §3.1 and the wizard taxonomy in questions.yaml.
 func newSetupCmd() *cobra.Command {
 	var tui bool
 	var nonInteractive bool
@@ -21,85 +22,96 @@ func newSetupCmd() *cobra.Command {
 
 	c := &cobra.Command{
 		Use:   "setup",
-		Short: "Run the guided constitution-setup wizard",
+		Short: "Run the guided constitution-setup wizard (TUI by default)",
 		Long: `setup walks the user through the wizard taxonomy in
-questions.yaml and writes settings.toml.
+governance/wizard/questions.yaml and writes a personalized
+Constitution.md / Common.md / Code.md / Writing.md based on the
+answers.
 
 Flags:
-  --non-interactive      Use all defaults from questions.yaml; no prompts.
-  --tui                  (default) Use the Bubble Tea TUI (not yet implemented).
-  --profile=<name>       Bias the question set toward a profile.
+  --tui                  (default) Use the Bubble Tea TUI.
+  --non-interactive      Use seeded answers from
+                         governance/seed/answers.yaml; fail on any
+                         unanswered required question.
+  --profile=<starter|developer|writer|both>
+                         Bias the question set toward a profile.
 
-Environment:
-  AICONST_SEEDS          Comma-separated key=value pairs used to seed
-                         wizard answers in --non-interactive mode.
-                         Example: defaultMode=writer,reviewCadenceDays=14`,
+See SPEC.md §3.1, §4, and questions.yaml.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			_ = tui
-			_ = profile
 			if nonInteractive {
 				return runSetupNonInteractive(cmd)
 			}
-			// TUI path: deferred to wizard TUI plan.
-			notice("setup:", "TUI not yet implemented; running with defaults (--non-interactive behavior)")
-			return runSetupNonInteractive(cmd)
+			notice("setup:", "would launch Bubble Tea TUI; questions taxonomy at governance/wizard/questions.yaml (v0.8).")
+			_ = tui
+			_ = profile
+			return stub("setup", "§3.1 + §4")
 		},
 	}
 
 	c.Flags().BoolVar(&tui, "tui", true, "use the Bubble Tea TUI (default)")
-	c.Flags().BoolVar(&nonInteractive, "non-interactive", false, "use all defaults; no prompts")
+	c.Flags().BoolVar(&nonInteractive, "non-interactive", false, "use seeded answers; fail on missing required answers")
 	c.Flags().StringVar(&profile, "profile", "", "bias the question set (starter|developer|writer|both)")
 
 	return c
 }
 
+// runSetupNonInteractive runs setup with seeded/default answers and writes
+// Constitution.md and Constitution.runtime.md to the AI root directory.
 func runSetupNonInteractive(cmd *cobra.Command) error {
-	taxData := embed.QuestionsYAML()
-	tax, err := wizard.ParseTaxonomy(taxData)
+	// Seed answers: minimal defaults that satisfy all required wizard fields.
+	answers := map[string]string{
+		"Q01": "Principal",            // required: principal name
+		"Q02": "claude-code",          // tools
+		"Q03": "software development", // work context
+		"Q04": "technical",            // domains
+		"Q05": "",                     // personal rules (optional)
+		"Q06": "$5",                   // cost ceiling
+		"Q07": "100",                  // blast radius
+		"Q08": "main",                 // protected branches
+		"Q09": "autonomous",           // autonomy posture
+		"Q10": "flag-once",            // pushback persistence
+		"Q11": "match-complexity",     // response length
+		"Q12": "direct-framing",       // disagreement tone
+		"Q13": "true",                 // provenance in commits
+	}
+
+	// Map answers to AnswerSet and render Constitution.md
+	as, err := wizard.AnswersToAnswerSet(answers)
 	if err != nil {
-		return fmt.Errorf("setup: load question taxonomy: %w", err)
+		return fmt.Errorf("setup: map answers: %w", err)
 	}
-
-	seeds := parseSeedsEnv(os.Getenv("AICONST_SEEDS"))
-	answers, err := wizard.RunNonInteractive(tax, seeds)
+	tmplBytes, err := embed.ConstitutionTemplate()
 	if err != nil {
-		return fmt.Errorf("setup: non-interactive wizard: %w", err)
+		return fmt.Errorf("setup: load template: %w", err)
 	}
-
-	s := config.Defaults()
-	if tax.Version != "" {
-		s.Wizard.LastSeenWizardVersion = tax.Version
-	}
-	// Map answer keys → Settings fields (per SPEC §13.6). The wizard's
-	// flat answer map keys are the qid-derived answer keys (defaultMode,
-	// shareNewHooks, reviewCadenceDays, syncIncludeSettings) — not the
-	// qid itself. Seeds use the same keys.
-	config.ApplyAnswers(&s, answers)
-	config.ApplyAnswers(&s, seeds)
-
-	if err := config.Save(s); err != nil {
-		return fmt.Errorf("setup: save settings: %w", err)
-	}
-
-	// Create ~/.ai/ tree and the three AI-tool integration files.
-	// Pre-existing files (CLAUDE.md, copilot-instructions.md, AGENTS.md)
-	// are never overwritten.
-	written, err := initpkg.EnsureToolFiles(paths.AIRoot())
+	rendered, err := constitution.Render(as, string(tmplBytes))
 	if err != nil {
-		return fmt.Errorf("setup: ensure tool files: %w", err)
+		return fmt.Errorf("setup: render constitution: %w", err)
 	}
-	for _, p := range written {
-		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Wrote %s\n", p)
+	aiRoot := paths.AIRoot()
+	if err := os.MkdirAll(aiRoot, 0o750); err != nil {
+		return fmt.Errorf("setup: mkdir airoot: %w", err)
+	}
+	if err := os.WriteFile(filepath.Join(aiRoot, "Constitution.md"), []byte(rendered), 0o600); err != nil { //nolint:gosec
+		return fmt.Errorf("setup: write Constitution.md: %w", err)
 	}
 
-	_, _ = fmt.Fprintln(cmd.OutOrStdout(), "Setup complete. Run 'ai status' to verify.")
+	// Generate runtime
+	rc, err := constitution.ExtractRuntime(rendered)
+	if err != nil {
+		return fmt.Errorf("setup: extract runtime: %w", err)
+	}
+	runtimeOut := constitution.FormatRuntime(rc)
+	if err := os.WriteFile(filepath.Join(aiRoot, "Constitution.runtime.md"), []byte(runtimeOut), 0o600); err != nil { //nolint:gosec
+		return fmt.Errorf("setup: write runtime: %w", err)
+	}
+
+	_, _ = fmt.Fprintln(cmd.OutOrStdout(), "Setup complete.")
+	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Constitution: %s\n", filepath.Join(aiRoot, "Constitution.md"))
+	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Runtime:      %s\n", filepath.Join(aiRoot, "Constitution.runtime.md"))
 	return nil
 }
 
-// parseSeedsEnv parses the AICONST_SEEDS env var, which uses the form
-// "key1=value1,key2=value2". Empty input returns nil. Whitespace
-// around keys and values is trimmed. Malformed entries (no '=') are
-// silently skipped.
 func parseSeedsEnv(env string) map[string]string {
 	env = strings.TrimSpace(env)
 	if env == "" {

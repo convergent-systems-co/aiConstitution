@@ -101,6 +101,8 @@ specification (currently draft v0.8).`,
 		newWorktreeCmd(),
 		newCloneCmd(),
 		newVersionCmd(),
+		newGenerateCmd(),
+		newMigrateCmd(),
 	)
 
 	return root
