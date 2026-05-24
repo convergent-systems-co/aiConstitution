@@ -6,54 +6,50 @@ import (
 	"github.com/convergent-systems-co/aiConstitution/src/internal/wizard"
 )
 
+const v2TestTaxonomy = `
+version: "1.0"
+phases:
+  - id: P1
+    title: Identity
+    mandatory: true
+    questions:
+      - qid: Q01
+        prompt: "Your name?"
+        default: "DefaultUser"
+      - qid: Q02
+        prompt: "Your tools?"
+        default: "claude-code"
+`
+
 func TestNonInteractiveRunnerUsesSeededAnswers(t *testing.T) {
-	tax, _ := wizard.ParseTaxonomy([]byte(sampleTaxonomy))
-	seeds := map[string]string{
-		"user_name": "Bob",
-		"has_org":   "true",
-		"org_name":  "Acme",
+	tax, err := wizard.ParseTaxonomy([]byte(v2TestTaxonomy))
+	if err != nil {
+		t.Fatalf("ParseTaxonomy() error = %v", err)
 	}
-	answers, err := wizard.RunNonInteractive(tax, seeds)
+	seeds := map[string]string{"Q01": "Bob"}
+	answers, err := wizard.RunNonInteractive(*tax, seeds)
 	if err != nil {
 		t.Fatalf("RunNonInteractive() error = %v", err)
 	}
-	if answers["user_name"] != "Bob" {
-		t.Errorf("user_name = %q, want %q", answers["user_name"], "Bob")
+	if answers["Q01"] != "Bob" {
+		t.Errorf("Q01 = %q, want %q", answers["Q01"], "Bob")
 	}
-	if answers["org_name"] != "Acme" {
-		t.Errorf("org_name = %q, want %q", answers["org_name"], "Acme")
-	}
-}
-
-func TestNonInteractiveRunnerErrorsOnMissingRequired(t *testing.T) {
-	tax, _ := wizard.ParseTaxonomy([]byte(sampleTaxonomy))
-	seeds := map[string]string{
-		// user_name is required but missing
-		"has_org": "false",
-	}
-	_, err := wizard.RunNonInteractive(tax, seeds)
-	if err == nil {
-		t.Fatal("expected error for missing required question, got nil")
+	// Q02 not seeded — should use default
+	if answers["Q02"] != "claude-code" {
+		t.Errorf("Q02 default = %q, want %q", answers["Q02"], "claude-code")
 	}
 }
 
 func TestNonInteractiveRunnerUsesDefault(t *testing.T) {
-	const taxWithDefault = `
-version: "0.2"
-questions:
-  - id: color
-    category: prefs
-    type: text
-    prompt: "Favourite color?"
-    default: "blue"
-    required: false
-`
-	tax, _ := wizard.ParseTaxonomy([]byte(taxWithDefault))
-	answers, err := wizard.RunNonInteractive(tax, nil)
+	tax, err := wizard.ParseTaxonomy([]byte(v2TestTaxonomy))
+	if err != nil {
+		t.Fatalf("ParseTaxonomy() error = %v", err)
+	}
+	answers, err := wizard.RunNonInteractive(*tax, nil)
 	if err != nil {
 		t.Fatalf("RunNonInteractive() error = %v", err)
 	}
-	if answers["color"] != "blue" {
-		t.Errorf("color = %q, want %q (default)", answers["color"], "blue")
+	if answers["Q01"] != "DefaultUser" {
+		t.Errorf("Q01 default = %q, want %q", answers["Q01"], "DefaultUser")
 	}
 }

@@ -186,3 +186,46 @@ func (t *Taxonomy) QuestionByQID(qid string) (Question, bool) {
 	}
 	return Question{}, false
 }
+
+// ActiveQuestions returns all questions across all phases. The answers
+// parameter is accepted for API compatibility but unused in v2 (all questions
+// are mandatory and have no dependencies).
+func (t *Taxonomy) ActiveQuestions(_ map[string]string) []Question {
+	var out []Question
+	for _, phase := range t.Phases {
+		out = append(out, phase.Questions...)
+	}
+	return out
+}
+
+// QuestionType classifies the input mechanism for a question.
+// The v2 schema infers type from Options/AllowFreeText/AllowChat fields,
+// but the TUI requires an explicit type for rendering.
+type QuestionType string
+
+const (
+	TypeText        QuestionType = "text"
+	TypeConfirm     QuestionType = "confirm"
+	TypeSelect      QuestionType = "select"
+	TypeMultiSelect QuestionType = "multiselect"
+)
+
+// Type returns the inferred question type based on options and flags.
+func (q Question) Type() QuestionType {
+	if len(q.Options) > 1 {
+		if q.AllowFreeText {
+			return TypeMultiSelect
+		}
+		return TypeSelect
+	}
+	if q.Informational {
+		return TypeConfirm
+	}
+	return TypeText
+}
+
+// Required returns true when the question has no default value and must
+// be explicitly answered. Used by TUI rendering for validation.
+func (q Question) Required() bool {
+	return q.Default == "" && !q.AllowDefer
+}

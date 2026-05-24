@@ -61,7 +61,7 @@ func runSetupNonInteractive(cmd *cobra.Command) error {
 	}
 
 	seeds := parseSeedsEnv(os.Getenv("AICONST_SEEDS"))
-	answers, err := wizard.RunNonInteractive(tax, seeds)
+	answers, err := wizard.RunNonInteractive(*tax, seeds)
 	if err != nil {
 		return fmt.Errorf("setup: non-interactive wizard: %w", err)
 	}
