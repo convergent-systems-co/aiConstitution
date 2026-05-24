@@ -174,7 +174,7 @@ func WriteDraft(d Draft, plansDir string) (string, error) {
 	dst := filepath.Join(plansDir, name)
 
 	body := renderDraftBody(d)
-	if err := os.WriteFile(dst, []byte(body), 0o640); err != nil {
+	if err := os.WriteFile(dst, []byte(body), 0o600); err != nil { //nolint:gosec // G306: draft files are user config, 0600 is correct
 		return "", fmt.Errorf("amend: write %s: %w", dst, err)
 	}
 	return dst, nil

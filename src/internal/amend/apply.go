@@ -293,7 +293,7 @@ func writeAuditRecord(aiRoot string, d Draft, oldV, newV, entry string) (string,
 			b.WriteString("\n")
 		}
 	}
-	if err := os.WriteFile(dst, []byte(b.String()), 0o640); err != nil {
+	if err := os.WriteFile(dst, []byte(b.String()), 0o600); err != nil { //nolint:gosec // G306: amendment files are user config, 0600 is correct
 		return "", err
 	}
 	return dst, nil
