@@ -90,6 +90,8 @@ See SPEC.md §3.10 + §9.`,
 	var installAll bool
 	var installAllHooks bool
 	var installForce bool
+	var installClaude bool
+	var installClaudeRoot string
 	install := &cobra.Command{
 		Use:   "install [<name>]",
 		Short: "Extract embedded hook(s) / wrappers to ~/.ai/ (idempotent)",
@@ -101,18 +103,26 @@ See SPEC.md §3.10 + §9.`,
                                           into ~/.ai/bin/
   ai hooks install <name>                 extract a single embedded
                                           hook (e.g. secret-block.py)
+  ai hooks install --claude               wire installed hooks into
+                                          .claude/settings.json in
+                                          the current repo
 
-  --force        overwrite existing files
-  --repo=<path>  (with no positional) install a pre-commit hook into
-                 the specified repo's .git/hooks/ that defers to
-                 ~/.ai/hooks/secret-precommit.py
+  --force                overwrite existing files
+  --repo=<path>          (with no positional) install a pre-commit
+                         hook into the specified repo's .git/hooks/
+                         that defers to ~/.ai/hooks/secret-precommit.py
+  --claude               wire ~/.ai/hooks/*.py into .claude/settings.json
+  --claude-root=<path>   directory containing .claude/ (default ".")
 
-Per SPEC.md §3.10 + §10.2.`,
+Per SPEC.md §3.10 + §10.2 + §14.1.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			target := ""
 			if len(args) == 1 {
 				target = args[0]
+			}
+			if installClaude {
+				return runHooksInstallClaude(cmd, installClaudeRoot)
 			}
 			return runHooksInstall(installRepo, target, installAllHooks || installAll, installForce)
 		},
@@ -121,9 +131,33 @@ Per SPEC.md §3.10 + §10.2.`,
 	install.Flags().BoolVar(&installAll, "all-future-clones", false, "(reserved; wires into `ai clone` per SPEC §10.2)")
 	install.Flags().BoolVar(&installAllHooks, "all", false, "extract every embedded hook to ~/.ai/hooks/")
 	install.Flags().BoolVar(&installForce, "force", false, "overwrite existing files")
+	install.Flags().BoolVar(&installClaude, "claude", false, "wire ~/.ai/hooks/*.py into .claude/settings.json")
+	install.Flags().StringVar(&installClaudeRoot, "claude-root", ".", "directory containing .claude/ (default: current dir)")
 
 	c.AddCommand(propose, install)
 	return c
+}
+
+// runHooksInstallClaude wires the Python hooks under ~/.ai/hooks/ into
+// .claude/settings.json under claudeRoot. Per §156 / SPEC §14.1.
+func runHooksInstallClaude(cmd *cobra.Command, claudeRoot string) error {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return err
+	}
+	aiRoot := os.Getenv("AI_ROOT")
+	if aiRoot == "" {
+		aiRoot = filepath.Join(home, ".ai")
+	}
+	hooksDir := filepath.Join(aiRoot, "hooks")
+	added, err := installClaudeHooks(claudeRoot, hooksDir)
+	if err != nil {
+		return err
+	}
+	_, _ = fmt.Fprintf(cmd.OutOrStdout(),
+		"Wired %d Claude hook entries into %s\n",
+		added, filepath.Join(claudeRoot, ".claude", "settings.json"))
+	return nil
 }
 
 // runHooksInstall is the top-level dispatcher for the various
