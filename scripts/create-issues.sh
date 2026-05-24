@@ -82,21 +82,25 @@ link_all_children() {
     sleep 0.5
     local current_body
     current_body=$(gh issue view "$parent" --repo "$REPO" --json body --jq '.body // ""')
-    local new_entries=""
+
+    # Strip any existing hierarchy section (## Features, ## Children, ## Stories,
+    # or bare task-list lines) so re-runs produce a clean result.
+    local base_body
+    base_body=$(printf '%s' "$current_body" | awk '
+      /^## (Features|Children|Stories|Tasks|Sub-issues)/{exit}
+      /^- \[.?\] #[0-9]/{exit}
+      {print}
+    ' | sed -e 's/[[:space:]]*$//')
+
+    # Build fresh children section
+    local children_block=$'## Children\n'
     while IFS='|' read -r child_num child_title; do
-      # Skip if already linked (handles re-runs; matches both [ ] and [x])
-      if ! echo "$current_body" | grep -qE "- \[.\] #${child_num}([^0-9]|$)"; then
-        new_entries+="- [ ] #${child_num} ${child_title}"$'\n'
-      fi
+      children_block+="- [ ] #${child_num} ${child_title}"$'\n'
     done < "$child_file"
-    [[ -z "$new_entries" ]] && continue
+
     local tmpbody
     tmpbody=$(mktemp)
-    if echo "$current_body" | grep -q "^## Children"; then
-      printf '%s\n%s' "$current_body" "$new_entries" > "$tmpbody"
-    else
-      printf '%s\n\n## Children\n%s' "$current_body" "$new_entries" > "$tmpbody"
-    fi
+    printf '%s\n\n%s' "$base_body" "$children_block" > "$tmpbody"
     gh issue edit "$parent" --repo "$REPO" --body-file "$tmpbody" 2>/dev/null || true
     rm -f "$tmpbody"
     echo "  updated #${parent}" >&2
