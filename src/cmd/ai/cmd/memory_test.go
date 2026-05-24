@@ -1,4 +1,4 @@
-package cmd_test
+package cmd
 
 import (
 	"bytes"
@@ -6,150 +6,271 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/convergent-systems-co/aiConstitution/src/cmd/ai/cmd"
 )
 
-// writeViolationFile creates a minimal violation markdown file at path and
-// returns it. Matches the WriteViolation output format.
-func writeViolationFile(t *testing.T, dir, rule, what, how, remediation string) string {
+func runMemoryCmd(t *testing.T, args ...string) (string, error) {
 	t.Helper()
-	ts := "20260524T120000Z"
-	content := "# Violation — " + ts + "\n\n" +
-		"- **File / Rule violated:** " + rule + "\n" +
-		"- **What happened:** " + what + "\n" +
-		"- **How noticed:** " + how + "\n" +
-		"- **Remediation:** " + remediation + "\n" +
-		"- **Proposed amendment (if any):** \n"
-
-	path := filepath.Join(dir, ts+"-test-violation.md")
-	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
-		t.Fatalf("writeViolationFile: %v", err)
-	}
-	return path
-}
-
-func TestMemoryCodify_PrintsCreatedPath(t *testing.T) {
-	aiRoot := t.TempDir()
-	t.Setenv("AI_ROOT", aiRoot)
-
-	// Create a scratch dir for the violation file (not inside aiRoot).
-	scratch := t.TempDir()
-	vpath := writeViolationFile(t, scratch,
-		"Code.md §11.3 — refactor-protocol",
-		"Refactor included a bug fix.",
-		"self-detected",
-		"Separated the fix into its own commit.",
-	)
-
-	root := cmd.NewRootCmd()
-	buf := &bytes.Buffer{}
-	root.SetOut(buf)
-	root.SetErr(buf)
-	root.SetArgs([]string{"memory", "codify", vpath})
-
-	if err := root.Execute(); err != nil {
-		t.Fatalf("memory codify error = %v; output:\n%s", err, buf)
-	}
-
-	out := buf.String()
-	if !strings.Contains(out, "feedback_") {
-		t.Errorf("expected output to contain 'feedback_' path; got:\n%s", out)
-	}
-	if !strings.Contains(out, ".md") {
-		t.Errorf("expected output to contain '.md'; got:\n%s", out)
-	}
-}
-
-func TestMemoryCodify_CreatesMemoryFile(t *testing.T) {
-	aiRoot := t.TempDir()
-	t.Setenv("AI_ROOT", aiRoot)
-
-	scratch := t.TempDir()
-	rule := "Common.md §2.2 — destructive-action"
-	what := "Dropped a table without approval."
-	vpath := writeViolationFile(t, scratch, rule, what, "self-detected", "Restored.")
-
-	root := cmd.NewRootCmd()
-	buf := &bytes.Buffer{}
-	root.SetOut(buf)
-	root.SetErr(buf)
-	root.SetArgs([]string{"memory", "codify", vpath})
-
-	if err := root.Execute(); err != nil {
-		t.Fatalf("memory codify error = %v; output:\n%s", err, buf)
-	}
-
-	// Verify a feedback_ file was created in the memory dir.
-	memDir := filepath.Join(aiRoot, "memory")
-	entries, err := os.ReadDir(memDir)
-	if err != nil {
-		t.Fatalf("ReadDir(%q) error = %v", memDir, err)
-	}
-
-	var feedbackFiles []string
-	for _, e := range entries {
-		if strings.HasPrefix(e.Name(), "feedback_") {
-			feedbackFiles = append(feedbackFiles, e.Name())
-		}
-	}
-	if len(feedbackFiles) == 0 {
-		t.Fatalf("expected at least one feedback_ file in %q; found: %v", memDir, entries)
-	}
-
-	// Read the file and verify it contains the rule.
-	data, err := os.ReadFile(filepath.Join(memDir, feedbackFiles[0]))
-	if err != nil {
-		t.Fatalf("ReadFile() error = %v", err)
-	}
-	if !strings.Contains(string(data), rule) {
-		t.Errorf("feedback file missing rule %q; content:\n%s", rule, string(data))
-	}
-}
-
-func TestMemoryCodify_UpdatesMEMORYmd(t *testing.T) {
-	aiRoot := t.TempDir()
-	t.Setenv("AI_ROOT", aiRoot)
-
-	scratch := t.TempDir()
-	vpath := writeViolationFile(t, scratch,
-		"Code.md §11.2 — squash-merging",
-		"Squash-merged a non-release branch.",
-		"user-flagged",
-		"Reverted and re-merged with merge commit.",
-	)
-
-	root := cmd.NewRootCmd()
-	buf := &bytes.Buffer{}
-	root.SetOut(buf)
-	root.SetErr(buf)
-	root.SetArgs([]string{"memory", "codify", vpath})
-	if err := root.Execute(); err != nil {
-		t.Fatalf("memory codify error = %v", err)
-	}
-
-	memMD := filepath.Join(aiRoot, "memory", "MEMORY.md")
-	data, err := os.ReadFile(memMD)
-	if err != nil {
-		t.Fatalf("ReadFile(MEMORY.md) error = %v", err)
-	}
-	if !strings.Contains(string(data), "feedback_") {
-		t.Errorf("MEMORY.md does not contain pointer; content:\n%s", string(data))
-	}
-}
-
-func TestMemoryCodify_ErrorOnMissingFile(t *testing.T) {
-	aiRoot := t.TempDir()
-	t.Setenv("AI_ROOT", aiRoot)
-
-	root := cmd.NewRootCmd()
-	buf := &bytes.Buffer{}
-	root.SetOut(buf)
-	root.SetErr(buf)
-	root.SetArgs([]string{"memory", "codify", "/nonexistent/path/violation.md"})
-
+	root := NewRootCmd()
+	var buf bytes.Buffer
+	root.SetOut(&buf)
+	root.SetErr(&buf)
+	root.SetArgs(append([]string{"memory"}, args...))
 	err := root.Execute()
+	return buf.String(), err
+}
+
+func helperMemoryAIRoot(t *testing.T) string {
+	t.Helper()
+	aiRoot := t.TempDir()
+	t.Setenv("AI_ROOT", aiRoot)
+	_ = os.MkdirAll(filepath.Join(aiRoot, "memory", "archived"), 0o755)
+	return aiRoot
+}
+
+func writeMemoryMD(t *testing.T, aiRoot, content string) {
+	t.Helper()
+	_ = os.WriteFile(filepath.Join(aiRoot, "memory", "MEMORY.md"), []byte(content), 0o644)
+}
+
+// ---- memory list (#171) ----
+
+func TestMemoryList_ParsesMEMORYMD(t *testing.T) {
+	aiRoot := helperMemoryAIRoot(t)
+	writeMemoryMD(t, aiRoot, "# Memory Index\n\n## Feedback\n- [foo](feedback_foo.md) — a foo\n- [bar](feedback_bar.md) — a bar\n")
+	// Create actual memory files with frontmatter
+	fooContent := "---\nname: foo\ndescription: a foo\nmetadata:\n  type: feedback\n---\n\n# Body\n"
+	barContent := "---\nname: bar\ndescription: a bar\nmetadata:\n  type: feedback\n---\n\n# Body\n"
+	_ = os.WriteFile(filepath.Join(aiRoot, "memory", "feedback_foo.md"), []byte(fooContent), 0o644)
+	_ = os.WriteFile(filepath.Join(aiRoot, "memory", "feedback_bar.md"), []byte(barContent), 0o644)
+
+	out, err := runMemoryCmd(t, "list")
+	if err != nil && strings.Contains(err.Error(), "not yet implemented") {
+		t.Fatalf("memory list returned stub error: %v", err)
+	}
+	if !strings.Contains(out, "foo") {
+		t.Errorf("expected 'foo' in output\n%s", out)
+	}
+	if !strings.Contains(out, "bar") {
+		t.Errorf("expected 'bar' in output\n%s", out)
+	}
+}
+
+func TestMemoryList_TypeFlag(t *testing.T) {
+	aiRoot := helperMemoryAIRoot(t)
+	writeMemoryMD(t, aiRoot, "# Memory Index\n\n## Feedback\n- [fb](feedback_fb.md) — feedback one\n## Reference\n- [ref](reference_ref.md) — reference one\n")
+	_ = os.WriteFile(filepath.Join(aiRoot, "memory", "feedback_fb.md"),
+		[]byte("---\nname: fb\ndescription: feedback one\nmetadata:\n  type: feedback\n---\n"), 0o644)
+	_ = os.WriteFile(filepath.Join(aiRoot, "memory", "reference_ref.md"),
+		[]byte("---\nname: ref\ndescription: reference one\nmetadata:\n  type: reference\n---\n"), 0o644)
+
+	out, err := runMemoryCmd(t, "list", "--type", "feedback")
+	if err != nil && strings.Contains(err.Error(), "not yet implemented") {
+		t.Fatalf("memory list --type returned stub error: %v", err)
+	}
+	if !strings.Contains(out, "fb") {
+		t.Errorf("expected 'fb' in filtered output\n%s", out)
+	}
+	if strings.Contains(out, "ref") {
+		t.Errorf("expected 'ref' to be filtered out\n%s", out)
+	}
+}
+
+func TestMemoryList_NoStub(t *testing.T) {
+	aiRoot := helperMemoryAIRoot(t)
+	writeMemoryMD(t, aiRoot, "# Memory Index\n")
+
+	_, err := runMemoryCmd(t, "list")
+	if err != nil && strings.Contains(err.Error(), "not yet implemented") {
+		t.Fatalf("memory list returned stub error: %v", err)
+	}
+}
+
+// ---- memory show (#171) ----
+
+func TestMemoryShow_OutputsFileContent(t *testing.T) {
+	aiRoot := helperMemoryAIRoot(t)
+	content := "---\nname: myslug\ndescription: my description\nmetadata:\n  type: reference\n---\n\n## Rule\nSome rule.\n"
+	_ = os.WriteFile(filepath.Join(aiRoot, "memory", "reference_myslug.md"), []byte(content), 0o644)
+	writeMemoryMD(t, aiRoot, "# Memory Index\n\n## Reference\n- [myslug](reference_myslug.md) — my description\n")
+
+	out, err := runMemoryCmd(t, "show", "myslug")
+	if err != nil && strings.Contains(err.Error(), "not yet implemented") {
+		t.Fatalf("memory show returned stub error: %v", err)
+	}
+	if !strings.Contains(out, "Some rule.") {
+		t.Errorf("expected file content in output\n%s", out)
+	}
+}
+
+func TestMemoryShow_UnknownSlug_ReturnsError(t *testing.T) {
+	aiRoot := helperMemoryAIRoot(t)
+	writeMemoryMD(t, aiRoot, "# Memory Index\n")
+
+	_, err := runMemoryCmd(t, "show", "nonexistent-slug")
 	if err == nil {
-		t.Error("expected error for missing file, got nil")
+		t.Error("expected error for unknown slug, got nil")
+	}
+	if err != nil && strings.Contains(err.Error(), "not yet implemented") {
+		t.Fatalf("memory show returned stub error: %v", err)
+	}
+}
+
+// ---- memory archive (#171) ----
+
+func TestMemoryArchive_MovesFile(t *testing.T) {
+	aiRoot := helperMemoryAIRoot(t)
+	content := "---\nname: archiveme\ndescription: archive this\nmetadata:\n  type: feedback\n---\n"
+	_ = os.WriteFile(filepath.Join(aiRoot, "memory", "feedback_archiveme.md"), []byte(content), 0o644)
+	writeMemoryMD(t, aiRoot, "# Memory Index\n\n## Feedback\n- [archiveme](feedback_archiveme.md) — archive this\n")
+
+	out, err := runMemoryCmd(t, "archive", "archiveme")
+	if err != nil && strings.Contains(err.Error(), "not yet implemented") {
+		t.Fatalf("memory archive returned stub error: %v", err)
+	}
+	_ = out
+
+	// Original file should be gone
+	origPath := filepath.Join(aiRoot, "memory", "feedback_archiveme.md")
+	if _, statErr := os.Stat(origPath); !os.IsNotExist(statErr) {
+		t.Errorf("expected original file %s to be removed", origPath)
+	}
+
+	// Archived file should exist
+	archivedPath := filepath.Join(aiRoot, "memory", "archived", "archiveme.md")
+	if _, statErr := os.Stat(archivedPath); os.IsNotExist(statErr) {
+		t.Errorf("expected archived file at %s", archivedPath)
+	}
+}
+
+func TestMemoryArchive_RemovesMEMORYMDLine(t *testing.T) {
+	aiRoot := helperMemoryAIRoot(t)
+	content := "---\nname: removeentry\ndescription: remove from index\nmetadata:\n  type: feedback\n---\n"
+	_ = os.WriteFile(filepath.Join(aiRoot, "memory", "feedback_removeentry.md"), []byte(content), 0o644)
+	writeMemoryMD(t, aiRoot, "# Memory Index\n\n## Feedback\n- [removeentry](feedback_removeentry.md) — remove from index\n- [keep](feedback_keep.md) — keep this\n")
+
+	out, err := runMemoryCmd(t, "archive", "removeentry")
+	if err != nil && strings.Contains(err.Error(), "not yet implemented") {
+		t.Fatalf("memory archive returned stub error: %v", err)
+	}
+	_ = out
+
+	memContent, _ := os.ReadFile(filepath.Join(aiRoot, "memory", "MEMORY.md"))
+	if strings.Contains(string(memContent), "removeentry") {
+		t.Errorf("expected 'removeentry' line to be removed from MEMORY.md\n%s", string(memContent))
+	}
+	if !strings.Contains(string(memContent), "keep") {
+		t.Errorf("expected 'keep' line to remain in MEMORY.md\n%s", string(memContent))
+	}
+}
+
+// ---- memory codify (#170) ----
+
+func TestMemoryCodify_WritesMemoryFile(t *testing.T) {
+	aiRoot := helperMemoryAIRoot(t)
+	writeMemoryMD(t, aiRoot, "# Memory Index\n")
+
+	// Create a fake violation file
+	violationContent := "# Violation — 2026-05-24T10:00:00Z\n\n" +
+		"- **File / Rule violated:** Common.md §U14 — Independent verification\n" +
+		"- **What happened:** Accepted stale handoff.\n" +
+		"- **How noticed:** Self-detected\n" +
+		"- **Remediation:** Verified live state.\n" +
+		"- **Proposed amendment (if any):** Add verification step.\n"
+	violationPath := filepath.Join(t.TempDir(), "test-violation.md")
+	_ = os.WriteFile(violationPath, []byte(violationContent), 0o644)
+
+	out, err := runMemoryCmd(t, "codify", violationPath,
+		"--type", "feedback",
+		"--slug", "handoff-verification",
+		"--description", "Verify handoff claims before acting",
+	)
+	if err != nil && strings.Contains(err.Error(), "not yet implemented") {
+		t.Fatalf("memory codify returned stub error: %v", err)
+	}
+	_ = out
+
+	memFile := filepath.Join(aiRoot, "memory", "feedback_handoff-verification.md")
+	if _, statErr := os.Stat(memFile); os.IsNotExist(statErr) {
+		t.Errorf("expected memory file at %s", memFile)
+	}
+}
+
+func TestMemoryCodify_UpdatesMEMORYMD(t *testing.T) {
+	aiRoot := helperMemoryAIRoot(t)
+	writeMemoryMD(t, aiRoot, "# Memory Index\n")
+
+	violationContent := "# Violation — 2026-05-24T10:00:00Z\n\n" +
+		"- **File / Rule violated:** Code.md §11.8\n" +
+		"- **What happened:** Pipeline step skipped.\n" +
+		"- **Proposed amendment (if any):** Enforce pipeline.\n"
+	violationPath := filepath.Join(t.TempDir(), "violation.md")
+	_ = os.WriteFile(violationPath, []byte(violationContent), 0o644)
+
+	_, err := runMemoryCmd(t, "codify", violationPath,
+		"--type", "feedback",
+		"--slug", "pipeline-enforcement",
+		"--description", "Never skip pipeline steps",
+	)
+	if err != nil && strings.Contains(err.Error(), "not yet implemented") {
+		t.Fatalf("memory codify returned stub error: %v", err)
+	}
+
+	memMD, _ := os.ReadFile(filepath.Join(aiRoot, "memory", "MEMORY.md"))
+	if !strings.Contains(string(memMD), "pipeline-enforcement") {
+		t.Errorf("expected MEMORY.md to contain pointer to new memory\n%s", string(memMD))
+	}
+}
+
+func TestMemoryCodify_MemoryFileHasFrontmatter(t *testing.T) {
+	aiRoot := helperMemoryAIRoot(t)
+	writeMemoryMD(t, aiRoot, "# Memory Index\n")
+
+	violationContent := "# Violation — 2026-05-24T10:00:00Z\n\n" +
+		"- **File / Rule violated:** Common.md §U15\n" +
+		"- **What happened:** Loop exceeded 5 cycles.\n" +
+		"- **Proposed amendment (if any):** none\n"
+	violationPath := filepath.Join(t.TempDir(), "violation.md")
+	_ = os.WriteFile(violationPath, []byte(violationContent), 0o644)
+
+	_, err := runMemoryCmd(t, "codify", violationPath,
+		"--type", "reference",
+		"--slug", "loop-cap",
+		"--description", "Loop cap enforcement",
+	)
+	if err != nil && strings.Contains(err.Error(), "not yet implemented") {
+		t.Fatalf("memory codify returned stub error: %v", err)
+	}
+
+	memFile := filepath.Join(aiRoot, "memory", "reference_loop-cap.md")
+	data, readErr := os.ReadFile(memFile)
+	if readErr != nil {
+		t.Fatalf("reading memory file: %v", readErr)
+	}
+	body := string(data)
+	if !strings.Contains(body, "---") {
+		t.Errorf("expected YAML frontmatter delimiter in memory file\n%s", body)
+	}
+	if !strings.Contains(body, "name: loop-cap") {
+		t.Errorf("expected name in frontmatter\n%s", body)
+	}
+	if !strings.Contains(body, "type: reference") {
+		t.Errorf("expected type in frontmatter\n%s", body)
+	}
+}
+
+func TestMemoryCodify_MissingViolationFile_ReturnsError(t *testing.T) {
+	aiRoot := helperMemoryAIRoot(t)
+	writeMemoryMD(t, aiRoot, "# Memory Index\n")
+
+	_, err := runMemoryCmd(t, "codify", "/nonexistent/path/to/violation.md",
+		"--type", "feedback",
+		"--slug", "test",
+		"--description", "test",
+	)
+	if err == nil {
+		t.Error("expected error for nonexistent violation file, got nil")
+	}
+	if err != nil && strings.Contains(err.Error(), "not yet implemented") {
+		t.Fatalf("memory codify returned stub error: %v", err)
 	}
 }
