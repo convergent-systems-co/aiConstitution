@@ -54,7 +54,7 @@ The path argument must point to an existing violation file.`,
 			if err != nil {
 				return err
 			}
-			fmt.Fprintln(cmd.OutOrStdout(), created)
+			_, _ = fmt.Fprintln(cmd.OutOrStdout(), created)
 			return nil
 		},
 	}
@@ -83,7 +83,7 @@ func runMemoryCodify(violationPath string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("memory codify: open %q: %w", violationPath, err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	var rule, whatHappened, remediation string
 	sc := bufio.NewScanner(f)

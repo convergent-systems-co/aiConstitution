@@ -61,7 +61,7 @@ func appendMemoryPointer(root, filename, rule string) error {
 	if err != nil {
 		return fmt.Errorf("memory: open MEMORY.md: %w", err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	if _, err := f.WriteString(line); err != nil {
 		return fmt.Errorf("memory: write MEMORY.md: %w", err)
@@ -75,9 +75,8 @@ func findingSlug(rule string) string {
 	s := strings.ToLower(rule)
 	var b strings.Builder
 	for _, r := range s {
-		switch {
-		case r == ' ' || r == '\t' || r == '/' || r == '\\' || r == ':' ||
-			r == '*' || r == '?' || r == '"' || r == '<' || r == '>' || r == '|':
+		switch r { //nolint:staticcheck // QF1002: explicit case list is clearer here
+		case ' ', '\t', '/', '\\', ':', '*', '?', '"', '<', '>', '|':
 			b.WriteRune('-')
 		default:
 			b.WriteRune(r)

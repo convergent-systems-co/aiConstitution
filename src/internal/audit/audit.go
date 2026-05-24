@@ -102,7 +102,7 @@ func AppendEvent(e Event) error {
 	if err != nil {
 		return fmt.Errorf("audit: open interactions file: %w", err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	if _, err := f.Write(line); err != nil {
 		return fmt.Errorf("audit: write event: %w", err)
@@ -145,9 +145,8 @@ func violationSlug(rule string) string {
 	// Replace whitespace, slashes, and other chars unsafe in filenames.
 	var b strings.Builder
 	for _, r := range s {
-		switch {
-		case r == ' ' || r == '/' || r == '\\' || r == ':' || r == '*' ||
-			r == '?' || r == '"' || r == '<' || r == '>' || r == '|':
+		switch r { //nolint:staticcheck // QF1002: explicit case list is clearer here
+		case ' ', '/', '\\', ':', '*', '?', '"', '<', '>', '|':
 			b.WriteRune('-')
 		default:
 			b.WriteRune(r)
