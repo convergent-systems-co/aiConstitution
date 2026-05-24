@@ -99,7 +99,7 @@ func writeIfAbsent(dst string, data []byte) (bool, error) {
 	if err := os.MkdirAll(filepath.Dir(dst), 0o750); err != nil {
 		return false, err
 	}
-	if err := os.WriteFile(dst, data, 0o640); err != nil {
+	if err := os.WriteFile(dst, data, 0o600); err != nil { //nolint:gosec // G306: integration files are user-readable config, 0600 is correct
 		return false, err
 	}
 	return true, nil
