@@ -64,7 +64,7 @@ func Load(root string) (Files, error) {
 	}
 
 	// Constitution.local.md is optional.
-	localData, err := os.ReadFile(filepath.Join(root, "Constitution.local.md"))
+	localData, err := os.ReadFile(filepath.Join(root, "Constitution.local.md")) //nolint:gosec // G304: hardcoded filename, root is user config dir
 	if err == nil {
 		f.Local = string(localData)
 	}
