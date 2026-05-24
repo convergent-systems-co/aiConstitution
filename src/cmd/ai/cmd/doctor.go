@@ -298,3 +298,56 @@ func checkClaudeMD(claudeMD string) checkResult {
 	}
 	return pass("CLAUDE.md present and references Constitution.md")
 }
+
+// PathStatus describes the result of checkBinPath.
+type PathStatus int
+
+// PathStatus values.
+const (
+	// PathOK: binDir is on PATH and earlier than the listed system bin dirs.
+	PathOK PathStatus = iota
+	// PathMissing: binDir is not on PATH at all.
+	PathMissing
+	// PathShadowed: binDir appears AFTER a system bin dir on PATH.
+	PathShadowed
+)
+
+// checkBinPath determines whether binDir is on pathVar (the PATH env var)
+// and ahead of the listed system bin dirs.
+func checkBinPath(binDir, pathVar string) (status PathStatus, message string) {
+	if binDir == "" {
+		return PathOK, ""
+	}
+	binDir = filepath.Clean(binDir)
+	systemBins := []string{"/usr/local/bin", "/opt/homebrew/bin"}
+
+	entries := strings.Split(pathVar, string(os.PathListSeparator))
+	binIdx := -1
+	systemIdxs := map[string]int{}
+	for i, e := range entries {
+		clean := filepath.Clean(strings.TrimSpace(e))
+		if clean == "." || clean == "" {
+			continue
+		}
+		if clean == binDir && binIdx < 0 {
+			binIdx = i
+		}
+		for _, s := range systemBins {
+			if clean == s {
+				if _, seen := systemIdxs[s]; !seen {
+					systemIdxs[s] = i
+				}
+			}
+		}
+	}
+
+	if binIdx < 0 {
+		return PathMissing, fmt.Sprintf("%s is not on PATH — wrapper interception will not fire", binDir)
+	}
+	for _, s := range systemBins {
+		if si, ok := systemIdxs[s]; ok && si < binIdx {
+			return PathShadowed, fmt.Sprintf("%s is on PATH but %s appears earlier", binDir, s)
+		}
+	}
+	return PathOK, fmt.Sprintf("%s is on PATH before system bins", binDir)
+}
