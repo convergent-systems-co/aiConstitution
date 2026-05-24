@@ -3,6 +3,6 @@ module github.com/convergent-systems-co/aiConstitution/src/internal
 go 1.22
 
 require (
-	github.com/BurntSushi/toml v1.4.0 // indirect
-	gopkg.in/yaml.v3 v3.0.1 // indirect
+	github.com/BurntSushi/toml v1.4.0
+	gopkg.in/yaml.v3 v3.0.1
 )
