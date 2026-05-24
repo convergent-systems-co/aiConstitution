@@ -22,10 +22,10 @@ func WriteDrift(root, slug string, dc DriftContent) error {
 	if err := os.MkdirAll(dir, 0o750); err != nil {
 		return fmt.Errorf("audit.WriteDrift: mkdir: %w", err)
 	}
-	ts := time.Now().UTC().Format("20060102T150405Z")
-	filename := fmt.Sprintf("%s-%s.md", ts, slug)
+	now := time.Now().UTC()
+	filename := fmt.Sprintf("%s-%s.md", now.Format("20060102T150405Z"), slug)
 	content := fmt.Sprintf("# Drift — %s\n\n- **Rule:** %s\n- **Trigger:** %s\n- **Evidence:** %s\n- **Sessions affected:** %s\n- **Proposed action:** %s\n",
-		time.Now().UTC().Format("2006-01-02T15:04:05Z"),
+		now.Format("2006-01-02T15:04:05Z"),
 		dc.Rule, dc.Trigger, dc.Evidence, dc.SessionsAffected, dc.ProposedAction,
 	)
 	return os.WriteFile(filepath.Join(dir, filename), []byte(content), 0o600) //nolint:gosec

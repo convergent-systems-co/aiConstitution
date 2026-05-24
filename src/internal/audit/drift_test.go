@@ -29,7 +29,10 @@ func TestWriteDrift_CreatesFile(t *testing.T) {
 	if len(entries) != 1 {
 		t.Fatalf("expected 1 drift file, got %d", len(entries))
 	}
-	data, _ := os.ReadFile(filepath.Join(root, "audit", "drift", entries[0].Name()))
+	data, err := os.ReadFile(filepath.Join(root, "audit", "drift", entries[0].Name()))
+	if err != nil {
+		t.Fatalf("failed to read drift file: %v", err)
+	}
 	body := string(data)
 	for _, want := range []string{"§3.U17", "near-miss", "Blast radius hit 98"} {
 		if !strings.Contains(body, want) {
