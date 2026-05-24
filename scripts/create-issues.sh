@@ -58,14 +58,51 @@ create_issue() {
   echo "$num"
 }
 
-add_sub_issue() {
-  local parent="$1"
-  local child="$2"
-  [[ "$DRY_RUN" == "--dry-run" ]] && return
+# CHILDREN_DIR collects child info per parent during the creation passes.
+# link_all_children() reads it and does one gh issue edit per parent.
+CHILDREN_DIR=$(mktemp -d)
+trap 'rm -rf "$CHILDREN_DIR"' EXIT
+
+record_child() {
+  local parent="$1" child="$2" child_title="$3"
   [[ "$parent" == "0" || "$child" == "0" ]] && return
-  sleep 0.5
-  gh api "repos/$REPO/issues/$parent/sub_issues" \
-    -X POST -F sub_issue_id="$child" --silent 2>/dev/null || true
+  echo "${child}|${child_title}" >> "${CHILDREN_DIR}/parent_${parent}"
+}
+
+link_all_children() {
+  echo "=== Pass 4: Linking parents → children via task lists ==="
+  local count=0
+  for child_file in "${CHILDREN_DIR}"/parent_*; do
+    [[ -f "$child_file" ]] || continue
+    local parent="${child_file##*parent_}"
+    if [[ "$DRY_RUN" == "--dry-run" ]]; then
+      echo "  DRY-RUN: would update #${parent} with $(wc -l < "$child_file" | tr -d ' ') children" >&2
+      continue
+    fi
+    sleep 0.5
+    local current_body
+    current_body=$(gh issue view "$parent" --repo "$REPO" --json body --jq '.body // ""')
+    local new_entries=""
+    while IFS='|' read -r child_num child_title; do
+      # Skip if already linked (handles re-runs; matches both [ ] and [x])
+      if ! echo "$current_body" | grep -qE "- \[.\] #${child_num}([^0-9]|$)"; then
+        new_entries+="- [ ] #${child_num} ${child_title}"$'\n'
+      fi
+    done < "$child_file"
+    [[ -z "$new_entries" ]] && continue
+    local tmpbody
+    tmpbody=$(mktemp)
+    if echo "$current_body" | grep -q "^## Children"; then
+      printf '%s\n%s' "$current_body" "$new_entries" > "$tmpbody"
+    else
+      printf '%s\n\n## Children\n%s' "$current_body" "$new_entries" > "$tmpbody"
+    fi
+    gh issue edit "$parent" --repo "$REPO" --body-file "$tmpbody" 2>/dev/null || true
+    rm -f "$tmpbody"
+    echo "  updated #${parent}" >&2
+    (( count++ )) || true
+  done
+  echo "Parents updated: ${count}"
 }
 
 # ─── PASS 1: EPICS ──────────────────────────────────────────────────────────
@@ -157,7 +194,7 @@ for def in "${FEATURE_DEFS[@]}"; do
   parent_num="${EPIC_NUMS[$parent_key]}"
   num=$(create_issue "$title" "$body" "agile/feature,status/triage")
   FEATURE_NUMS["$title"]="$num"
-  add_sub_issue "$parent_num" "$num"
+  record_child "$parent_num" "$num" "$title"
 done
 
 echo "Features created: ${#FEATURE_NUMS[@]}"
@@ -257,9 +294,12 @@ for def in "${STORY_DEFS[@]}"; do
   num=$(create_issue "$title" "$body" "agile/story,status/triage")
   STORY_NUMS["$title"]="$num"
   if [[ -n "$parent_num" ]]; then
-    add_sub_issue "$parent_num" "$num"
+    record_child "$parent_num" "$num" "$title"
   fi
 done
 
 echo "Stories created: ${#STORY_NUMS[@]}"
+
+link_all_children
+
 echo "=== Done. ==="
