@@ -10,7 +10,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 )
 
 // WriteFinding writes a feedback-type memory file to <root>/feedback_<slug>.md
@@ -41,12 +40,21 @@ func WriteFinding(root, rule, whatHappened, remediation string) (string, error) 
 }
 
 // buildFindingContent constructs the YAML-frontmatter + body content for
-// a feedback finding file.
+// a feedback finding file (legacy — uses derived slug).
 func buildFindingContent(rule, whatHappened, remediation string) string {
-	ts := time.Now().UTC().Format("2006-01-02T15:04:05Z")
+	slug := findingSlug(rule)
+	return buildFindingFullContent("feedback", slug, rule, rule, whatHappened, remediation)
+}
+
+// buildFindingFullContent constructs the YAML-frontmatter + body using the
+// canonical memory file format per Common.md §5.1.
+func buildFindingFullContent(memType, slug, description, rule, whatHappened, remediation string) string {
+	if description == "" {
+		description = rule
+	}
 	return fmt.Sprintf(
-		"---\ntype: feedback\nrule: %s\ndate: %s\n---\n\n## Rule\n\n%s\n\n## What happened\n\n%s\n\n## Remediation\n\n%s\n",
-		rule, ts, rule, whatHappened, remediation,
+		"---\nname: %s\ndescription: %s\nrule: %s\nmetadata:\n  type: %s\n---\n\n## Rule\n\n%s\n\n**Why:** %s\n\n**How to apply:** %s\n",
+		slug, description, rule, memType, rule, whatHappened, remediation,
 	)
 }
 
@@ -67,6 +75,38 @@ func appendMemoryPointer(root, filename, rule string) error {
 		return fmt.Errorf("memory: write MEMORY.md: %w", err)
 	}
 	return nil
+}
+
+// FindingSlug is the exported equivalent of findingSlug for callers that
+// need to derive a slug without calling WriteFinding.
+func FindingSlug(rule string) string { return findingSlug(rule) }
+
+// WriteFindingFull writes a memory file with explicit type, slug, and
+// description rather than deriving them from rule. The file is written as
+// <root>/<type>_<slug>.md and a pointer appended to <root>/MEMORY.md.
+func WriteFindingFull(root, memType, slug, description, rule, whatHappened, remediation string) (string, error) {
+	if err := os.MkdirAll(root, 0o750); err != nil {
+		return "", fmt.Errorf("memory: mkdir %q: %w", root, err)
+	}
+	filename := memType + "_" + slug + ".md"
+	findingPath := filepath.Join(root, filename)
+	content := buildFindingFullContent(memType, slug, description, rule, whatHappened, remediation)
+	//nolint:gosec // G306: user config file; 0o600 is intentional
+	if err := os.WriteFile(findingPath, []byte(content), 0o600); err != nil {
+		return "", fmt.Errorf("memory: write finding: %w", err)
+	}
+	pointer := fmt.Sprintf("- [%s](%s) — %s\n", slug, filename, description)
+	memPath := filepath.Join(root, "MEMORY.md")
+	//nolint:gosec // G304: internal path
+	f, err := os.OpenFile(memPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+	if err != nil {
+		return "", fmt.Errorf("memory: open MEMORY.md: %w", err)
+	}
+	defer func() { _ = f.Close() }()
+	if _, err := f.WriteString(pointer); err != nil {
+		return "", fmt.Errorf("memory: write MEMORY.md: %w", err)
+	}
+	return findingPath, nil
 }
 
 // findingSlug returns the first 32 characters of rule, lowercased,

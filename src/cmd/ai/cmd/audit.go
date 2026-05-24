@@ -130,9 +130,9 @@ func newAuditShowCmd() *cobra.Command {
 	}
 }
 
-// resolveAuditFile tries violations/ then overrides/, returning the
-// first match. If the caller passes a relative path with subdir
-// (e.g. "violations/foo.md") we honor it directly.
+// resolveAuditFile tries violations/ then overrides/ for an exact or
+// substring match. Lookup order: (1) subdir/name exactly, (2) first
+// file in subdir whose name contains the slug as a substring.
 func resolveAuditFile(name string) (string, error) {
 	if strings.Contains(name, "/") {
 		candidate := filepath.Join(paths.AuditDir(), name)
@@ -143,11 +143,21 @@ func resolveAuditFile(name string) (string, error) {
 		}
 	}
 	for _, sub := range []string{"violations", "overrides"} {
+		// Exact match first.
 		candidate := filepath.Join(paths.AuditDir(), sub, name)
 		if _, err := os.Stat(candidate); err == nil {
 			return candidate, nil
-		} else if !errors.Is(err, os.ErrNotExist) {
+		}
+		// Substring match — walk the subdir.
+		dir := filepath.Join(paths.AuditDir(), sub)
+		entries, err := os.ReadDir(dir)
+		if err != nil && !errors.Is(err, os.ErrNotExist) {
 			return "", err
+		}
+		for _, e := range entries {
+			if !e.IsDir() && strings.Contains(e.Name(), name) {
+				return filepath.Join(dir, e.Name()), nil
+			}
 		}
 	}
 	return "", fmt.Errorf("audit file %q not found in violations/ or overrides/", name)
