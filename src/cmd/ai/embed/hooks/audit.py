@@ -133,9 +133,17 @@ def main(argv: list[str]) -> int:
 
     try:
         event = normalize_event(raw)
-        # Redaction pass: scrub the structured fields. Per Common.md §4.5.
-        event["stimulus"] = _lib.redact(event.get("stimulus", ""))
-        event["probe_payload"] = _lib.redact(event.get("probe_payload", ""))
+        # Redaction pass: scrub the structured fields in-place, but
+        # ONLY when the per-kind field is present. Per Common.md §4.5
+        # the redaction itself is non-optional; per §5.2 the per-kind
+        # fields are kind-scoped (stimulus only for `request`,
+        # probe/probe_payload only for invocation-*, emission_marker
+        # only for emission/subagent-emission). Materializing empty
+        # strings for unrelated kinds pollutes downstream greps.
+        if "stimulus" in event:
+            event["stimulus"] = _lib.redact(event["stimulus"])
+        if "probe_payload" in event:
+            event["probe_payload"] = _lib.redact(event["probe_payload"])
         audit_dir().mkdir(parents=True, exist_ok=True)
         with open(month_file(), "a", encoding="utf-8") as f:
             f.write(json.dumps(event, ensure_ascii=False) + "\n")
