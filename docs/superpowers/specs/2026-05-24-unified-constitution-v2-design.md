@@ -410,6 +410,16 @@ Include a "Research foundations" section on `aiConstitution.convergent-systems.c
 
 ---
 
+## Open Questions Resolved
+
+**`Constitution.local.md`:** Stays as a separate file. It is a per-machine override that strengthens (never weakens) the unified `Constitution.md`. In the v2 model, it sits alongside the main file: `~/.ai/Constitution.md` (canonical) + `~/.ai/Constitution.local.md` (optional local strengthening). The runtime generator includes local overrides in `Constitution.runtime.md` when present. Migration: unchanged — no action needed.
+
+**`questions.yaml` rewrite:** The current file has ~50 questions across 10 phases. The v2 wizard reduces to ~15 questions across 5 phases. The full `questions.yaml` rewrite is in scope — old questions that map to invariant boilerplate are removed; remaining questions are restructured into the five v2 phases. The `version:` field bumps to `1.0`.
+
+**`ai generate runtime` (new command):** Added to the CLI surface under `ai generate runtime`. Reads `~/.ai/Constitution.md` (and `Constitution.local.md` if present), extracts §1 header + §2 Behavioral Standards invariant floors + §3 Prime Directives + §3 Autonomy Gates + one paragraph per domain section, writes `~/.ai/Constitution.runtime.md`. Called automatically by `ai amend apply` and `ai migrate`. Added to `ai doctor` check #11.
+
+---
+
 ## Out of Scope
 
 - Multi-user constitutions (each user has their own `~/.ai/`)
