@@ -1,6 +1,6 @@
 module github.com/convergent-systems-co/aiConstitution/src/cmd/ai
 
-go 1.22
+go 1.24.0
 
 require github.com/spf13/cobra v1.10.2
 

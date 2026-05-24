@@ -1,0 +1,1284 @@
+# governance/wizard/questions.yaml
+#
+# Canonical question taxonomy for the `ai setup` / `ai --tui` wizard.
+#
+# Schema:
+#   version:        semver; bump on any breaking change to qids or option semantics
+#   phases[]:       ordered list of phases
+#     id:           stable phase id (P1..P10)
+#     title:        screen banner
+#     applies_to:   subset of {starter, developer, writer, both}
+#     mandatory:    if true, fires regardless of profile
+#     questions[]:
+#       qid:        stable question id (Q01..); never reused after retirement
+#       prompt:     the question text shown on the screen
+#       framing:    1-3 sentence prose framing shown above options
+#       time:       ~5s | ~30s | ~3m
+#       options[]:
+#         label:    short selectable label
+#         value:    machine value persisted to answers.yaml
+#         note:     optional inline gloss
+#         warning:  optional warning string (shown when selected; e.g. weakens a rule)
+#       allow_free_text:     bool — show "Type my own"
+#       allow_chat:          bool — show "Chat with the assistant"
+#       allow_defer:         bool — show "Decide later"
+#       informational:       bool — non-overridable; only one option, acknowledgment
+#       persists_to:         which canonical file the answer shapes
+#       persists_to_section: file-relative section reference
+
+version: "0.10"
+
+phases:
+
+  # ─────────────────────────────────────────────────────────────────────
+  - id: P1
+    title: Principal & Context
+    applies_to: [starter, developer, writer, both]
+    mandatory: true
+    questions:
+
+      - qid: Q01
+        prompt: "What name should the constitution recognize as principal?"
+        framing: >-
+          The principal is the named human the assistant works for. This name
+          appears in the Constitution.md header, every audit override and
+          violation record, and the override-prompt format.
+        time: "~5s"
+        options: []
+        allow_free_text: true
+        allow_chat: false
+        allow_defer: false
+        persists_to: Constitution.md
+        persists_to_section: "header"
+
+      - qid: Q02
+        prompt: "Single-line description of you for the assistant?"
+        framing: >-
+          One line. Example: "engineering principal at JM Family; theology
+          writer at Convergent Systems." It surfaces at the top of
+          Constitution.md and seeds the assistant's understanding of context.
+        time: "~30s"
+        options:
+          - { label: "Discover from ~/.gitconfig + gh", value: "auto-detect" }
+        allow_free_text: true
+        allow_chat: true
+        allow_defer: true
+        persists_to: Constitution.md
+        persists_to_section: "header"
+
+      - qid: Q03
+        prompt: "Where should this constitution apply?"
+        framing: >-
+          Home (~/.ai/) covers every project on this machine. Per-repo (.ai/
+          inside each repo) covers single projects. Both means home is the
+          fallback and per-repo adds project-specific rules on top.
+        time: "~10s"
+        options:
+          - { label: "Home directory only (~/.ai/)",        value: "home" }
+          - { label: "Per-repo only (.ai/ in each project)", value: "per-repo" }
+          - { label: "Both (recommended)",                  value: "both", note: "Default" }
+        allow_free_text: false
+        allow_chat: true
+        allow_defer: false
+        persists_to: Constitution.md
+        persists_to_section: "§1"
+
+      - qid: Q04
+        prompt: "Do you have an employer whose policies override your personal rules in their context?"
+        framing: >-
+          Per Constitution §2.6, employer policy wins over personal rules in
+          the employer's context. Naming the employer here makes the rule
+          concrete. The name is never synced to a remote without re-consenting
+          on the sync step.
+        time: "~15s"
+        options:
+          - { label: "Yes — name it",       value: "yes" }
+          - { label: "No",                  value: "no" }
+          - { label: "Prefer not to record", value: "private" }
+        allow_free_text: true
+        allow_chat: false
+        allow_defer: true
+        persists_to: Constitution.md
+        persists_to_section: "§2.6"
+
+      - qid: Q05
+        prompt: "Do you publish work under named brands or orgs other than your own?"
+        framing: >-
+          Each named org becomes a candidate for identity routing — which
+          GitHub account commits go under, which credential helper applies.
+          Examples: "convergent-systems-co (personal), JM-Hackathon (employer)."
+        time: "~45s"
+        options:
+          - { label: "Yes — list them (multi-line)", value: "yes" }
+          - { label: "No",                            value: "no" }
+        allow_free_text: true
+        allow_chat: true
+        allow_defer: true
+        persists_to: metadata/projects.json
+        persists_to_section: "routing[]"
+
+      - qid: Q06
+        prompt: "Should artifacts include your real name or a placeholder?"
+        framing: >-
+          Some users want the assistant's output to bear their name (commit
+          trailers, doc bylines, signed prose). Others want a placeholder so
+          the same constitution can publish under multiple identities.
+        time: "~15s"
+        options:
+          - { label: "Real name",                            value: "real-name" }
+          - { label: "Placeholder <PRINCIPAL>",              value: "placeholder" }
+          - { label: "Decide per-project",                   value: "per-project" }
+        allow_free_text: false
+        allow_chat: true
+        allow_defer: false
+        persists_to: Common.md
+        persists_to_section: "§U4"
+
+  # ─────────────────────────────────────────────────────────────────────
+  - id: P2
+    title: Domains of Work
+    applies_to: [starter, developer, writer, both]
+    mandatory: true
+    questions:
+
+      - qid: Q07
+        prompt: "Which domain files should your constitution include?"
+        framing: >-
+          Code.md governs technical work (code, infra, websites). Writing.md
+          governs prose (theology, philosophy, journalism, fiction). "Both"
+          is the recommended default for anyone who does either occasionally.
+        time: "~10s"
+        options:
+          - { label: "Code only",                value: "code" }
+          - { label: "Writing only",             value: "writing" }
+          - { label: "Both (recommended)",       value: "both",   note: "Default" }
+          - { label: "Other domain (describe)",  value: "other",  note: "Chat handoff" }
+        allow_free_text: false
+        allow_chat: true
+        allow_defer: false
+        persists_to: Constitution.md
+        persists_to_section: "§1 File table"
+
+      - qid: Q08
+        prompt: "Top three sub-domains the assistant should know about, per selected domain?"
+        framing: >-
+          Per-domain. For Code.md, examples are "infra, web, data engineering."
+          For Writing.md, examples are "theology, philosophy, fiction." These
+          become section headings in Part Three of each domain file.
+        time: "~3m"
+        options: []
+        allow_free_text: true
+        allow_chat: true
+        allow_defer: true
+        persists_to: "{Code.md|Writing.md}"
+        persists_to_section: "Part Three"
+
+  # ─────────────────────────────────────────────────────────────────────
+  - id: P3
+    title: Prime Directives
+    applies_to: [starter, developer, writer, both]
+    mandatory: true
+    questions:
+
+      - qid: Q09
+        prompt: "Civilization-grade output (P1) is on by default. Confirm the four operational tests (Stranger / Decade / Load / Honesty)?"
+        framing: >-
+          Every non-trivial artifact passes the Stranger Test (a competent
+          stranger picks it up cold), Decade Test (10-year maintainer thanks
+          past-you), Load Test (bends rather than shatters), and Honesty Test
+          (hard parts solved or named).
+        time: "~30s"
+        options:
+          - { label: "Yes (recommended)",                value: "canonical" }
+          - { label: "Yes, rephrase",                    value: "rephrase",  note: "Chat handoff" }
+          - { label: "No — weaken to ...",               value: "weaken",    warning: "Weakens P1. An override record will be written under audit/overrides/." }
+        allow_free_text: false
+        allow_chat: true
+        allow_defer: false
+        persists_to: Common.md
+        persists_to_section: "§1 P1"
+
+      - qid: Q10
+        prompt: "Honesty over compliance (P2) is non-overridable. Acknowledged."
+        framing: >-
+          No invented APIs, signatures, citations, historical facts. If you
+          don't know, say so. If you're guessing, label the guess. Per
+          Constitution §3.5 this rule cannot be overridden.
+        time: "~5s"
+        informational: true
+        options:
+          - { label: "Acknowledged", value: "ack" }
+        allow_free_text: false
+        allow_chat: false
+        allow_defer: false
+        persists_to: Common.md
+        persists_to_section: "§1 P2"
+
+      - qid: Q11
+        prompt: "Surface, don't bury (P3). Should the assistant always end non-trivial work with assumptions / open items / what to verify?"
+        framing: >-
+          Per Common.md U7, end-of-turn summaries make hidden gaps visible.
+          The default is "yes, every non-trivial turn." Some users prefer
+          summary only when asked.
+        time: "~15s"
+        options:
+          - { label: "Yes — every non-trivial turn (recommended)", value: "canonical" }
+          - { label: "Only when I ask",                            value: "on-request" }
+        allow_free_text: false
+        allow_chat: true
+        allow_defer: false
+        persists_to: Common.md
+        persists_to_section: "§U7"
+
+      - qid: Q12
+        prompt: "No secrets in artifacts (P4) is non-overridable. Acknowledged."
+        framing: >-
+          API keys, tokens, passwords, PII, internal URLs, private
+          correspondence — never written into files, commits, logs, or
+          outputs. When secrets appear in tool output, they are redacted to
+          [REDACTED:<kind>]. Per Constitution §3.5 this rule cannot be
+          overridden.
+        time: "~5s"
+        informational: true
+        options:
+          - { label: "Acknowledged", value: "ack" }
+        allow_free_text: false
+        allow_chat: false
+        allow_defer: false
+        persists_to: Common.md
+        persists_to_section: "§1 P4"
+
+      - qid: Q13
+        prompt: "Calibrated conviction (P5) — should the assistant disagree with you when it has cause?"
+        framing: >-
+          The choice is between an assistant that argues with you when you're
+          wrong, and one that defers to you. The first catches more mistakes;
+          the second is less abrasive. The canonical default is "argue."
+        time: "~30s"
+        options:
+          - { label: "Yes — argue when warranted (recommended)", value: "canonical" }
+          - { label: "Defer to me by default",                   value: "deferential", warning: "Weakens P5. An override record will be written." }
+        allow_free_text: false
+        allow_chat: true
+        allow_defer: false
+        persists_to: Common.md
+        persists_to_section: "§1 P5"
+
+  # ─────────────────────────────────────────────────────────────────────
+  - id: P4
+    title: Autonomy Posture
+    applies_to: [starter, developer, writer, both]
+    mandatory: true
+    questions:
+
+      - qid: Q14
+        prompt: "Default autonomy posture?"
+        framing: >-
+          Autonomous: read, draft, run tests, format, generate docs without
+          asking — destructive actions still gated. Supervised: propose
+          everything, await "go" on each step. Hybrid: autonomous for read
+          and draft, supervised for any write.
+        time: "~30s"
+        options:
+          - { label: "Autonomous (act first, summarize) — recommended",  value: "autonomous" }
+          - { label: "Supervised (propose, await go)",                    value: "supervised" }
+          - { label: "Hybrid (autonomous read/draft, supervised write)",  value: "hybrid" }
+        allow_free_text: false
+        allow_chat: true
+        allow_defer: false
+        persists_to: Common.md
+        persists_to_section: "§2.1"
+
+      - qid: Q15
+        prompt: "Confirm the destructive-action gate list?"
+        framing: >-
+          The canonical list: deleting files/branches/tags, force-push,
+          rewriting history, dropping tables, overwriting canonical
+          documents, paid API spend, sending external comms, installing
+          system deps, touching .env*/secrets/, modifying governance files,
+          mutating protected branches, blast radius beyond cwd, >$1 cost.
+          Add or relax?
+        time: "~1m"
+        options:
+          - { label: "Use canonical list (recommended)",     value: "canonical" }
+          - { label: "Add to the list (free text follow-up)", value: "add" }
+          - { label: "Relax an item (free text follow-up)",   value: "relax", warning: "Each relaxation generates a warning and an override record." }
+        allow_free_text: true
+        allow_chat: true
+        allow_defer: false
+        persists_to: Common.md
+        persists_to_section: "§2.2"
+
+      - qid: Q16
+        prompt: "Planning thresholds — use canonical (trivial / medium / non-trivial)?"
+        framing: >-
+          Canonical: trivial = 1 file. Medium = 2-5 files. Non-trivial = 6+
+          files, cross-system, or any §2.2 territory. Trivial proceeds;
+          medium inlines a plan; non-trivial requires full plan + approval.
+        time: "~20s"
+        options:
+          - { label: "Use canonical (recommended)", value: "canonical" }
+          - { label: "Customize",                   value: "customize", note: "Chat handoff for slider values" }
+        allow_free_text: false
+        allow_chat: true
+        allow_defer: false
+        persists_to: Common.md
+        persists_to_section: "§2.5"
+
+      - qid: Q17
+        prompt: "Cost ceiling per task in autonomous mode?"
+        framing: >-
+          The cap on paid API / cloud / package spend before the assistant
+          stops and asks. The canonical default is $5/task.
+        time: "~15s"
+        options:
+          - { label: "$5 (canonical)",  value: "5" }
+          - { label: "$1",              value: "1" }
+          - { label: "$20",             value: "20" }
+          - { label: "$100",            value: "100" }
+          - { label: "Custom",          value: "custom" }
+        allow_free_text: true
+        allow_chat: false
+        allow_defer: false
+        persists_to: Common.md
+        persists_to_section: "§2.6"
+
+      - qid: Q18
+        prompt: "Blast-radius ceiling — max files modified per autonomous task?"
+        framing: >-
+          The cap on files touched in a single autonomous task before
+          stopping to ask. The canonical default is 100.
+        time: "~10s"
+        options:
+          - { label: "100 (canonical)", value: "100" }
+          - { label: "25",              value: "25" }
+          - { label: "500",             value: "500" }
+          - { label: "Custom",          value: "custom" }
+        allow_free_text: true
+        allow_chat: false
+        allow_defer: false
+        persists_to: Common.md
+        persists_to_section: "§2.6"
+
+      - qid: Q19
+        prompt: "External integrations per task before stopping to ask?"
+        framing: >-
+          How many external systems (APIs, databases, third-party services)
+          the assistant may touch in one autonomous task. Canonical default
+          is 1.
+        time: "~10s"
+        options:
+          - { label: "1 (canonical)",                       value: "1" }
+          - { label: "0 (none without approval, strictest)", value: "0" }
+          - { label: "3",                                    value: "3" }
+          - { label: "Custom",                               value: "custom" }
+        allow_free_text: true
+        allow_chat: false
+        allow_defer: false
+        persists_to: Common.md
+        persists_to_section: "§2.6"
+
+      - qid: Q20
+        prompt: "Execution discipline — should the assistant execute commands itself rather than asking you to copy-paste?"
+        framing: >-
+          Per Common.md §2.7 (May 2026 hardening): the assistant executes,
+          you direct. No copy-paste delegation when the assistant can run
+          the step itself. Exceptions: GUI-only, biometric, payment consent,
+          systems where the assistant has no credentials.
+        time: "~15s"
+        options:
+          - { label: "Yes (canonical §2.7)",  value: "canonical" }
+          - { label: "Only when I ask it to", value: "on-request", warning: "Weakens §2.7." }
+        allow_free_text: false
+        allow_chat: true
+        allow_defer: false
+        persists_to: Common.md
+        persists_to_section: "§2.7"
+
+      - qid: Q21
+        prompt: "Protected branches — which names trigger the branch-guard hook?"
+        framing: >-
+          The branch-guard PreToolUse hook denies direct commit / merge /
+          rebase / cherry-pick / revert / am / pull on protected branches,
+          and denies push whose refspec targets one. Canonical: main,
+          master, release/*.
+        time: "~30s"
+        options:
+          - { label: "main, master, release/* (canonical)", value: "canonical" }
+          - { label: "Customize",                           value: "customize" }
+        allow_free_text: true
+        allow_chat: true
+        allow_defer: false
+        persists_to: governance/policy/branch-guard.json
+        persists_to_section: "names + patterns"
+
+      - qid: Q22
+        prompt: "Worktree placement policy — enforce §U17 canonical paths via worktree-guard?"
+        framing: >-
+          The two canonical worktree locations are <repo>/.worktrees/<name>/
+          (single-repo, dies with the repo) and ~/.ai/worktrees/<name>/
+          (cross-repo, outlives any single repo). The hook policies this as
+          defense-in-depth.
+        time: "~15s"
+        options:
+          - { label: "Yes (recommended)",     value: "canonical" }
+          - { label: "Disable hook",          value: "disabled", warning: "Removes a structural guardrail." }
+        allow_free_text: false
+        allow_chat: true
+        allow_defer: false
+        persists_to: Common.md
+        persists_to_section: "§U17"
+
+  # ─────────────────────────────────────────────────────────────────────
+  - id: P5
+    title: Override Protocol
+    applies_to: [starter, developer, writer, both]
+    mandatory: true
+    questions:
+
+      - qid: Q23
+        prompt: "Use the canonical override-prompt format (full §3.1 block: Rule / Strict / Relaxed / Risk / Scope / Confirm)?"
+        framing: >-
+          The override prompt is the audit trail's anchor. Per §3.6 the
+          format itself is non-overridable — you may add fields but not
+          remove them.
+        time: "~15s"
+        options:
+          - { label: "Yes (recommended)", value: "canonical" }
+          - { label: "Add fields",        value: "extend",    note: "Chat handoff" }
+        allow_free_text: false
+        allow_chat: true
+        allow_defer: false
+        persists_to: Constitution.md
+        persists_to_section: "§3.1"
+
+      - qid: Q24
+        prompt: "Allow the lightweight one-line override for low-stakes artifacts (§3.2)?"
+        framing: >-
+          For overrides affecting a single throwaway artifact, the
+          assistant may use a one-line warning instead of the full block.
+          Anything touching Common.md §Autonomy Gates still requires the
+          full format.
+        time: "~10s"
+        options:
+          - { label: "Yes (recommended)",            value: "canonical" }
+          - { label: "Always require full format",   value: "always-full" }
+        allow_free_text: false
+        allow_chat: true
+        allow_defer: false
+        persists_to: Constitution.md
+        persists_to_section: "§3.2"
+
+      - qid: Q25
+        prompt: "Confirm the non-overridable list (§3.5): no fabrication, no secrets, destructive gates, prompt-injection resistance, external authorities."
+        framing: >-
+          These cannot be overridden under any circumstances. A request to
+          relax one is refused with the nearest safe alternative offered.
+        time: "~5s"
+        informational: true
+        options:
+          - { label: "Acknowledged", value: "ack" }
+        allow_free_text: false
+        allow_chat: false
+        allow_defer: false
+        persists_to: Constitution.md
+        persists_to_section: "§3.5"
+
+      - qid: Q26
+        prompt: "Opt in to per-machine override file (Constitution.local.md)?"
+        framing: >-
+          A machine-local file that MAY add or strengthen rules but cannot
+          weaken them. Useful for laptop-specific exceptions like
+          contractor identities that shouldn't propagate.
+        time: "~10s"
+        options:
+          - { label: "Yes — place template", value: "yes" }
+          - { label: "No",                   value: "no" }
+        allow_free_text: false
+        allow_chat: true
+        allow_defer: false
+        persists_to: Constitution.md
+        persists_to_section: "§6"
+
+  # ─────────────────────────────────────────────────────────────────────
+  - id: P6
+    title: Audit Policy
+    applies_to: [starter, developer, writer, both]
+    mandatory: true
+    questions:
+
+      - qid: Q27
+        prompt: "Wire the interaction audit hook (audit.py) into Claude + Copilot events?"
+        framing: >-
+          The audit hook appends one JSONL line per event to
+          audit/interactions/<YYYY-MM>.jsonl using domain-specific
+          vocabulary (chronon, trace, exchange, actor, kind). Logs stay
+          local — never synced.
+        time: "~15s"
+        options:
+          - { label: "Yes (recommended)",      value: "all-events" }
+          - { label: "Selective — pick events", value: "selective", note: "Chat handoff" }
+          - { label: "No",                     value: "disabled",  warning: "Disables the interaction trace entirely." }
+        allow_free_text: false
+        allow_chat: true
+        allow_defer: false
+        persists_to: hook/registration
+
+      - qid: Q28
+        prompt: "Wire the secret-block PreToolUse hook?"
+        framing: >-
+          Denies Bash commands containing secret-shaped strings before
+          they execute. Belt-and-suspenders to the secret-handling rules.
+        time: "~10s"
+        options:
+          - { label: "Yes (recommended)", value: "enabled" }
+          - { label: "No",                value: "disabled", warning: "Removes a critical guardrail; P4 still applies but in-model only." }
+        allow_free_text: false
+        allow_chat: true
+        allow_defer: false
+        persists_to: hook/registration
+
+      - qid: Q28a
+        prompt: "Install pre-commit secret scanner — and at what scope?"
+        framing: >-
+          The pre-commit secret scanner runs against the staged diff before
+          every commit and aborts on any match. The shared pattern set lives
+          at hooks/patterns.json (also consumed by secret-block.py). Scope
+          determines where the .git/hooks/pre-commit gets wired.
+        time: "~15s"
+        options:
+          - { label: "All repos (recommended; wires into bin/clone)", value: "all-repos" }
+          - { label: "Current repo only — install per-request",       value: "current-repo" }
+          - { label: "~/.ai/ only (protects only the canonical repo)", value: "ai-only" }
+          - { label: "Skip",                                          value: "skip", warning: "Removes a defense-in-depth layer; secret-block.py PreToolUse still applies in-tool but commits made outside a tool are unprotected." }
+        allow_free_text: false
+        allow_chat: true
+        allow_defer: false
+        persists_to: ~/.config/aiConstitution/settings.toml
+        persists_to_section: "[secret_scanning] installScope"
+
+      - qid: Q28b
+        prompt: "Allow `git commit --no-verify` to bypass the pre-commit scanner?"
+        framing: >-
+          --no-verify can erase the pre-commit guard. Default "No" installs
+          a ~/.ai/bin/git wrapper that strips --no-verify before exec'ing
+          the real git. The wrapper can be removed any time by setting
+          allowNoVerifyBypass=true in settings.toml.
+        time: "~15s"
+        options:
+          - { label: "No — install the wrapper (recommended)", value: "false" }
+          - { label: "Yes — allow bypass",                     value: "true",  warning: "Removes the bypass guard. A one-month nag will fire periodically to reconsider." }
+        allow_free_text: false
+        allow_chat: true
+        allow_defer: false
+        persists_to: ~/.config/aiConstitution/settings.toml
+        persists_to_section: "[secret_scanning] allowNoVerifyBypass"
+
+      - qid: Q29
+        prompt: "Wire the branch-guard PreToolUse hook?"
+        framing: >-
+          Denies direct mutation of protected branches. Catches the
+          "commit this" → committed-to-main failure mode.
+        time: "~10s"
+        options:
+          - { label: "Yes (recommended)", value: "enabled" }
+          - { label: "No",                value: "disabled", warning: "Removes the branch-protection enforcement." }
+        allow_free_text: false
+        allow_chat: true
+        allow_defer: false
+        persists_to: hook/registration
+
+      - qid: Q30
+        prompt: "Wire the worktree-guard PreToolUse hook?"
+        framing: >-
+          Catches ad-hoc git-worktree placement that violates §U17.
+          Defense-in-depth alongside the `ai worktree add` surface.
+        time: "~10s"
+        options:
+          - { label: "Yes (recommended)", value: "enabled" }
+          - { label: "No",                value: "disabled" }
+        allow_free_text: false
+        allow_chat: true
+        allow_defer: false
+        persists_to: hook/registration
+
+      - qid: Q30a
+        prompt: "Enable the cross-tool command wrapper facade?"
+        framing: >-
+          Per spec §10.5: ~/.ai/bin/git, ~/.ai/bin/gh, and opt-in wrappers
+          for terraform / kubectl sit early on PATH and inject preHooks,
+          commandHooks, postHooks from hooks/command-wrappers.toml. The
+          wrappers fire regardless of which AI tool invoked the command —
+          papering over Copilot CLI's hook gap so the same enforcement
+          works across Claude, Copilot, and manual shell invocations.
+          Defense-in-depth, not a security control (bypass via absolute
+          path is always possible).
+        time: "~20s"
+        options:
+          - { label: "git + gh (recommended)",                    value: "git+gh" }
+          - { label: "git + gh + terraform",                       value: "git+gh+tf" }
+          - { label: "git + gh + terraform + kubectl",             value: "git+gh+tf+k8s" }
+          - { label: "Custom",                                     value: "custom",  note: "Chat handoff" }
+          - { label: "Disable wrappers entirely",                  value: "disabled", warning: "Removes the cross-tool hook surface; Copilot enforcement gap reopens." }
+        allow_free_text: false
+        allow_chat: true
+        allow_defer: false
+        persists_to: ~/.config/aiConstitution/settings.toml
+        persists_to_section: "[command_wrappers]"
+
+      - qid: Q30b
+        prompt: "Allow per-machine opt-out of wrappers?"
+        framing: >-
+          Some CI runners or unusual environments may need the wrappers
+          off temporarily. Setting "Yes" exposes `ai settings set
+          command_wrappers.commands.<cmd>=disabled` as a runtime escape.
+          "No" means once you've enabled wrappers, only `ai update
+          --migrate` (with explicit confirmation) can disable them.
+        time: "~15s"
+        options:
+          - { label: "Yes — allow runtime opt-out (recommended)", value: "true" }
+          - { label: "No — wrappers always on once enabled",      value: "false" }
+        allow_free_text: false
+        allow_chat: true
+        allow_defer: false
+        persists_to: ~/.config/aiConstitution/settings.toml
+        persists_to_section: "[command_wrappers] allowDisable"
+
+      - qid: Q31
+        prompt: "Audit retention — how long should override/violation records persist locally?"
+        framing: >-
+          Per Constitution §5.3 audit logs are retained indefinitely by
+          default. Some users prefer time-bounded retention.
+        time: "~15s"
+        options:
+          - { label: "Indefinite (canonical)", value: "indefinite" }
+          - { label: "5 years",                value: "5y" }
+          - { label: "1 year",                 value: "1y" }
+          - { label: "Custom",                 value: "custom" }
+        allow_free_text: true
+        allow_chat: true
+        allow_defer: false
+        persists_to: Constitution.md
+        persists_to_section: "§5.3"
+
+  # ─────────────────────────────────────────────────────────────────────
+  - id: P7
+    title: Secret Handling
+    applies_to: [starter, developer, writer, both]
+    mandatory: true
+    questions:
+
+      - qid: Q32
+        prompt: "Primary secret backend?"
+        framing: >-
+          The backend the §4.7 per-repo credential helper resolves against.
+          Picks the inner command in the helper recipe.
+        time: "~20s"
+        options:
+          - { label: "1Password CLI (op)",            value: "1password" }
+          - { label: "macOS Keychain (security)",     value: "keychain" }
+          - { label: "pass",                          value: "pass" }
+          - { label: "HashiCorp Vault",               value: "vault" }
+          - { label: "Other",                         value: "other", note: "Chat handoff" }
+        allow_free_text: true
+        allow_chat: true
+        allow_defer: false
+        persists_to: Common.md
+        persists_to_section: "§4.7"
+
+      - qid: Q33
+        prompt: "OS clipboard tool for §4.2 transfer?"
+        framing: >-
+          The tool the assistant uses to move secrets without displaying
+          them. Auto-detected by OS; override only if your setup is unusual.
+        time: "~10s"
+        options:
+          - { label: "Auto-detect (recommended)",  value: "auto" }
+          - { label: "pbcopy (macOS)",             value: "pbcopy" }
+          - { label: "xclip (Linux X11)",          value: "xclip" }
+          - { label: "wl-copy (Linux Wayland)",    value: "wl-copy" }
+          - { label: "Set-Clipboard (Windows)",    value: "set-clipboard" }
+        allow_free_text: true
+        allow_chat: false
+        allow_defer: false
+        persists_to: Common.md
+        persists_to_section: "§4.2"
+
+      - qid: Q34
+        prompt: "Additional secret-bearing file patterns beyond canonical?"
+        framing: >-
+          Canonical: .env*, *secrets*, *.pem, id_rsa*, *.key, *.p12,
+          *credentials*. Add any project-specific patterns your team uses.
+        time: "~30s"
+        options:
+          - { label: "Use canonical only",                       value: "canonical" }
+          - { label: "Add patterns (multi-line, glob syntax)",   value: "extend" }
+        allow_free_text: true
+        allow_chat: true
+        allow_defer: true
+        persists_to: Common.md
+        persists_to_section: "§4.4"
+
+      - qid: Q35
+        prompt: "Configure multi-account git (per-repo §4.7 credential helpers) for which orgs?"
+        framing: >-
+          List the orgs/users that should use a non-default identity. Each
+          becomes a row in metadata/projects.json and gets the §4.7 helper
+          installed automatically on clone.
+        time: "~2m"
+        options:
+          - { label: "Skip — single identity",          value: "none" }
+          - { label: "Configure orgs (multi-line)",     value: "configure" }
+        allow_free_text: true
+        allow_chat: true
+        allow_defer: true
+        persists_to: metadata/projects.json
+
+      - qid: Q35a
+        prompt: "Share AI-authored hooks with the public aiConstitution repo by default?"
+        framing: >-
+          When the AI creates a hook in response to a finding (see spec §9),
+          it offers to file the hook as an upstream issue on the public
+          aiConstitution repo. "Yes" skips the per-event prompt and files
+          automatically. The hook source is redacted against patterns.json
+          before submission, and you can override per-event with --skip.
+        time: "~15s"
+        options:
+          - { label: "Yes — share automatically (set by accept-defaults Q42a)", value: "true" }
+          - { label: "Ask each time",                                            value: "ask" }
+          - { label: "No — keep all hooks local",                                value: "false" }
+        allow_free_text: false
+        allow_chat: true
+        allow_defer: false
+        persists_to: ~/.config/aiConstitution/settings.toml
+        persists_to_section: "[upstream] shareNewHooks"
+
+      - qid: Q35b
+        prompt: "Auto-file major findings as issues on the aiConstitution repo?"
+        framing: >-
+          A "major finding" is a violation tagged severity=major in its
+          frontmatter, a pattern observed three or more times across
+          sessions, or anything you tag with `ai issue file --major`.
+          Conservative default is "ask each time" because findings can
+          carry more context than hooks.
+        time: "~15s"
+        options:
+          - { label: "Ask each time (recommended)",         value: "ask" }
+          - { label: "Yes — auto-file",                     value: "true",  warning: "Findings can contain more context than hooks; the pre-submission redaction pass runs but human review is the last gate." }
+          - { label: "No — never file",                     value: "false" }
+        allow_free_text: false
+        allow_chat: true
+        allow_defer: false
+        persists_to: ~/.config/aiConstitution/settings.toml
+        persists_to_section: "[upstream] shareMajorFindings"
+
+  # ─────────────────────────────────────────────────────────────────────
+  - id: P8
+    title: AI Tool Wiring
+    applies_to: [starter, developer, writer, both]
+    mandatory: true
+    questions:
+
+      - qid: Q36
+        prompt: "Confirm tools to wire (checkboxes; pre-checked from PATH detection)?"
+        framing: >-
+          Each enabled tool gets its symlink + hook wiring on completion.
+          Detection looks for `claude`, `copilot`, `cursor-agent`, the
+          existence of ~/.config/github-copilot/, and AGENTS.md presence in
+          recent projects.
+        time: "~30s"
+        options:
+          - { label: "[detected] Claude Code",          value: "claude-code" }
+          - { label: "[detected] GitHub Copilot CLI",   value: "copilot-cli" }
+          - { label: "Cursor",                          value: "cursor" }
+          - { label: "Codex / AGENTS.md",               value: "codex" }
+          - { label: "Other",                           value: "other" }
+        allow_free_text: false
+        allow_chat: true
+        allow_defer: false
+        persists_to: Common.md
+        persists_to_section: "§5.5"
+
+      - qid: Q36b
+        prompt: "Enable Claude-designed plugins to extend the agent's capabilities?"
+        framing: >-
+          Plugins are Claude-specific extensions installed via the `claude`
+          CLI (or equivalent). `ai` knows the conventional ones and offers
+          to enable them. The shipped catalog currently includes
+          `superpowers` (a Claude-designed plugin providing
+          subagent-driven-development and executing-plans patterns).
+          Skip if you'd rather decide later — `ai plugins enable <name>`
+          works any time.
+        time: "~15s"
+        options:
+          - { label: "Yes — pick from list", value: "pick" }
+          - { label: "Skip — enable manually later", value: "skip" }
+        allow_free_text: false
+        allow_chat: true
+        allow_defer: true
+        persists_to: ~/.config/aiConstitution/settings.toml
+        persists_to_section: "[plugins] enabled"
+
+      - qid: Q36c
+        prompt: "Which Claude plugins?"
+        framing: >-
+          Multi-select. `superpowers` is the established Claude plugin
+          (subagent-driven-development, executing-plans). The other five
+          are spec'd in §11.1 as plugin candidates — they wrap `ai` CLI
+          verbs in guided multi-step workflows. Declining a plugin
+          activates the matching planner persona for degraded fallback
+          guidance (controlled by `plugins.plannerPersonaFallback`).
+        time: "~45s"
+        applies_when: "Q36b == pick"
+        options:
+          - { label: "superpowers (Claude-designed; subagent-driven-development, executing-plans)", value: "superpowers" }
+          - { label: "amendment-author (guides `ai memory codify` + `ai amend` flow)", value: "amendment-author", note: "Falls back to project-manager persona" }
+          - { label: "hook-author (multi-language hook authoring with `ai hooks propose`)", value: "hook-author", note: "Falls back to tech-lead persona" }
+          - { label: "atom-publisher (guided persona/profile/skill publication)", value: "atom-publisher", note: "Falls back to documentation-reviewer persona" }
+          - { label: "review-panel (orchestrates panel atoms over code/prose)", value: "review-panel", note: "Falls back to tech-lead + manual /spawn" }
+          - { label: "memory-curator (guided `ai review` decision tree)", value: "memory-curator", note: "Falls back to project-manager persona" }
+          - { label: "Pick later — none of these now", value: "none" }
+        allow_free_text: false
+        allow_chat: true
+        allow_defer: true
+        persists_to: ~/.config/aiConstitution/settings.toml
+        persists_to_section: "[plugins] enabled"
+
+      - qid: Q36d
+        prompt: "Install GitHub Actions atoms from the action/workflow/pipeline registries now?"
+        framing: >-
+          The v0.10 spec splits GitHub Actions atoms across THREE
+          sibling registries (per SPEC §7.11):
+          action-atoms.com (one step's worth — composite/JS/Docker),
+          workflow-atoms.com (one job's worth — reusable workflows),
+          pipeline-atoms.com (aggregates of workflows). Each repo's
+          .github/workflows/*.yml files prefer one-line `uses:`
+          references over inline YAML. You can install any time later
+          via `ai {action,workflow,pipeline} install <name>`.
+        time: "~25s"
+        options:
+          - { label: "Yes — pick from each layer (Q36e/f/g)",                value: "pick-per-layer" }
+          - { label: "Yes — recommended starter set across all three",       value: "recommended" }
+          - { label: "Skip — install later",                                  value: "skip" }
+        allow_free_text: false
+        allow_chat: true
+        allow_defer: true
+        persists_to: ~/.config/aiConstitution/settings.toml
+        persists_to_section: "[atoms] install"
+
+      - qid: Q36e
+        prompt: "Which **action** atoms? (one step's worth — composite/JS/Docker)"
+        framing: >-
+          Multi-select against action-atoms.com. Actions are leaves —
+          they cannot compose other atoms; they're a single step
+          that goes inside a job. Each atom pinned to its current
+          release at install time; bumps via `ai action upgrade`.
+        time: "~30s"
+        applies_when: "Q36d in [pick-per-layer, recommended]"
+        options:
+          - { label: "secret-scan-patterns (composite; patterns.json diff scan)",            value: "secret-scan-patterns" }
+          - { label: "setup-cs-tofu (composite; loads R2 + CF creds from 1Password)",         value: "setup-cs-tofu" }
+          - { label: "redact-and-redact (composite; runs patterns.json redact pass)",         value: "redact-and-redact" }
+          - { label: "cs-page-deployment (composite; wrangler pages deploy)",                  value: "cs-page-deployment" }
+          - { label: "Pick later — none of these now",                                         value: "none" }
+        allow_free_text: false
+        allow_chat: true
+        allow_defer: true
+        persists_to: ~/.config/aiConstitution/settings.toml
+        persists_to_section: "[action] enabled"
+
+      - qid: Q36f
+        prompt: "Which **workflow** atoms? (one job's worth — reusable workflows)"
+        framing: >-
+          Multi-select against workflow-atoms.com. Workflows compose
+          actions and are callable via `jobs.<id>.uses:` from a caller
+          workflow. Each atom pinned to its current release at install
+          time; bumps via `ai workflow upgrade`.
+        time: "~30s"
+        applies_when: "Q36d in [pick-per-layer, recommended]"
+        options:
+          - { label: "astro-build (reusable; build + cache deps for an Astro site)",          value: "astro-build" }
+          - { label: "ci-go-workspace (reusable; build/lint/test across go.work modules)",    value: "ci-go-workspace" }
+          - { label: "release-goreleaser (reusable; tag-triggered release pipeline)",          value: "release-goreleaser" }
+          - { label: "gh-issue-from-finding (reusable; files a `finding` issue from a log)",   value: "gh-issue-from-finding" }
+          - { label: "Pick later — none of these now",                                         value: "none" }
+        allow_free_text: false
+        allow_chat: true
+        allow_defer: true
+        persists_to: ~/.config/aiConstitution/settings.toml
+        persists_to_section: "[workflow] enabled"
+
+      - qid: Q36g
+        prompt: "Which **pipeline** atoms? (aggregates of workflows)"
+        framing: >-
+          Multi-select against pipeline-atoms.com. Pipelines are
+          top-level workflows that compose multiple reusable workflows
+          via `jobs.<id>.uses:`. Each atom pinned at install; bumps via
+          `ai pipeline upgrade`.
+        time: "~30s"
+        applies_when: "Q36d in [pick-per-layer, recommended]"
+        options:
+          - { label: "release-train (pipeline; ci → lint → test → tag → release)",            value: "release-train" }
+          - { label: "web-deploy (pipeline; build + secret-scan + cs-page-deployment)",       value: "web-deploy" }
+          - { label: "Pick later — none of these now",                                         value: "none" }
+        allow_free_text: false
+        allow_chat: true
+        allow_defer: true
+        persists_to: ~/.config/aiConstitution/settings.toml
+        persists_to_section: "[pipeline] enabled"
+
+      # Repurposing notice (2026-05-23): Q36d/Q36e were introduced in
+      # v0.9 for the single workflow-atoms.com registry. v0.10 splits
+      # that into three (action/workflow/pipeline), so Q36d/Q36e are
+      # repurposed (broader Q36d; action-specific Q36e), and Q36f/Q36g
+      # are new. The qid-contract at the end of this file says retired
+      # qids stay reserved — but v0.9 shipped 2026-05-23 with zero
+      # answered Q36d/Q36e in the wild, so the repurposing risk is nil.
+      # `ai update --migrate` to v0.10 carries the old answer keys
+      # forward into the new schema: a v0.9 "Q36e = cloudflare-pages-deploy"
+      # becomes a v0.10 "Q36e (action) = cs-page-deployment" (renamed
+      # and re-classified as composite-action).
+
+      - qid: Q37
+        prompt: "Default skills to install?"
+        framing: >-
+          Skills add slash-commands the assistant can invoke. Currently
+          shipped: cleanup, commit, debug, diagram, explain, onboard,
+          pm-mode, pr, project, refactor, repo, spawn, startup, test.
+        time: "~1m"
+        options:
+          - { label: "All",                                value: "all" }
+          - { label: "Recommended starter set",            value: "starter" }
+          - { label: "Pick individually",                  value: "pick", note: "Multi-select sub-screen" }
+          - { label: "None — install later with `ai skills install`", value: "none" }
+        allow_free_text: false
+        allow_chat: true
+        allow_defer: true
+        persists_to: skills/installed
+
+      - qid: Q38
+        prompt: "Memory directory — single ~/.ai/memory/ (cross-tool) or per-tool only?"
+        framing: >-
+          Cross-tool means every assistant reads the same memories. Per-tool
+          means Claude's memories and Copilot's memories stay separate. The
+          canonical answer is cross-tool — the whole point of ~/.ai/.
+        time: "~10s"
+        options:
+          - { label: "Cross-tool (recommended)", value: "cross-tool" }
+          - { label: "Per-tool only",            value: "per-tool", warning: "Breaks G2 cross-tool portability." }
+        allow_free_text: false
+        allow_chat: true
+        allow_defer: false
+        persists_to: Common.md
+        persists_to_section: "§5.1"
+
+      - qid: Q39
+        prompt: "Per-project memory subdirectories under memory/projects/<encoded-cwd>/?"
+        framing: >-
+          Some context is project-specific (an ADR reference, a particular
+          repo's conventions). The canonical layout uses
+          memory/projects/<encoded-cwd>/ for these.
+        time: "~10s"
+        options:
+          - { label: "Yes (canonical)", value: "yes" }
+          - { label: "No",              value: "no" }
+        allow_free_text: false
+        allow_chat: true
+        allow_defer: false
+        persists_to: Common.md
+        persists_to_section: "§5.1"
+
+      - qid: Q40
+        prompt: "Install 30-minute background `/checkpoint auto` tick?"
+        framing: >-
+          On long sessions, the tick writes a HANDOFF.md every 30 minutes
+          so context-window resets don't lose state. Useful if you do
+          multi-hour sessions; noisy if you don't.
+        time: "~10s"
+        options:
+          - { label: "Yes (recommended for long sessions)", value: "enabled" }
+          - { label: "No",                                   value: "disabled" }
+        allow_free_text: false
+        allow_chat: true
+        allow_defer: false
+        persists_to: hook/registration
+
+      - qid: Q41
+        prompt: "Context-window capacity gate — canonical 80%?"
+        framing: >-
+          At 80% utilization, the assistant stops starting new work and
+          enters checkpoint mode. Common.md §13.1.
+        time: "~10s"
+        options:
+          - { label: "80% (canonical)", value: "80" }
+          - { label: "70%",             value: "70" }
+          - { label: "90%",             value: "90" }
+          - { label: "Custom",          value: "custom" }
+        allow_free_text: true
+        allow_chat: false
+        allow_defer: false
+        persists_to: Common.md
+        persists_to_section: "§13.1"
+
+      - qid: Q41a
+        prompt: "Default mode on session start — profile, persona, or none?"
+        framing: >-
+          A "mode" is either a profile (governance/profiles/*.yaml, a named
+          composition of several personas) or a single persona
+          (governance/personas/agentic/*.md). Both load ON TOP of the
+          always-loaded four-file constitution — additive emphasis, not
+          replacement. Per spec §7.8 profiles are typically what you want
+          if your role spans multiple persona files (e.g., a "Coder" that
+          combines coder + tech-lead + test-writer + devops-engineer).
+        time: "~30s"
+        options:
+          - { label: "None — four-file only (recommended starter)", value: "none" }
+          - { label: "Profile — pick a shipped or custom profile",   value: "profile" }
+          - { label: "Persona — pick a single atomic persona",       value: "persona" }
+        allow_free_text: false
+        allow_chat: true
+        allow_defer: false
+        persists_to: ~/.config/aiConstitution/settings.toml
+        persists_to_section: "[focus] defaultPersona"
+
+      - qid: Q41b
+        prompt: "Pick a profile or persona to set as your default."
+        framing: >-
+          Profiles ship as starting points; you can edit or compose your
+          own later with `ai profile new`. Personas are atomic — pick one
+          only if a single role fits your work. If you're not sure, leave
+          this as "none" and try `ai mode <name>` interactively later.
+          User-private personas and profiles in ~/.config/aiConstitution/
+          shadow shipped ones with the same name.
+        time: "~1m"
+        applies_when: "Q41a in [profile, persona]"
+        options:
+          # Shipped profiles (when Q41a = profile)
+          - { label: "Profile: senior-engineer (coder + tech-lead + documentation-reviewer)", value: "profile:senior-engineer" }
+          - { label: "Profile: solo-developer (coder + tech-lead + devops + test-writer + docs)", value: "profile:solo-developer" }
+          - { label: "Profile: infra-focused (devops-engineer + iac-engineer + observer)", value: "profile:infra-focused" }
+          - { label: "Profile: qa-focused (test-writer + test-evaluator + observer)",     value: "profile:qa-focused" }
+          - { label: "Profile: pm-focused (project-manager + issue-refiner + tech-lead)", value: "profile:pm-focused" }
+          - { label: "Profile: essayist (prose-writer + essayist)",                       value: "profile:essayist" }
+          - { label: "Profile: fiction-author (prose-writer + worldbuilder)",             value: "profile:fiction-author" }
+          - { label: "Profile: theology-writer (prose-writer + theologian + philosopher)", value: "profile:theology-writer" }
+          # Atomic personas (when Q41a = persona)
+          - { label: "Persona: coder",                          value: "persona:coder" }
+          - { label: "Persona: tech-lead",                      value: "persona:tech-lead" }
+          - { label: "Persona: devops-engineer",                value: "persona:devops-engineer" }
+          - { label: "Persona: iac-engineer",                   value: "persona:iac-engineer" }
+          - { label: "Persona: test-writer",                    value: "persona:test-writer" }
+          - { label: "Persona: test-evaluator",                 value: "persona:test-evaluator" }
+          - { label: "Persona: documentation-reviewer",         value: "persona:documentation-reviewer" }
+          - { label: "Persona: executor",                       value: "persona:executor" }
+          - { label: "Persona: observer",                       value: "persona:observer" }
+          - { label: "Persona: project-manager",                value: "persona:project-manager" }
+          - { label: "Persona: issue-refiner",                  value: "persona:issue-refiner" }
+          - { label: "Persona: prose-writer (ProseWriter; creative prose)",    value: "persona:prose-writer" }
+          - { label: "Persona: tech-writer (TechWriter; factual prose)",       value: "persona:tech-writer" }
+          - { label: "Persona: theologian (specialized)",       value: "persona:theologian" }
+          - { label: "Persona: philosopher (specialized)",      value: "persona:philosopher" }
+          - { label: "Persona: essayist (specialized)",         value: "persona:essayist" }
+          - { label: "Persona: science-writer (specialized)",   value: "persona:science-writer" }
+          - { label: "Persona: worldbuilder (specialized)",     value: "persona:worldbuilder" }
+        allow_free_text: false
+        allow_chat: true
+        allow_defer: true
+        persists_to: ~/.config/aiConstitution/settings.toml
+        persists_to_section: "[focus] defaultPersona"
+
+      - qid: Q41c
+        prompt: "Compose a custom profile now?"
+        framing: >-
+          You can compose a profile from atomic personas — your personal
+          "Coder" might be coder + tech-lead + test-writer + devops-engineer,
+          for example. Skip if you'd rather start with a shipped profile
+          and customize later with `ai profile new`.
+        time: "~3m"
+        applies_when: "Q41a in [profile, persona]"
+        options:
+          - { label: "Skip — I'll use a shipped profile or persona", value: "skip" }
+          - { label: "Compose now",                                   value: "compose", note: "Multi-select sub-screen for atomic personas" }
+        allow_free_text: false
+        allow_chat: true
+        allow_defer: true
+        persists_to: governance/profiles/<name>.yaml
+
+  # ─────────────────────────────────────────────────────────────────────
+  - id: P9
+    title: Sync & Restore
+    applies_to: [starter, developer, writer, both]
+    mandatory: true
+    questions:
+
+      - qid: Q42
+        prompt: "Configure a sync remote now?"
+        framing: >-
+          The sync remote is a private repo (or bucket) where your
+          constitution, memories, and audit records are pushed. It's how
+          `ai restore` knows where to fetch from on a fresh laptop. Skip if
+          you want to configure later.
+        time: "~45s"
+        options:
+          - { label: "Yes — GitHub (paste private repo URL)",   value: "github" }
+          - { label: "Yes — other git remote (paste URL)",      value: "git-other" }
+          - { label: "Skip — configure later",                  value: "skip" }
+        allow_free_text: true
+        allow_chat: true
+        allow_defer: true
+        persists_to: governance/sync.yaml
+
+      - qid: Q42a
+        prompt: "Accept default settings.toml?"
+        framing: >-
+          The settings file at ~/.config/aiConstitution/settings.toml holds
+          per-user preferences. Accepting defaults sets shareNewHooks=true
+          (so the AI files new hooks upstream without asking each time),
+          autoMigratePrompt=true, review.cadenceDays=30, installPing=false,
+          and the canonical secret-scanning scope. You can change any of
+          these later with `ai settings set`.
+        time: "~30s"
+        options:
+          - { label: "Accept defaults (recommended)",       value: "accept" }
+          - { label: "Customize",                            value: "customize", note: "Opens inline editor with defaults pre-filled" }
+          - { label: "Skip — no settings.toml",              value: "skip",      warning: "Every share-the-hook prompt will fire per-event; no review cadence nag." }
+        allow_free_text: false
+        allow_chat: true
+        allow_defer: false
+        persists_to: ~/.config/aiConstitution/settings.toml
+
+      - qid: Q42b
+        prompt: "Review cadence — how often does `ai` prompt to run an audit/amendment review?"
+        framing: >-
+          Per spec §6.5, `ai status` and `ai` startup nag when the time
+          since the last `ai review` exceeds this. "Never" disables the
+          nag but the review loop still works on demand.
+        time: "~15s"
+        options:
+          - { label: "30 days (canonical)",  value: "30" }
+          - { label: "7 days",               value: "7" }
+          - { label: "90 days",              value: "90" }
+          - { label: "Never (disable nag)",  value: "0",   warning: "The codification loop won't surface itself; you'll need to remember to run `ai review`." }
+          - { label: "Custom",               value: "custom" }
+        allow_free_text: true
+        allow_chat: false
+        allow_defer: false
+        persists_to: ~/.config/aiConstitution/settings.toml
+        persists_to_section: "[review] cadenceDays"
+
+      - qid: Q43
+        prompt: "Sync cadence?"
+        framing: >-
+          Automatic on every amendment is the safest — your remote is
+          always current. Daily/weekly suits users who want batched push.
+          Manual means you'll run `ai sync push` yourself.
+        time: "~15s"
+        options:
+          - { label: "On every amendment (recommended)", value: "on-amend" }
+          - { label: "Daily",                            value: "daily" }
+          - { label: "Weekly",                           value: "weekly" }
+          - { label: "Manual",                           value: "manual" }
+        allow_free_text: false
+        allow_chat: true
+        allow_defer: false
+        persists_to: governance/sync.yaml
+
+      - qid: Q44
+        prompt: "Pre-sync secret scan — confirm scan against secret-block patterns before push?"
+        framing: >-
+          Belt-and-suspenders: even though the secret-block hook should
+          have prevented secrets from being committed, the pre-push scan
+          catches anything that slipped through. Mandatory if sync is on.
+        time: "~10s"
+        options:
+          - { label: "Yes (canonical)", value: "enabled" }
+          - { label: "No",              value: "disabled", warning: "Removes the last defensive layer before secrets leave the machine." }
+        allow_free_text: false
+        allow_chat: false
+        allow_defer: false
+        persists_to: governance/sync.yaml
+
+      - qid: Q45
+        prompt: "Schedule a quarterly `ai restore --dest=/tmp/...` dry-run as a calendar reminder?"
+        framing: >-
+          The recovery plan is only as good as the last time it ran.
+          Quarterly drills catch sync drift, bucket-permission rot, and
+          missing-dependency surprises before a real restore needs them.
+        time: "~10s"
+        options:
+          - { label: "Yes — quarterly", value: "quarterly" }
+          - { label: "Yes — monthly",   value: "monthly" }
+          - { label: "No",              value: "none" }
+        allow_free_text: false
+        allow_chat: true
+        allow_defer: false
+        persists_to: governance/sync.yaml
+
+  # ─────────────────────────────────────────────────────────────────────
+  - id: P10
+    title: Brand & Domain Tail
+    applies_to: [starter, developer, writer, both]
+    mandatory: true
+    questions:
+
+      - qid: Q46
+        prompt: "Which brand atom should the TUI and the website render with?"
+        framing: >-
+          Brands are W3C design tokens pulled from brand-atoms.com.
+          `convergent-systems` is the default. Pick another from the live
+          list or chat to compose a new one.
+        time: "~30s"
+        options:
+          - { label: "convergent-systems (default)",                     value: "convergent-systems" }
+          - { label: "Pick from live list (brand-atoms.com/brands)",     value: "pick" }
+          - { label: "Compose a new brand",                              value: "compose", note: "Chat handoff" }
+        allow_free_text: true
+        allow_chat: true
+        allow_defer: false
+        persists_to: .ai/.brand/config.json
+
+      # Q47..Q47+N — fires per-section if profile ∈ {developer, both}
+      # Each section of Code.md becomes one question, structured the same way:
+      # canonical-or-customize, with chat available, persisted to that section.
+      # Generated dynamically by the wizard from the Code.md section index;
+      # listed here as a template rather than 12+ explicit entries.
+      - qid: Q47.template
+        prompt: "Confirm canonical defaults for Code.md §{n} {title}?"
+        framing: >-
+          {section_summary} — see Code.md §{n} for the canonical prose.
+          Customizations are appended; the canonical text is never silently
+          weakened.
+        time: "~1m"
+        applies_when: "profile in [developer, both]"
+        repeats_for: "each section of Code.md"
+        options:
+          - { label: "Use canonical (recommended)", value: "canonical" }
+          - { label: "Customize",                    value: "customize", note: "Chat handoff for additions" }
+        allow_free_text: true
+        allow_chat: true
+        allow_defer: true
+        persists_to: Code.md
+
+      # Q48..Q48+N — fires per-section if profile ∈ {writer, both}
+      - qid: Q48.template
+        prompt: "Confirm canonical defaults for Writing.md §{n} {title}?"
+        framing: >-
+          {section_summary} — see Writing.md §{n}. Part Three sub-domains
+          fire only for the sub-domains selected in Q08.
+        time: "~1m"
+        applies_when: "profile in [writer, both]"
+        repeats_for: "each section of Writing.md"
+        options:
+          - { label: "Use canonical (recommended)", value: "canonical" }
+          - { label: "Customize",                    value: "customize", note: "Chat handoff" }
+        allow_free_text: true
+        allow_chat: true
+        allow_defer: true
+        persists_to: Writing.md
+
+# End of canonical question taxonomy.
+#
+# Stable qid contract: a qid (Q01, Q46, etc.) is forever. If a question is
+# retired, its qid is reserved — never reused — so users' answers.yaml stays
+# diffable across versions and `ai review` can detect questions added since
+# the user's last setup.
