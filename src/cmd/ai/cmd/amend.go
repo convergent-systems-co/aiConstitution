@@ -12,8 +12,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// newAmendCmd implements `ai amend draft <ref>` (and, in a follow-up
-// commit, `ai amend apply <path>`). See SPEC.md §3.5 and §6
+// newAmendCmd implements `ai amend draft <ref>` and
+// `ai amend apply <draft-path>`. See SPEC.md §3.5 and §6
 // (Memory → Amendment Lifecycle).
 func newAmendCmd() *cobra.Command {
 	c := &cobra.Command{
@@ -26,11 +26,37 @@ recording the amendment in the audit log.
 Subcommands:
   draft <file>/<section>   Create a new amendment draft and open it
                            in $EDITOR.
+  apply <draft-path>       Apply a draft to the target ~/.ai/<file>.
 
 See SPEC.md §3.5 and §6.`,
 	}
 
 	c.AddCommand(newAmendDraftCmd())
+	c.AddCommand(newAmendApplyCmd())
+	return c
+}
+
+func newAmendApplyCmd() *cobra.Command {
+	c := &cobra.Command{
+		Use:   "apply <draft-path>",
+		Short: "Apply a draft amendment to the target ~/.ai/<file>",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			d, err := amend.LoadDraft(args[0])
+			if err != nil {
+				return err
+			}
+			res, err := amend.Apply(d, paths.AIRoot())
+			if err != nil {
+				return err
+			}
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Applied to %s\n", res.TargetPath)
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "  Version: %s -> %s\n", res.OldVersion, res.NewVersion)
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "  Changelog: %s\n", res.ChangelogEntry)
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "  Audit: %s\n", res.AuditPath)
+			return nil
+		},
+	}
 	return c
 }
 
