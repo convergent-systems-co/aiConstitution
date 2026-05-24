@@ -278,42 +278,66 @@ func (m Model) View() string {
 
 	var b strings.Builder
 	fmt.Fprintf(&b, "[%d/%d] %s\n", m.idx+1, len(active), q.Prompt)
+	b.WriteString(renderQuestion(q, st, m.answers))
+	return b.String()
+}
 
+func renderQuestion(q corewiz.Question, st *qstate, answers map[string]string) string {
 	switch q.Type {
 	case corewiz.TypeText:
-		fmt.Fprintf(&b, "  > %s_\n", string(st.textBuf))
+		return renderText(st)
 	case corewiz.TypeConfirm:
-		yes, no := "yes", "no"
-		if st.confirmIdx == 0 {
-			yes = "[yes]"
-		} else {
-			no = "[no]"
-		}
-		fmt.Fprintf(&b, "  %s   %s\n", yes, no)
+		return renderConfirm(st)
 	case corewiz.TypeSelect:
-		for i, opt := range q.Options {
-			marker := "  "
-			if i == st.highlight {
-				marker = "> "
-			}
-			fmt.Fprintf(&b, "  %s%s\n", marker, opt.Label)
-		}
+		return renderSelect(q, st)
 	case corewiz.TypeMultiSelect:
-		for i, opt := range q.Options {
-			highlight := "  "
-			if i == st.highlight {
-				highlight = "> "
-			}
-			check := "[ ]"
-			if st.selected[i] {
-				check = "[x]"
-			}
-			fmt.Fprintf(&b, "  %s%s %s\n", highlight, check, opt.Label)
-		}
+		return renderMultiSelect(q, st)
 	default:
-		if ans, ok := m.answers[q.ID]; ok {
-			fmt.Fprintf(&b, "  current: %s\n", ans)
+		if ans, ok := answers[q.ID]; ok {
+			return fmt.Sprintf("  current: %s\n", ans)
 		}
+		return ""
+	}
+}
+
+func renderText(st *qstate) string {
+	return fmt.Sprintf("  > %s_\n", string(st.textBuf))
+}
+
+func renderConfirm(st *qstate) string {
+	yes, no := "yes", "no"
+	if st.confirmIdx == 0 {
+		yes = "[yes]"
+	} else {
+		no = "[no]"
+	}
+	return fmt.Sprintf("  %s   %s\n", yes, no)
+}
+
+func renderSelect(q corewiz.Question, st *qstate) string {
+	var b strings.Builder
+	for i, opt := range q.Options {
+		marker := "  "
+		if i == st.highlight {
+			marker = "> "
+		}
+		fmt.Fprintf(&b, "  %s%s\n", marker, opt.Label)
+	}
+	return b.String()
+}
+
+func renderMultiSelect(q corewiz.Question, st *qstate) string {
+	var b strings.Builder
+	for i, opt := range q.Options {
+		highlight := "  "
+		if i == st.highlight {
+			highlight = "> "
+		}
+		check := "[ ]"
+		if st.selected[i] {
+			check = "[x]"
+		}
+		fmt.Fprintf(&b, "  %s%s %s\n", highlight, check, opt.Label)
 	}
 	return b.String()
 }
