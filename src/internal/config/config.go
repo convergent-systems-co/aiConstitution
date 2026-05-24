@@ -15,6 +15,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 
 	"github.com/BurntSushi/toml"
 	"github.com/convergent-systems-co/aiConstitution/src/internal/paths"
@@ -237,6 +238,57 @@ func Save(s Settings) error {
 		return err
 	}
 	return os.Rename(tmpName, filepath.Join(dir, "settings.toml"))
+}
+
+// ApplyAnswers maps wizard answer keys into the corresponding Settings
+// fields on s. Known keys are coerced into their target Go type. Unknown
+// keys are silently ignored. Parse failures on a known key are silently
+// ignored (the existing field value survives) — the wizard is best-effort
+// configuration, not strict validation; settings.toml schema validation
+// is the authoritative gate.
+//
+// Mappings (per SPEC.md §13.6):
+//
+//	defaultMode         -> s.Focus.DefaultMode           (string)
+//	shareNewHooks       -> s.Upstream.ShareNewHooks      (bool)
+//	reviewCadenceDays   -> s.Review.CadenceDays          (int)
+//	syncIncludeSettings -> s.Sync.IncludeSettingsFile    (bool)
+func ApplyAnswers(s *Settings, answers map[string]string) {
+	if s == nil || len(answers) == 0 {
+		return
+	}
+	for k, v := range answers {
+		switch k {
+		case "defaultMode":
+			s.Focus.DefaultMode = v
+		case "shareNewHooks":
+			if b, ok := parseBoolish(v); ok {
+				s.Upstream.ShareNewHooks = b
+			}
+		case "reviewCadenceDays":
+			if n, err := strconv.Atoi(v); err == nil {
+				s.Review.CadenceDays = n
+			}
+		case "syncIncludeSettings":
+			if b, ok := parseBoolish(v); ok {
+				s.Sync.IncludeSettingsFile = b
+			}
+		}
+	}
+}
+
+// parseBoolish accepts the common truthy/falsey forms used in
+// questions.yaml option values: true/false, yes/no, 1/0. Comparison is
+// case-insensitive. Returns (value, true) on a match; (false, false) on
+// an unrecognized form.
+func parseBoolish(v string) (bool, bool) {
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "true", "yes", "1", "on", "enabled":
+		return true, true
+	case "false", "no", "0", "off", "disabled":
+		return false, true
+	}
+	return false, false
 }
 
 // applyEnvOverrides overlays AICONST_* environment variables onto s.
