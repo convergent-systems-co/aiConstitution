@@ -55,7 +55,7 @@ brews:
     commit_msg_template: "feat(formula): update atoms to {{ .Tag }}"
     directory: Formula
     install: |
-      bin.install "ai"
+      bin.install "ai" => "atoms"
     caveats: |
       The ai binary may be blocked by macOS Gatekeeper on first run.
       To clear the quarantine flag:
