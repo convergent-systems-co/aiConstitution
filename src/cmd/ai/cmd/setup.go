@@ -316,14 +316,43 @@ func installCopilotSymlink(copilotDir, aiRoot string) error {
 // runSetupNonInteractive renders the constitution using default answers from
 // questions.yaml and wires all tool integrations. Uses the same rendering
 // pipeline as the TUI path so the output is always the full template.
+
+// parseSeedsEnv parses AICONST_SEEDS env var into a seed map.
+// Format: "Q01=Thomas Polliard,Q02=claude-code,Q06=$5"
+func parseSeedsEnv(env string) map[string]string {
+	env = strings.TrimSpace(env)
+	if env == "" {
+		return nil
+	}
+	out := make(map[string]string)
+	for _, pair := range strings.Split(env, ",") {
+		pair = strings.TrimSpace(pair)
+		if pair == "" {
+			continue
+		}
+		eq := strings.IndexByte(pair, '=')
+		if eq <= 0 {
+			continue
+		}
+		k := strings.TrimSpace(pair[:eq])
+		v := strings.TrimSpace(pair[eq+1:])
+		if k != "" {
+			out[k] = v
+		}
+	}
+	return out
+}
+
 func runSetupNonInteractive(_ string) error {
 	taxData := embed.QuestionsYAML()
 	tax, err := internalwizard.ParseTaxonomy(taxData)
 	if err != nil {
 		return fmt.Errorf("setup: parse taxonomy: %w", err)
 	}
-	// Use wizard defaults — every question has a default value.
-	answers, err := internalwizard.RunNonInteractive(*tax, nil)
+	// Seeds from AICONST_SEEDS env var override defaults.
+	// Format: Q01=Thomas Polliard,Q02=claude-code,Q06=$5
+	seeds := parseSeedsEnv(os.Getenv("AICONST_SEEDS"))
+	answers, err := internalwizard.RunNonInteractive(*tax, seeds)
 	if err != nil {
 		return fmt.Errorf("setup: non-interactive wizard: %w", err)
 	}
