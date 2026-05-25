@@ -132,7 +132,7 @@ func TestRunSetupWritesConstitutionFiles(t *testing.T) {
 	// Run the helpers directly (not through cobra since cobra setup would
 	// require a real terminal for the TUI).
 	answers := map[string]string{"Q01": "Test Principal", "Q07": "both"}
-	if err := runSetupPostWizard(aiRoot, claudeDir, filepath.Join(tmp, ".copilot"), answers); err != nil {
+	if err := runSetupPostWizard(aiRoot, claudeDir, filepath.Join(tmp, ".copilot"), answers, false); err != nil {
 		t.Fatalf("runSetupPostWizard: %v", err)
 	}
 

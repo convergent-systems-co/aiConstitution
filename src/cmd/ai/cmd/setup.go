@@ -22,6 +22,7 @@ func newSetupCmd() *cobra.Command {
 	var tuiFlag bool
 	var nonInteractive bool
 	var profile string
+	var noHooks bool
 
 	c := &cobra.Command{
 		Use:   "setup",
@@ -39,26 +40,32 @@ Flags:
                          unanswered required question.
   --profile=<starter|developer|writer|both>
                          Bias the question set toward a profile.
+  --no-hooks             Skip hook installation and tool wiring
+                         (CLAUDE.md, Copilot symlink). Useful for
+                         generating a constitution in isolation
+                         (e.g. AI_ROOT=/tmp/test ai setup --no-hooks).
 
 See SPEC.md §3.1, §4, and questions.yaml.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if nonInteractive {
 				return runSetupNonInteractive(profile)
 			}
-			return runSetupTUI()
+			return runSetupTUI(noHooks)
 		},
 	}
 
 	c.Flags().BoolVar(&tuiFlag, "tui", true, "use the Bubble Tea TUI (default)")
 	c.Flags().BoolVar(&nonInteractive, "non-interactive", false, "use seeded answers; fail on missing required answers")
 	c.Flags().StringVar(&profile, "profile", "", "bias the question set (starter|developer|writer|both)")
+	c.Flags().BoolVar(&noHooks, "no-hooks", false, "skip hook install, CLAUDE.md, and Copilot symlink")
 
 	return c
 }
 
 // runSetupTUI runs the Bubble Tea wizard and, on completion, wires up the
-// constitution files, hooks, CLAUDE.md, and the Copilot symlink.
-func runSetupTUI() error {
+// constitution files and optionally hooks, CLAUDE.md, and the Copilot symlink.
+// When noHooks is true, only the constitution files are written.
+func runSetupTUI(noHooks bool) error {
 	// Load the embedded questions taxonomy.
 	taxData := embed.QuestionsYAML()
 	tax, err := internalwizard.ParseTaxonomy(taxData)
@@ -91,7 +98,7 @@ func runSetupTUI() error {
 	claudeDir := filepath.Join(home, ".claude")
 	copilotDir := filepath.Join(home, ".copilot")
 
-	return runSetupPostWizard(aiRoot, claudeDir, copilotDir, finalWizard.Answers())
+	return runSetupPostWizard(aiRoot, claudeDir, copilotDir, finalWizard.Answers(), noHooks)
 }
 
 // runSetupPostWizard executes the post-wizard setup steps:
@@ -101,10 +108,15 @@ func runSetupTUI() error {
 //  4. Create ~/.copilot/instructions/constitution.md symlink (#198).
 //
 // Paths are passed as parameters so tests can supply temp dirs.
-func runSetupPostWizard(aiRoot, claudeDir, copilotDir string, answers map[string]string) error {
+func runSetupPostWizard(aiRoot, claudeDir, copilotDir string, answers map[string]string, noHooks bool) error {
 	// §195 — map answers to settings.toml fields.
 	if err := saveWizardSettings(answers); err != nil {
 		return fmt.Errorf("setup: save settings: %w", err)
+	}
+
+	if noHooks {
+		fmt.Println("setup: constitution files written. Skipping hook install, CLAUDE.md, and Copilot symlink (--no-hooks).")
+		return nil
 	}
 
 	// §196 — extract embedded hooks.
