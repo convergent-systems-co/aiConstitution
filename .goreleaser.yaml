@@ -10,6 +10,7 @@ before:
   hooks:
     - go work sync
     - go mod tidy -C ./src/cmd/ai
+    - go mod tidy -C ./src/internal
 
 builds:
   - id: ai
