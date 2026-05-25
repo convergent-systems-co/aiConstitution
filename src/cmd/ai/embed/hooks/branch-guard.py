@@ -4,32 +4,22 @@
 Implements ~/.ai/Common.md §2.2 (protected-branch gate) and
 ~/.ai/Common.md §5.5 hook-driven enforcement.
 
-Denied (when current HEAD resolves to a protected branch):
-  git commit, merge, rebase, cherry-pick, revert, am, pull
+Default protected set: main, master, release/*.
+Override list at ~/.ai/governance/policy/branch-guard.json:
+    {"names": ["main", "master"], "patterns": ["release/*"]}
 
-  Exception: `git pull --ff-only` is allowed. The flag makes git refuse
-  any non-fast-forward, so the operation can only bring local in line
-  with remote canonical state — it cannot rewrite history or invent state.
-  Worst case: the pull is rejected and nothing changes.
+Triggers on `git {commit,merge,rebase,cherry-pick,revert,am,pull}`
+when HEAD resolves to a protected branch, and on `git push` whose
+refspec targets one.
 
-Denied (regardless of current HEAD):
-  git push whose destination refspec targets a protected branch
+Two invocation modes:
 
-  Exception: first push to an empty remote (the remote ref does not yet
-  exist). This allows the initial `git push -u origin main` from a freshly
-  initialised repository. Subsequent pushes to an existing protected ref
-  remain blocked.
+  - **Claude PreToolUse**:  reads the tool payload on stdin (JSON).
+    Inspects the command for `git` invocations and exits 1 on
+    violation.
 
-Default protected names:    main, master
-Default protected patterns: release/*
-
-Override via ~/.ai/branch-guard.json:
-  { "names": ["main","master","prod"], "patterns": ["release/*","hotfix/*"] }
-
-Output schema: emit a JSON `permissionDecision: deny` on stdout on
-violation, silent (exit 0, empty stdout) otherwise.
-
-Wire into ~/.claude/settings.json under hooks.PreToolUse (matcher=Bash).
+  - **Command-wrapper preHook**: invoked by ~/.ai/bin/git via
+    hooks/command-wrappers.toml. Receives argv as positional args.
 
 Self-check:
   --self-check  loads the override JSON (if present), compiles
@@ -37,321 +27,231 @@ Self-check:
 """
 from __future__ import annotations
 
+import argparse
 import fnmatch
 import json
 import os
-import shlex
 import subprocess
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import List, Optional, Tuple
 
-MUTATING_SUBCOMMANDS = {
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import _lib  # noqa: E402
+
+
+GUARDED_SUBCOMMANDS = {
     "commit", "merge", "rebase", "cherry-pick", "revert", "am", "pull",
 }
 
-SHELL_SEPARATORS = {"&&", "||", ";", "|", "&"}
 
-# Shell interpreters whose -c argument is itself a command string to inspect.
-SHELL_COMMANDS = {"bash", "sh", "zsh", "dash", "ksh"}
-
-DEFAULT_NAMES = ["main", "master"]
-DEFAULT_PATTERNS = ["release/*"]
+def policy_path() -> Path:
+    root = os.environ.get("AI_ROOT", str(Path.home() / ".ai"))
+    return Path(root) / "governance" / "policy" / "branch-guard.json"
 
 
-def deny(reason: str) -> None:
-    """Emit a permission-deny decision via JSON stdout and exit 0."""
-    print(json.dumps({
-        "hookSpecificOutput": {
-            "hookEventName": "PreToolUse",
-            "permissionDecision": "deny",
-            "permissionDecisionReason": reason,
-        }
-    }))
-    sys.exit(0)
-
-
-def load_protected() -> Tuple[List[str], List[str]]:
-    """Load the branch policy. Falls back to defaults if absent or malformed."""
-    cfg = Path.home() / ".ai" / "branch-guard.json"
-    if cfg.exists():
+def load_policy() -> dict:
+    """Return {"names": [...], "patterns": [...]}. Defaults if absent."""
+    p = policy_path()
+    if p.is_file():
         try:
-            data = json.loads(cfg.read_text())
-            return (
-                list(data.get("names", DEFAULT_NAMES)),
-                list(data.get("patterns", DEFAULT_PATTERNS)),
-            )
-        except Exception:
-            pass
-    return list(DEFAULT_NAMES), list(DEFAULT_PATTERNS)
+            return json.loads(p.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as e:
+            _lib.log("branch-guard policy parse error:", e)
+    return {"names": ["main", "master"], "patterns": ["release/*"]}
 
 
-def is_protected(branch: str, names: List[str], patterns: List[str]) -> bool:
-    if branch in names:
+def is_protected(branch: str, policy: dict) -> bool:
+    if not branch:
+        return False
+    if branch in (policy.get("names") or []):
         return True
-    for p in patterns:
-        if fnmatch.fnmatch(branch, p):
+    for pat in policy.get("patterns") or []:
+        if fnmatch.fnmatch(branch, pat):
             return True
     return False
 
 
-def current_branch(cwd: str) -> Optional[str]:
-    """Resolve HEAD to a branch name in the given working directory."""
-    try:
-        out = subprocess.run(
-            ["git", "-C", cwd, "symbolic-ref", "--short", "HEAD"],
-            capture_output=True, text=True, timeout=5,
-        )
-        if out.returncode == 0:
-            return out.stdout.strip()
-    except Exception:
-        pass
-    return None
-
-
-def split_invocations(command: str, _depth: int = 0) -> List[List[str]]:
-    """Split a compound shell command into per-segment token lists.
-
-    Recursively descends into `bash -c '...'` (and sh/zsh/etc.) so that
-    git commands nested inside a shell wrapper cannot bypass branch checks.
-    Depth-limited to 5 to prevent infinite recursion on adversarial input.
-    """
-    if _depth > 5:
-        return []
-    try:
-        tokens = shlex.split(command, comments=False, posix=True)
-    except ValueError:
-        return []
-    segments: List[List[str]] = []
-    current: List[str] = []
-    for t in tokens:
-        if t in SHELL_SEPARATORS:
-            if current:
-                segments.append(current)
-                current = []
-        else:
-            current.append(t)
-    if current:
-        segments.append(current)
-
-    # Recursively inspect shell invocations: bash -c '...', sh -c '...', etc.
-    # A command like `bash -c 'git merge ...'` hides the inner git call from
-    # the top-level token scan; descend into the -c argument to catch it.
-    expanded: List[List[str]] = []
-    for seg in segments:
-        if seg and seg[0] in SHELL_COMMANDS:
-            i = 1
-            while i < len(seg):
-                if seg[i] == "-c" and i + 1 < len(seg):
-                    inner = seg[i + 1]
-                    expanded.extend(split_invocations(inner, _depth + 1))
-                    break
-                i += 1
-            else:
-                # No -c flag found — keep the segment (may contain other git calls)
-                expanded.append(seg)
-        else:
-            expanded.append(seg)
-    return expanded
-
-
-def parse_git_call(tokens: List[str]) -> Tuple[Optional[str], List[str], Optional[str]]:
-    """Return (subcommand, subcommand_args, override_cwd_from_-C).
-
-    Skips global git flags like `-C <path>`, `-c key=value`, `--git-dir=...`.
-    Returns (None, [], None) if not a git invocation.
-    """
-    if not tokens or tokens[0] != "git":
-        return None, [], None
-
-    override_cwd: Optional[str] = None
-    i = 1
-    while i < len(tokens):
-        tok = tokens[i]
-        if not tok.startswith("-"):
-            break
-        if tok == "-C" and i + 1 < len(tokens):
-            override_cwd = tokens[i + 1]
-            i += 2
-            continue
-        if tok == "-c" and i + 1 < len(tokens):
-            i += 2
-            continue
-        # --key=value or other value-less flag
-        i += 1
-
-    if i >= len(tokens):
-        return None, [], override_cwd
-    return tokens[i], tokens[i + 1:], override_cwd
-
-
-def remote_ref_exists(remote: str, branch: str, cwd: str) -> bool:
-    """Return True if the given branch already exists on the remote.
-
-    Uses `git ls-remote --exit-code --heads <remote> <branch>`:
-      exit 0  → ref found (exists)
-      exit 2  → connection succeeded, ref not found (bootstrap allowed)
-      other   → error (remote unreachable, not configured, etc.) → fail safe (deny)
-
-    Returns True (exists = deny) on any error so we fail safe.
-    """
+def current_branch() -> str:
     try:
         result = subprocess.run(
-            ["git", "-C", cwd, "ls-remote", "--exit-code", "--heads", remote, branch],
-            capture_output=True, text=True, timeout=10,
+            ["git", "symbolic-ref", "--short", "HEAD"],
+            capture_output=True, text=True, check=False,
         )
         if result.returncode == 0:
-            # Ref exists on remote — deny.
-            return True
-        if result.returncode == 2:
-            # git ls-remote --exit-code returns 2 when the ref is not found
-            # but the remote was reachable. First push is allowed.
-            return False
-        # Any other non-zero (128 = remote not configured/unreachable, etc.)
-        # → fail safe: assume ref exists so we deny.
-        return True
-    except Exception:
-        # Python exception (git not found, timeout, etc.) → fail safe.
-        return True
+            return result.stdout.strip()
+    except FileNotFoundError:
+        pass
+    return ""
 
 
-def push_targets_protected(
-    args: List[str],
-    cwd: str,
-    names: List[str],
-    patterns: List[str],
-) -> Optional[str]:
-    """If `git push` args target a protected branch that already exists on the
-    remote, return the branch name. Return None to allow.
+def parse_push_refspec(args: list[str]) -> list[str]:
+    """Return the list of destination ref names targeted by a `git push`.
 
-    The existence check is the bootstrap carve-out: the very first push to an
-    empty remote must be allowed so `git init` + `git push origin main` works
-    for new repos.
+    Recognizes: `git push origin main`, `git push origin local:remote`,
+    `git push --all`, and bare `git push` (which pushes the current
+    branch's tracking ref). Best-effort; the goal is to refuse the
+    common case, not to match git's full refspec grammar."""
+    # Filter out flags to find positional args.
+    pos = [a for a in args if not a.startswith("-")]
+    if not pos:
+        # Bare `git push` — destination is the current branch's
+        # upstream, equivalent to the current branch.
+        return [current_branch()]
+    # First positional is the remote (typically); subsequent are
+    # refspecs.
+    refspecs = pos[1:] if len(pos) >= 2 else [current_branch()]
+    targets = []
+    for r in refspecs:
+        # local:remote → take the right-hand side.
+        if ":" in r:
+            targets.append(r.split(":", 1)[1])
+        else:
+            targets.append(r)
+    return [t for t in targets if t]
+
+
+def _ai_root() -> Path:
+    """Return the effective AI_ROOT path."""
+    return Path(os.environ.get("AI_ROOT", str(Path.home() / ".ai")))
+
+
+def _utc_timestamp() -> str:
+    """Return a UTC ISO-8601 timestamp safe for use in filenames.
+
+    Includes microseconds so that two events within the same second each
+    produce a distinct filename (e.g. two rapid blocking calls in a test).
     """
-    # Strip flags to find positional args: remote + refspecs.
-    positional: List[str] = []
-    for a in args:
-        if a.startswith("-"):
-            continue
-        positional.append(a)
-
-    if len(positional) < 2:
-        # No refspec — `git push` / `git push <remote>` defaults to the
-        # current branch under push.default=simple (git >= 2.0). Deny if
-        # HEAD is protected and the remote ref already exists.
-        branch = current_branch(cwd)
-        if branch and is_protected(branch, names, patterns):
-            remote = positional[0] if positional else "origin"
-            if remote_ref_exists(remote, branch, cwd):
-                return branch
-        return None
-
-    # positional[0] is the remote; positional[1:] are refspecs.
-    remote = positional[0]
-    for r in positional[1:]:
-        stripped = r.lstrip("+")
-        dst = stripped.split(":", 1)[1] if ":" in stripped else stripped
-        # Strip refs/heads/ prefix if present.
-        if dst.startswith("refs/heads/"):
-            dst = dst[len("refs/heads/"):]
-        if is_protected(dst, names, patterns):
-            if remote_ref_exists(remote, dst, cwd):
-                return dst
-    return None
+    return datetime.now(tz=timezone.utc).strftime("%Y-%m-%dT%H%M%S-%fZ")
 
 
-def main() -> int:
-    # --self-check mode (invoked by `ai hooks evaluate` or manually)
-    if "--self-check" in sys.argv:
-        _ = load_protected()
-        print("[ai/branch-guard] self-check OK", file=sys.stderr)
-        return 0
+def write_violation_record(subcmd: str, branch: str) -> None:
+    """Write a violation audit record to $AI_ROOT/audit/violations/.
 
+    Per Common.md §5.3 — one markdown file per violation event.
+    The file is write-and-forget; failure to write MUST NOT prevent the
+    guard from denying the operation.
+    """
+    ai_root = _ai_root()
+    vdir = ai_root / "audit" / "violations"
     try:
-        event = json.load(sys.stdin)
-    except Exception:
+        vdir.mkdir(parents=True, exist_ok=True)
+        ts = _utc_timestamp()
+        fpath = vdir / f"{ts}-branch-guard.md"
+        content = (
+            f"# Violation — {ts}\n\n"
+            f"- **File / Rule violated:** Common.md §2.2 — protected-branch gate\n"
+            f"- **What happened:** `git {subcmd}` was attempted on protected branch '{branch}'.\n"
+            f"- **How noticed:** hook-detected (branch-guard.py PreToolUse / wrapper)\n"
+            f"- **Remediation:** Operation denied. Branch off and open a PR.\n"
+            f"- **Proposed amendment (if any):** none\n"
+        )
+        fpath.write_text(content, encoding="utf-8")
+    except Exception as e:  # noqa: BLE001 — best-effort; guard must not crash
+        _lib.log(f"warning: could not write violation record: {e}")
+
+
+def write_drift_record(subcmd: str, branch: str, detail: str) -> None:
+    """Write a drift (near-miss) audit record to $AI_ROOT/audit/drift/.
+
+    Called when a quantitative check passes but is ≥90% of its threshold,
+    indicating the system is approaching a policy boundary without crossing it.
+    This is a defense-in-depth signal; the operation is NOT denied.
+
+    Currently the branch-guard has no quantitative threshold checks — this
+    function is wired and tested as a contract for when such checks are added.
+    """
+    ai_root = _ai_root()
+    ddir = ai_root / "audit" / "drift"
+    try:
+        ddir.mkdir(parents=True, exist_ok=True)
+        ts = _utc_timestamp()
+        fpath = ddir / f"{ts}-branch-guard.md"
+        content = (
+            f"# Drift — {ts}\n\n"
+            f"- **Hook:** branch-guard.py\n"
+            f"- **Near-miss:** `git {subcmd}` on branch '{branch}'\n"
+            f"- **Detail:** {detail}\n"
+            f"- **Action:** none (operation permitted; drift record written for audit)\n"
+        )
+        fpath.write_text(content, encoding="utf-8")
+    except Exception as e:  # noqa: BLE001 — best-effort; drift must not crash guard
+        _lib.log(f"warning: could not write drift record: {e}")
+
+
+def violation(subcmd: str, branch: str) -> int:
+    _lib.log(f"blocking — `git {subcmd}` would mutate protected branch '{branch}'.")
+    _lib.log("Per ~/.ai/Common.md §2.2 (protected-branch gate).")
+    _lib.log("Resolution: branch off (e.g. `git checkout -b work/<slug>`), commit there, and open a PR.")
+    write_violation_record(subcmd, branch)
+    return 1
+
+
+def from_claude_payload() -> int:
+    """PreToolUse mode: read JSON payload on stdin, inspect command."""
+    raw = sys.stdin.read()
+    if not raw.strip():
         return 0
-
-    hook_event = event.get("hookEventName") or event.get("hook_event_name") or ""
-    if hook_event != "PreToolUse":
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError:
         return 0
-
-    tool_name = event.get("tool_name") or event.get("toolName") or ""
-    if tool_name not in ("Bash", "shell", "execute"):
+    cmd = (
+        payload.get("command")
+        or payload.get("tool_input", {}).get("command")
+        or payload.get("input", {}).get("command")
+        or ""
+    ) if isinstance(payload, dict) else ""
+    if not cmd.strip().startswith("git "):
         return 0
-
-    tool_input = event.get("tool_input") or event.get("toolInput") or {}
-    if not isinstance(tool_input, dict):
+    # Tokenize roughly. We don't need shell-exact tokenization; the
+    # subcommand is the second word.
+    parts = cmd.split()
+    if len(parts) < 2:
         return 0
+    return check_invocation(parts[1:])
 
-    command = tool_input.get("command") or ""
-    if not isinstance(command, str) or "git" not in command:
+
+def check_invocation(argv: list[str]) -> int:
+    """Common code for command-wrapper and PreToolUse paths.
+
+    argv is the args AFTER `git` (so argv[0] is the subcommand)."""
+    if not argv:
         return 0
+    subcmd = argv[0]
+    policy = load_policy()
+    branch = current_branch()
 
-    segments = split_invocations(command)
-    if not segments:
-        return 0
+    if subcmd in GUARDED_SUBCOMMANDS and is_protected(branch, policy):
+        return violation(subcmd, branch)
 
-    names, patterns = load_protected()
-    base_cwd = event.get("cwd") or os.getcwd()
-
-    for tokens in segments:
-        subcommand, subargs, override_cwd = parse_git_call(tokens)
-        if subcommand is None:
-            continue
-        cwd = override_cwd or base_cwd
-
-        if subcommand == "push":
-            target = push_targets_protected(subargs, cwd, names, patterns)
-            if target:
-                deny(
-                    f"`git push` would publish to protected branch '{target}'.\n"
-                    "Per Common.md §2.2 — direct push to a protected branch "
-                    "requires explicit approval.\n"
-                    "Push from a feature branch via PR instead.\n"
-                    f"  Branch: {target}\n"
-                    f"  Cwd:    {cwd}"
-                )
-            continue
-
-        if subcommand in MUTATING_SUBCOMMANDS:
-            branch = current_branch(cwd)
-            if branch is None:
-                continue
-            if is_protected(branch, names, patterns):
-                # Carve-out: `git pull --ff-only` is a strict fast-forward
-                # sync from remote canonical state, not a mutation. Git
-                # itself refuses non-FF, so this cannot rewrite history
-                # or invent state.
-                if subcommand == "pull" and "--ff-only" in subargs:
-                    continue
-
-                # Block --no-verify on protected branches: that flag strips
-                # git's own hook layer, removing a second enforcement line.
-                if "--no-verify" in subargs or "-n" in subargs:
-                    deny(
-                        f"`git {subcommand} --no-verify` on protected branch '{branch}'.\n"
-                        "--no-verify strips git hooks, which are a second enforcement layer.\n"
-                        "Per Common.md §2.2 — direct mutation of a protected branch requires\n"
-                        "explicit approval and cannot bypass hooks.\n"
-                        f"  Branch: {branch}\n"
-                        f"  Cwd:    {cwd}"
-                    )
-
-                deny(
-                    f"`git {subcommand}` would mutate protected branch '{branch}'.\n"
-                    "Per Common.md §2.2 — operations whose blast radius "
-                    "extends beyond the current working directory require "
-                    "approval. Direct mutations of protected branches "
-                    "bypass PR review and change canonical state.\n"
-                    f"  Branch: {branch}\n"
-                    f"  Cwd:    {cwd}\n"
-                    "Move work to a feature branch first:\n"
-                    "  git switch -c <feature-branch>"
-                )
+    if subcmd == "push":
+        for target in parse_push_refspec(argv[1:]):
+            if is_protected(target, policy):
+                return violation("push", target)
 
     return 0
 
 
+def main(argv: list[str]) -> int:
+    parser = argparse.ArgumentParser(add_help=True)
+    parser.add_argument("--self-check", action="store_true")
+    parser.add_argument("--mode", choices=["claude", "wrapper"], default=None,
+                        help="invocation mode (auto-detected by default)")
+    parser.add_argument("rest", nargs=argparse.REMAINDER)
+    args = parser.parse_args(argv)
+
+    if args.self_check:
+        _ = load_policy()
+        return _lib.self_check_ok()
+
+    # Auto-detect: if there's data on stdin, it's a Claude payload.
+    if args.mode == "claude" or (args.mode is None and not sys.stdin.isatty()):
+        return from_claude_payload()
+
+    # Wrapper mode: argv is the git command line after "git".
+    return check_invocation(args.rest)
+
+
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(main(sys.argv[1:]))

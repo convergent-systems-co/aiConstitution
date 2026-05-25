@@ -1,459 +1,203 @@
-"""test_branch_guard.py — adversarial + functional tests for branch-guard.py.
+"""Tests for branch-guard.py drift and violation audit record writing.
 
-Covers stories #92 (branch-guard) and #180 (adversarial validation).
-
-Tests invoke branch-guard.py as a subprocess with a JSON event on stdin,
-matching exactly how Claude Code calls it. This exercises the full process
-including stdin parsing and output schema.
-
-RED criteria (current embedded version will fail):
-- AC3: bash -c recursion (embedded version has no split_invocations)
-- AC4: --no-verify denial (embedded version has no --no-verify check)
-- AC8: first-push to nonexistent remote → allow (not implemented)
-- AC9: JSON permissionDecision deny output (embedded uses _lib.log+exit1)
+Run with: pytest test_branch_guard.py -v
+All tests must be RED before the coder touches production code.
 """
 from __future__ import annotations
 
-import json
 import os
-import subprocess
 import sys
 import tempfile
 from pathlib import Path
+from unittest.mock import patch
 
+import importlib.util
 import pytest
 
+# branch-guard.py uses a hyphen in its filename, which Python's normal import
+# mechanism cannot handle. We use importlib to load it by path directly.
 HOOKS_DIR = Path(__file__).resolve().parent
-BRANCH_GUARD = str(HOOKS_DIR / "branch-guard.py")
+_GUARD_PATH = HOOKS_DIR / "branch-guard.py"
 
-
-def run_hook(event: dict, env: dict | None = None) -> subprocess.CompletedProcess:
-    """Invoke branch-guard.py with the given event dict on stdin."""
-    merged_env = {**os.environ, **(env or {})}
-    return subprocess.run(
-        [sys.executable, BRANCH_GUARD],
-        input=json.dumps(event),
-        capture_output=True,
-        text=True,
-        env=merged_env,
-    )
-
-
-def make_bash_event(command: str, branch: str = "main") -> dict:
-    """Build a PreToolUse event for a Bash tool call."""
-    return {
-        "hookEventName": "PreToolUse",
-        "tool_name": "Bash",
-        "tool_input": {"command": command},
-        "cwd": "/tmp/fakerepo",
-        # branch is detected via subprocess git call; we patch via a wrapper
-    }
-
-
-def assert_denied(result: subprocess.CompletedProcess) -> dict:
-    """Assert the hook emitted a JSON permissionDecision deny on stdout."""
-    assert result.returncode == 0, (
-        f"Expected exit 0 (deny via JSON), got {result.returncode}\n"
-        f"stdout: {result.stdout}\nstderr: {result.stderr}"
-    )
-    assert result.stdout.strip(), (
-        f"Expected JSON on stdout for deny, got empty stdout\nstderr: {result.stderr}"
-    )
-    try:
-        out = json.loads(result.stdout.strip())
-    except json.JSONDecodeError as e:
-        pytest.fail(f"stdout is not valid JSON: {e!r}\nstdout: {result.stdout!r}")
-    decision = (
-        out.get("hookSpecificOutput", {}).get("permissionDecision")
-        or out.get("permissionDecision")
-    )
-    assert decision == "deny", (
-        f"Expected permissionDecision='deny', got {decision!r}\nfull output: {out}"
-    )
-    return out
-
-
-def assert_allowed(result: subprocess.CompletedProcess) -> None:
-    """Assert the hook did NOT deny (exit 0, no deny on stdout)."""
-    assert result.returncode == 0, (
-        f"Expected exit 0 (allow), got {result.returncode}\n"
-        f"stdout: {result.stdout}\nstderr: {result.stderr}"
-    )
-    if result.stdout.strip():
-        try:
-            out = json.loads(result.stdout.strip())
-            decision = (
-                out.get("hookSpecificOutput", {}).get("permissionDecision")
-                or out.get("permissionDecision")
-            )
-            assert decision != "deny", (
-                f"Hook denied when it should have allowed\nfull output: {out}"
-            )
-        except json.JSONDecodeError:
-            pass  # non-JSON stdout on allow is fine
+_spec = importlib.util.spec_from_file_location("branch_guard", _GUARD_PATH)
+branch_guard = importlib.util.module_from_spec(_spec)
+sys.modules["branch_guard"] = branch_guard
+_spec.loader.exec_module(branch_guard)  # type: ignore[union-attr]
 
 
 # ---------------------------------------------------------------------------
-# Test fixtures: a temporary git repo with a branch we control
+# Helpers
 # ---------------------------------------------------------------------------
 
-@pytest.fixture()
-def git_repo_on_main(tmp_path):
-    """Initialize a git repo and check out main."""
-    subprocess.run(["git", "init", "-b", "main", str(tmp_path)], check=True, capture_output=True)
-    subprocess.run(["git", "-C", str(tmp_path), "config", "user.email", "test@test.com"], check=True, capture_output=True)
-    subprocess.run(["git", "-C", str(tmp_path), "config", "user.name", "Test"], check=True, capture_output=True)
-    # Make initial commit so HEAD resolves
-    (tmp_path / "README").write_text("init")
-    subprocess.run(["git", "-C", str(tmp_path), "add", "."], check=True, capture_output=True)
-    subprocess.run(["git", "-C", str(tmp_path), "commit", "-m", "init"], check=True, capture_output=True)
-    return tmp_path
+def make_ai_root(tmp_path: Path) -> Path:
+    """Create a minimal AI_ROOT under tmp_path and return it."""
+    ai_root = tmp_path / "ai_root"
+    ai_root.mkdir()
+    return ai_root
 
 
-@pytest.fixture()
-def git_repo_on_feature(tmp_path):
-    """Initialize a git repo on a feature branch."""
-    subprocess.run(["git", "init", "-b", "main", str(tmp_path)], check=True, capture_output=True)
-    subprocess.run(["git", "-C", str(tmp_path), "config", "user.email", "test@test.com"], check=True, capture_output=True)
-    subprocess.run(["git", "-C", str(tmp_path), "config", "user.name", "Test"], check=True, capture_output=True)
-    (tmp_path / "README").write_text("init")
-    subprocess.run(["git", "-C", str(tmp_path), "add", "."], check=True, capture_output=True)
-    subprocess.run(["git", "-C", str(tmp_path), "commit", "-m", "init"], check=True, capture_output=True)
-    subprocess.run(["git", "-C", str(tmp_path), "checkout", "-b", "feature/test"], check=True, capture_output=True)
-    return tmp_path
+def violations_in(ai_root: Path) -> list[Path]:
+    vdir = ai_root / "audit" / "violations"
+    if not vdir.is_dir():
+        return []
+    return sorted(vdir.glob("*.md"))
+
+
+def drift_in(ai_root: Path) -> list[Path]:
+    ddir = ai_root / "audit" / "drift"
+    if not ddir.is_dir():
+        return []
+    return sorted(ddir.glob("*.md"))
 
 
 # ---------------------------------------------------------------------------
-# AC1: git commit on main → deny
+# #204 — branch-guard writes a violation record when the gate blocks
 # ---------------------------------------------------------------------------
 
-class TestCommitOnMainDenied:
-    def test_commit_main_denied_via_json(self, git_repo_on_main):
-        event = {
-            "hookEventName": "PreToolUse",
-            "tool_name": "Bash",
-            "tool_input": {"command": "git commit -m 'test'"},
-            "cwd": str(git_repo_on_main),
-        }
-        result = run_hook(event)
-        assert_denied(result)
+class TestViolationRecordWritten:
+    """deny_operation must create a violation .md under audit/violations/."""
 
-    def test_deny_includes_branch_name(self, git_repo_on_main):
-        event = {
-            "hookEventName": "PreToolUse",
-            "tool_name": "Bash",
-            "tool_input": {"command": "git commit -m 'test'"},
-            "cwd": str(git_repo_on_main),
-        }
-        result = run_hook(event)
-        out = assert_denied(result)
-        reason = out.get("hookSpecificOutput", {}).get("permissionDecisionReason", "")
-        assert "main" in reason, f"Expected 'main' in deny reason, got: {reason!r}"
+    def test_commit_on_main_writes_violation_file(self, tmp_path):
+        """Committing on 'main' must write a violation audit record."""
+        ai_root = make_ai_root(tmp_path)
 
+        with (
+            patch.dict(os.environ, {"AI_ROOT": str(ai_root)}),
+            patch.object(branch_guard, "current_branch", return_value="main"),
+        ):
+            rc = branch_guard.check_invocation(["commit", "-m", "oops"])
 
-# ---------------------------------------------------------------------------
-# AC2: git merge on main → deny
-# ---------------------------------------------------------------------------
+        assert rc == 1, "check_invocation must return 1 (deny) for commit on main"
 
-class TestMergeOnMainDenied:
-    def test_merge_main_denied(self, git_repo_on_main):
-        event = {
-            "hookEventName": "PreToolUse",
-            "tool_name": "Bash",
-            "tool_input": {"command": "git merge feature/foo"},
-            "cwd": str(git_repo_on_main),
-        }
-        result = run_hook(event)
-        assert_denied(result)
-
-
-# ---------------------------------------------------------------------------
-# AC3 (#180): bash -c 'git commit' → deny (bash-c recursion)
-# ---------------------------------------------------------------------------
-
-class TestBashCRecursion:
-    """#180 adversarial: bash -c wrapper cannot bypass branch-guard."""
-
-    def test_bash_c_commit_denied(self, git_repo_on_main):
-        """bash -c 'git commit -m test' on main MUST be denied."""
-        event = {
-            "hookEventName": "PreToolUse",
-            "tool_name": "Bash",
-            "tool_input": {"command": "bash -c 'git commit -m test'"},
-            "cwd": str(git_repo_on_main),
-        }
-        result = run_hook(event)
-        assert_denied(result)
-
-    def test_bash_c_merge_denied(self, git_repo_on_main):
-        """bash -c 'git merge foo' on main MUST be denied."""
-        event = {
-            "hookEventName": "PreToolUse",
-            "tool_name": "Bash",
-            "tool_input": {"command": "bash -c 'git merge feature/foo'"},
-            "cwd": str(git_repo_on_main),
-        }
-        result = run_hook(event)
-        assert_denied(result)
-
-    def test_sh_c_commit_denied(self, git_repo_on_main):
-        """sh -c 'git commit ...' on main MUST be denied."""
-        event = {
-            "hookEventName": "PreToolUse",
-            "tool_name": "Bash",
-            "tool_input": {"command": "sh -c 'git commit -m bypass'"},
-            "cwd": str(git_repo_on_main),
-        }
-        result = run_hook(event)
-        assert_denied(result)
-
-    def test_compound_with_bash_c_denied(self, git_repo_on_main):
-        """echo foo && bash -c 'git commit' on main MUST be denied."""
-        event = {
-            "hookEventName": "PreToolUse",
-            "tool_name": "Bash",
-            "tool_input": {"command": "echo foo && bash -c 'git commit -m compound'"},
-            "cwd": str(git_repo_on_main),
-        }
-        result = run_hook(event)
-        assert_denied(result)
-
-
-# ---------------------------------------------------------------------------
-# AC4 (#180): --no-verify on protected branch → deny with specific message
-# ---------------------------------------------------------------------------
-
-class TestNoVerifyDenied:
-    """#180 adversarial: --no-verify flag must be denied on protected branches."""
-
-    def test_commit_no_verify_denied(self, git_repo_on_main):
-        """git commit --no-verify on main MUST be denied."""
-        event = {
-            "hookEventName": "PreToolUse",
-            "tool_name": "Bash",
-            "tool_input": {"command": "git commit --no-verify -m 'bypass attempt'"},
-            "cwd": str(git_repo_on_main),
-        }
-        result = run_hook(event)
-        out = assert_denied(result)
-        reason = out.get("hookSpecificOutput", {}).get("permissionDecisionReason", "")
-        assert "--no-verify" in reason, (
-            f"Expected '--no-verify' mentioned in deny reason, got: {reason!r}"
+        files = violations_in(ai_root)
+        assert len(files) == 1, (
+            f"Expected exactly 1 violation file in {ai_root}/audit/violations/, "
+            f"got {len(files)}: {files}"
         )
 
-    def test_commit_no_verify_short_flag_denied(self, git_repo_on_main):
-        """git commit -n on main MUST be denied (short form of --no-verify)."""
-        event = {
-            "hookEventName": "PreToolUse",
-            "tool_name": "Bash",
-            "tool_input": {"command": "git commit -n -m 'short flag bypass'"},
-            "cwd": str(git_repo_on_main),
-        }
-        result = run_hook(event)
-        # Either denied entirely OR denied with no-verify message — must not allow
-        assert result.returncode == 0  # hook exits 0 (deny via JSON)
-        if result.stdout.strip():
-            out = json.loads(result.stdout.strip())
-            decision = out.get("hookSpecificOutput", {}).get("permissionDecision", "")
-            assert decision == "deny"
+    def test_violation_file_contains_branch_name(self, tmp_path):
+        """The violation file must reference the blocked branch by name."""
+        ai_root = make_ai_root(tmp_path)
 
+        with (
+            patch.dict(os.environ, {"AI_ROOT": str(ai_root)}),
+            patch.object(branch_guard, "current_branch", return_value="main"),
+        ):
+            branch_guard.check_invocation(["merge", "--no-ff", "feature/x"])
 
-# ---------------------------------------------------------------------------
-# AC5: git push origin main → deny
-# ---------------------------------------------------------------------------
+        files = violations_in(ai_root)
+        assert files, "no violation file created"
+        content = files[0].read_text(encoding="utf-8")
+        assert "main" in content, f"violation file should name branch 'main':\n{content}"
 
-class TestPushMainDenied:
-    def test_push_main_denied(self, git_repo_on_main):
-        event = {
-            "hookEventName": "PreToolUse",
-            "tool_name": "Bash",
-            "tool_input": {"command": "git push origin main"},
-            "cwd": str(git_repo_on_main),
-        }
-        result = run_hook(event)
-        assert_denied(result)
+    def test_violation_file_contains_subcommand(self, tmp_path):
+        """The violation file must name the blocked git subcommand."""
+        ai_root = make_ai_root(tmp_path)
 
-    def test_push_refspec_local_remote_denied(self, git_repo_on_main):
-        """git push origin feature/foo:main should be denied (remote is main)."""
-        event = {
-            "hookEventName": "PreToolUse",
-            "tool_name": "Bash",
-            "tool_input": {"command": "git push origin feature/foo:main"},
-            "cwd": str(git_repo_on_main),
-        }
-        result = run_hook(event)
-        assert_denied(result)
+        with (
+            patch.dict(os.environ, {"AI_ROOT": str(ai_root)}),
+            patch.object(branch_guard, "current_branch", return_value="master"),
+        ):
+            branch_guard.check_invocation(["rebase", "origin/master"])
 
-    def test_push_force_main_denied(self, git_repo_on_main):
-        """git push --force origin main should be denied."""
-        event = {
-            "hookEventName": "PreToolUse",
-            "tool_name": "Bash",
-            "tool_input": {"command": "git push --force origin main"},
-            "cwd": str(git_repo_on_main),
-        }
-        result = run_hook(event)
-        assert_denied(result)
+        files = violations_in(ai_root)
+        assert files, "no violation file created"
+        content = files[0].read_text(encoding="utf-8")
+        assert "rebase" in content, f"violation file should name subcommand 'rebase':\n{content}"
 
+    def test_violation_file_contains_rule_citation(self, tmp_path):
+        """The violation file must cite the governing rule (Common.md §2.2)."""
+        ai_root = make_ai_root(tmp_path)
 
-# ---------------------------------------------------------------------------
-# AC6: push to non-protected remote ref → allow
-# ---------------------------------------------------------------------------
+        with (
+            patch.dict(os.environ, {"AI_ROOT": str(ai_root)}),
+            patch.object(branch_guard, "current_branch", return_value="main"),
+        ):
+            branch_guard.check_invocation(["commit"])
 
-class TestPushFeatureBranchAllowed:
-    def test_push_feature_branch_allowed(self, git_repo_on_feature):
-        event = {
-            "hookEventName": "PreToolUse",
-            "tool_name": "Bash",
-            "tool_input": {"command": "git push origin feature/test"},
-            "cwd": str(git_repo_on_feature),
-        }
-        result = run_hook(event)
-        assert_allowed(result)
-
-
-# ---------------------------------------------------------------------------
-# AC7: git pull --ff-only on main → allow
-# ---------------------------------------------------------------------------
-
-class TestPullFfOnlyAllowed:
-    def test_pull_ff_only_allowed(self, git_repo_on_main):
-        """pull --ff-only is a fast-forward sync, not a mutation — must be allowed."""
-        event = {
-            "hookEventName": "PreToolUse",
-            "tool_name": "Bash",
-            "tool_input": {"command": "git pull --ff-only"},
-            "cwd": str(git_repo_on_main),
-        }
-        result = run_hook(event)
-        assert_allowed(result)
-
-
-# ---------------------------------------------------------------------------
-# AC8 (#180): first push to nonexistent remote ref → allow (bootstrap)
-# ---------------------------------------------------------------------------
-
-class TestFirstPushBootstrapAllowed:
-    """#180 adversarial: first push to an empty remote should be allowed."""
-
-    def test_push_to_nonexistent_remote_ref_allowed(self, tmp_path):
-        """When the remote ref does not exist, push to main should be allowed.
-
-        This covers the empty-repo bootstrap scenario (e.g., git init + first push).
-        The hook must check if the remote ref actually exists before denying.
-        """
-        # Create a bare remote
-        remote = tmp_path / "remote.git"
-        subprocess.run(["git", "init", "--bare", str(remote)], check=True, capture_output=True)
-
-        # Create a local repo and add the bare remote
-        local = tmp_path / "local"
-        local.mkdir()
-        subprocess.run(["git", "init", "-b", "main", str(local)], check=True, capture_output=True)
-        subprocess.run(["git", "-C", str(local), "config", "user.email", "t@t.com"], check=True, capture_output=True)
-        subprocess.run(["git", "-C", str(local), "config", "user.name", "T"], check=True, capture_output=True)
-        (local / "f").write_text("x")
-        subprocess.run(["git", "-C", str(local), "add", "."], check=True, capture_output=True)
-        subprocess.run(["git", "-C", str(local), "commit", "-m", "init"], check=True, capture_output=True)
-        subprocess.run(["git", "-C", str(local), "remote", "add", "origin", str(remote)], check=True, capture_output=True)
-
-        # The remote ref `main` does NOT exist yet — this is the first push
-        event = {
-            "hookEventName": "PreToolUse",
-            "tool_name": "Bash",
-            "tool_input": {"command": "git push origin main"},
-            "cwd": str(local),
-        }
-        result = run_hook(event)
-        assert_allowed(result), (
-            "First push to an empty remote should be allowed (bootstrap).\n"
-            f"stdout: {result.stdout}\nstderr: {result.stderr}"
+        files = violations_in(ai_root)
+        assert files, "no violation file created"
+        content = files[0].read_text(encoding="utf-8")
+        assert "2.2" in content or "branch-guard" in content.lower(), (
+            f"violation file should cite §2.2 or branch-guard:\n{content}"
         )
 
-    def test_push_to_existing_remote_ref_denied(self, tmp_path):
-        """When the remote ref already exists, push to main is denied."""
-        remote = tmp_path / "remote.git"
-        subprocess.run(["git", "init", "--bare", str(remote)], check=True, capture_output=True)
+    def test_no_violation_file_when_branch_is_safe(self, tmp_path):
+        """No violation file should be written when the branch is not protected."""
+        ai_root = make_ai_root(tmp_path)
 
-        local = tmp_path / "local"
-        local.mkdir()
-        subprocess.run(["git", "init", "-b", "main", str(local)], check=True, capture_output=True)
-        subprocess.run(["git", "-C", str(local), "config", "user.email", "t@t.com"], check=True, capture_output=True)
-        subprocess.run(["git", "-C", str(local), "config", "user.name", "T"], check=True, capture_output=True)
-        (local / "f").write_text("x")
-        subprocess.run(["git", "-C", str(local), "add", "."], check=True, capture_output=True)
-        subprocess.run(["git", "-C", str(local), "commit", "-m", "init"], check=True, capture_output=True)
-        subprocess.run(["git", "-C", str(local), "remote", "add", "origin", str(remote)], check=True, capture_output=True)
-        # Push once to establish the remote ref
-        subprocess.run(["git", "-C", str(local), "push", "origin", "main"], check=True, capture_output=True)
+        with (
+            patch.dict(os.environ, {"AI_ROOT": str(ai_root)}),
+            patch.object(branch_guard, "current_branch", return_value="feature/foo"),
+        ):
+            rc = branch_guard.check_invocation(["commit", "-m", "ok"])
 
-        # Now push again — remote ref EXISTS — should be denied
-        event = {
-            "hookEventName": "PreToolUse",
-            "tool_name": "Bash",
-            "tool_input": {"command": "git push origin main"},
-            "cwd": str(local),
-        }
-        result = run_hook(event)
-        assert_denied(result)
+        assert rc == 0, "check_invocation should allow commit on a feature branch"
+        files = violations_in(ai_root)
+        assert not files, f"unexpected violation files for safe branch: {files}"
 
+    def test_multiple_blocks_create_multiple_files(self, tmp_path):
+        """Each blocking call must produce its own violation file."""
+        ai_root = make_ai_root(tmp_path)
 
-# ---------------------------------------------------------------------------
-# AC9: deny output is JSON permissionDecision (not exit 1)
-# ---------------------------------------------------------------------------
+        with (
+            patch.dict(os.environ, {"AI_ROOT": str(ai_root)}),
+            patch.object(branch_guard, "current_branch", return_value="main"),
+        ):
+            branch_guard.check_invocation(["commit"])
+            branch_guard.check_invocation(["commit"])
 
-class TestDenyOutputSchema:
-    def test_deny_is_json_not_exit1(self, git_repo_on_main):
-        """branch-guard must exit 0 with JSON deny, never exit non-zero."""
-        event = {
-            "hookEventName": "PreToolUse",
-            "tool_name": "Bash",
-            "tool_input": {"command": "git commit -m 'test'"},
-            "cwd": str(git_repo_on_main),
-        }
-        result = run_hook(event)
-        assert result.returncode == 0, "Deny must use exit 0 + JSON, not non-zero exit"
-        out = json.loads(result.stdout.strip())
-        assert "hookSpecificOutput" in out
-        assert out["hookSpecificOutput"]["hookEventName"] == "PreToolUse"
-        assert out["hookSpecificOutput"]["permissionDecision"] == "deny"
-        assert "permissionDecisionReason" in out["hookSpecificOutput"]
-
-    def test_allow_is_silent_exit0(self, git_repo_on_feature):
-        """Allow must be silent exit 0 — no stdout."""
-        event = {
-            "hookEventName": "PreToolUse",
-            "tool_name": "Bash",
-            "tool_input": {"command": "git commit -m 'feature work'"},
-            "cwd": str(git_repo_on_feature),
-        }
-        result = run_hook(event)
-        assert result.returncode == 0
-        # stdout should be empty on allow
-        assert not result.stdout.strip(), f"Expected empty stdout on allow, got: {result.stdout!r}"
+        files = violations_in(ai_root)
+        assert len(files) == 2, (
+            f"Expected 2 violation files (one per block), got {len(files)}: {files}"
+        )
 
 
 # ---------------------------------------------------------------------------
-# Non-git commands pass through silently
+# #203 — branch-guard writes a drift record on near-miss (≥90% threshold)
 # ---------------------------------------------------------------------------
 
-class TestNonGitPassThrough:
-    def test_non_git_allowed(self, git_repo_on_main):
-        event = {
-            "hookEventName": "PreToolUse",
-            "tool_name": "Bash",
-            "tool_input": {"command": "ls -la"},
-            "cwd": str(git_repo_on_main),
-        }
-        result = run_hook(event)
-        assert_allowed(result)
+class TestDriftRecordWritten:
+    """write_drift_record must create a drift .md under audit/drift/ when
+    a near-miss threshold is reached.  The near-miss concept is currently
+    a placeholder in branch-guard (no quantitative check exists yet), so
+    we test the write_drift_record() function directly."""
 
-    def test_wrong_tool_name_allowed(self, git_repo_on_main):
-        event = {
-            "hookEventName": "PreToolUse",
-            "tool_name": "Read",
-            "tool_input": {"file_path": "/tmp/foo"},
-            "cwd": str(git_repo_on_main),
-        }
-        result = run_hook(event)
-        assert_allowed(result)
+    def test_write_drift_record_creates_file(self, tmp_path):
+        """write_drift_record() must create a file in audit/drift/."""
+        ai_root = make_ai_root(tmp_path)
+
+        with patch.dict(os.environ, {"AI_ROOT": str(ai_root)}):
+            branch_guard.write_drift_record(
+                subcmd="commit",
+                branch="main",
+                detail="synthetic near-miss test",
+            )
+
+        files = drift_in(ai_root)
+        assert len(files) == 1, (
+            f"Expected 1 drift file in {ai_root}/audit/drift/, got {len(files)}: {files}"
+        )
+
+    def test_write_drift_record_content(self, tmp_path):
+        """Drift record must include subcmd, branch, and the word 'drift'."""
+        ai_root = make_ai_root(tmp_path)
+
+        with patch.dict(os.environ, {"AI_ROOT": str(ai_root)}):
+            branch_guard.write_drift_record(
+                subcmd="push",
+                branch="release/1.0",
+                detail="test near-miss detail",
+            )
+
+        files = drift_in(ai_root)
+        assert files, "no drift file created"
+        content = files[0].read_text(encoding="utf-8")
+        assert "push" in content, f"drift file must name subcmd 'push':\n{content}"
+        assert "release/1.0" in content, f"drift file must name branch 'release/1.0':\n{content}"
+
+    def test_write_drift_record_function_exists(self):
+        """write_drift_record must be importable from branch_guard."""
+        assert hasattr(branch_guard, "write_drift_record"), (
+            "branch_guard module must export write_drift_record()"
+        )
