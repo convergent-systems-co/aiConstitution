@@ -5,7 +5,7 @@ import Base from '../layouts/Base.astro';
   <section class="cs-prose">
     <p class="cs-section-label">Methodology · CLI · TUI · Community</p>
     <h1>
-      A personal AI Constitution.<br />
+      AI Constitution — Govern your AI assistant with a personal constitution.<br />
       <span class="cs-mark">Installable.</span> Portable. Auditable.
     </h1>
     <p>
@@ -20,6 +20,25 @@ import Base from '../layouts/Base.astro';
       <a class="cs-action" href="/install">Install</a>
       <a href="/spec" style="align-self: center;">Read the spec →</a>
     </p>
+  </section>
+
+  <section style="margin-block-start: var(--space-24);">
+    <p class="cs-section-label">Install</p>
+    <h2>Get started in one command</h2>
+    <pre><code>brew install convergent-systems-co/tap/ai</code></pre>
+    <p>Then run <code>ai setup</code> to answer a guided interview and produce your personalized constitution.</p>
+    <p><a href="/install">Full installation instructions →</a></p>
+  </section>
+
+  <section style="margin-block-start: var(--space-24);">
+    <p class="cs-section-label">Why</p>
+    <h2>Why a personal AI constitution?</h2>
+    <ul>
+      <li><strong>Portable.</strong> Four markdown files. Every AI tool — Claude Code, Copilot CLI, Cursor, Codex — reads the same governing documents. One constitution, all tools.</li>
+      <li><strong>Auditable.</strong> Every override, every self-noticed violation, every governance decision leaves a permanent typed record under <code>~/.ai/audit/</code>. Local-only. Never synced raw.</li>
+      <li><strong>Onboardable.</strong> New tools and new AI collaborators read the same files. Onboarding is reading the constitution, not re-negotiating it.</li>
+      <li><strong>Self-repairing.</strong> <code>ai doctor</code> detects and fixes the predictable failure modes — broken symlinks, missing hooks, dirty working tree, stale binary — without conversation.</li>
+    </ul>
   </section>
 
   <section style="margin-block-start: var(--space-24);">
@@ -84,6 +103,37 @@ import Base from '../layouts/Base.astro';
         </p>
       </div>
     </div>
+  </section>
+
+  <section style="margin-block-start: var(--space-24);">
+    <p class="cs-section-label">Research</p>
+    <h2>The science behind constitutional AI governance</h2>
+    <p>
+      These four Anthropic papers ground the design of aiConstitution in
+      peer-reviewed research rather than convention.
+    </p>
+    <ul style="list-style: none; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(24rem, 1fr)); gap: var(--space-6); margin-block-start: var(--space-4);">
+      <li>
+        <h3 style="margin-block-end: var(--space-1);">Next-Generation Constitutional Classifiers</h3>
+        <p style="margin-block-end: var(--space-2);">Layered principle-based enforcement outperforms reactive pattern matching.</p>
+        <a href="https://www.anthropic.com/research/next-generation-constitutional-classifiers" target="_blank" rel="noopener noreferrer">Read on Anthropic →</a>
+      </li>
+      <li>
+        <h3 style="margin-block-end: var(--space-1);">Claude's New Constitution</h3>
+        <p style="margin-block-end: var(--space-2);">Anthropic's own rationale for why AI needs explicit governing documents.</p>
+        <a href="https://www.anthropic.com/news/claude-new-constitution" target="_blank" rel="noopener noreferrer">Read on Anthropic →</a>
+      </li>
+      <li>
+        <h3 style="margin-block-end: var(--space-1);">Constitutional Classifiers</h3>
+        <p style="margin-block-end: var(--space-2);">Writing the constitution first produces measurably more robust AI behavior.</p>
+        <a href="https://www.anthropic.com/research/constitutional-classifiers" target="_blank" rel="noopener noreferrer">Read on Anthropic →</a>
+      </li>
+      <li>
+        <h3 style="margin-block-end: var(--space-1);">Specific vs. General Principles for Constitutional AI</h3>
+        <p style="margin-block-end: var(--space-2);">Hybrid general+specific principles outperforms either approach alone.</p>
+        <a href="https://www.anthropic.com/research/specific-versus-general-principles-for-constitutional-ai" target="_blank" rel="noopener noreferrer">Read on Anthropic →</a>
+      </li>
+    </ul>
   </section>
 
   <section style="margin-block-start: var(--space-24);">
