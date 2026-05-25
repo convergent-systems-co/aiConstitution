@@ -15,6 +15,8 @@ package wizard
 import (
 	"strings"
 
+	"fmt"
+
 	tea "github.com/charmbracelet/bubbletea"
 
 	internalwizard "github.com/convergent-systems-co/aiConstitution/src/internal/wizard"
@@ -63,6 +65,9 @@ type Model struct {
 
 	// done is set to true when all active questions have been answered.
 	done bool
+
+	// review is set to true to show the pre-write review screen.
+	review bool
 
 	// textBuf holds the in-progress text for TypeText questions.
 	textBuf string
@@ -139,10 +144,33 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	}
 
+	// Review screen: intercept all keys before question handling.
+	if m.review {
+		if key, ok := msg.(tea.KeyMsg); ok {
+			switch key.Type {
+			case tea.KeyEnter:
+				m.review = false
+				m.done = true
+				return m, tea.Quit
+			case tea.KeyRunes:
+				switch string(key.Runes) {
+				case "b", "B":
+					m.review = false
+					if m.qIdx > 0 {
+						m.qIdx--
+					}
+				case "q", "Q":
+					return m, tea.Quit
+				}
+			}
+		}
+		return m, nil
+	}
+
 	q, ok := m.currentQuestion()
 	if !ok {
 		// No active questions — wizard is complete.
-		m.done = true
+		m.review = true
 		return m, tea.Quit
 	}
 
@@ -305,7 +333,7 @@ func (m Model) advance() Model {
 		}
 	}
 	if answered >= len(active) {
-		m.done = true
+		m.review = true
 		return m
 	}
 	// Find the next unanswered question.
@@ -321,14 +349,58 @@ func (m Model) advance() Model {
 
 // View renders the current question for the terminal.
 func (m Model) View() string {
+	if m.review {
+		return m.renderReview()
+	}
 	if m.done {
-		return "Setup complete. Press any key to continue.\n"
+		return "Writing your constitution...\n"
 	}
 	q, ok := m.currentQuestion()
 	if !ok {
 		return ""
 	}
 	return RenderQuestion(m, q)
+}
+
+// renderReview renders the pre-write review screen showing all personal values.
+func (m Model) renderReview() string {
+	labels := map[string]string{
+		"Q01": "Principal",
+		"Q02": "Tools",
+		"Q03": "Context",
+		"Q06": "Cost ceiling",
+		"Q08": "Protected branches",
+		"Q10": "Pushback style",
+		"Q11": "Response length",
+		"Q13": "Attribution in commits",
+	}
+	order := []string{"Q01","Q02","Q03","Q06","Q08","Q10","Q11","Q13"}
+
+	var sb strings.Builder
+	sb.WriteString("\n┌──────────────────────────────────────────────────────────┐\n")
+	sb.WriteString("│  Review your constitution before writing.               │\n")
+	sb.WriteString("│                                                          │\n")
+	for _, qid := range order {
+		label := labels[qid]
+		val := m.answers[qid]
+		if val == "" {
+			val = "(default)"
+		}
+		// Truncate long values
+		if len(val) > 30 {
+			val = val[:27] + "..."
+		}
+		row := fmt.Sprintf("│  %-22s %s", label+":", val)
+		// Pad to fixed width
+		for len(row) < 61 {
+			row += " "
+		}
+		sb.WriteString(row + "│\n")
+	}
+	sb.WriteString("│                                                          │\n")
+	sb.WriteString("│  [Enter] Accept  [b] Back to questions  [q] Quit        │\n")
+	sb.WriteString("└──────────────────────────────────────────────────────────┘\n")
+	return sb.String()
 }
 
 // effectiveID returns the stable ID for a question, preferring ID over QID.
