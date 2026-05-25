@@ -92,7 +92,7 @@ func runPluginsInstall(cmd *cobra.Command, source string, force bool) error {
 	}
 	defer os.RemoveAll(stageDir)
 
-	if err := extractTarGz(tmpFile, stageDir); err != nil {
+	if err := pluginExtractTarGz(tmpFile, stageDir); err != nil {
 		return fmt.Errorf("plugins install: extract archive: %w", err)
 	}
 
@@ -122,7 +122,7 @@ func runPluginsInstall(cmd *cobra.Command, source string, force bool) error {
 	// Move the staged plugin directory into place.
 	if err := os.Rename(manifestDir, destDir); err != nil {
 		// Rename across filesystems (e.g. tmpfs → home) falls back to copy.
-		if err2 := copyDir(manifestDir, destDir); err2 != nil {
+		if err2 := pluginCopyDir(manifestDir, destDir); err2 != nil {
 			return fmt.Errorf("plugins install: copy to plugins dir: %w", err2)
 		}
 	}
@@ -357,7 +357,7 @@ func fetchArchive(source string) (tmpPath string, err error) {
 
 // extractTarGz unpacks a .tar.gz archive into destDir.
 // Rejects entries whose paths contain ".." (path traversal guard).
-func extractTarGz(archivePath, destDir string) error {
+func pluginExtractTarGz(archivePath, destDir string) error {
 	f, err := os.Open(archivePath)
 	if err != nil {
 		return fmt.Errorf("open archive: %w", err)
@@ -503,7 +503,7 @@ func savePluginsState(state pluginsState) error {
 }
 
 // copyDir recursively copies src to dst for cross-device rename fallback.
-func copyDir(src, dst string) error {
+func pluginCopyDir(src, dst string) error {
 	return filepath.WalkDir(src, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -516,12 +516,12 @@ func copyDir(src, dst string) error {
 		if d.IsDir() {
 			return os.MkdirAll(target, 0o750)
 		}
-		return copyFile(path, target)
+		return pluginCopyFile(path, target)
 	})
 }
 
 // copyFile copies a single file from src to dst, preserving mode bits.
-func copyFile(src, dst string) error {
+func pluginCopyFile(src, dst string) error {
 	srcFile, err := os.Open(src)
 	if err != nil {
 		return err
