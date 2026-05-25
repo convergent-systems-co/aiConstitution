@@ -99,6 +99,20 @@ func runSetupTUI(noHooks bool) error {
 		return fmt.Errorf("setup: parse taxonomy: %w", err)
 	}
 
+	// Reference-first intro: print before launching TUI.
+	fmt.Println("┌─────────────────────────────────────────────────────────┐")
+	fmt.Println("│  Your AI Constitution is ready.                        │")
+	fmt.Println("│                                                         │")
+	fmt.Println("│  It already contains:                                   │")
+	fmt.Println("│  · 17 universal operating rules (U1–U17)                │")
+	fmt.Println("│  · Complete Technical Work practices                    │")
+	fmt.Println("│  · Complete Prose & Writing guidelines                  │")
+	fmt.Println("│  · Full governance, audit, and amendment protocol       │")
+	fmt.Println("│                                                         │")
+	fmt.Println("│  We just need 8 things to make it yours.               │")
+	fmt.Println("└─────────────────────────────────────────────────────────┘")
+	fmt.Println()
+
 	// Run the Bubble Tea program.
 	m := tui.NewModel(*tax)
 	prog := tea.NewProgram(m)
