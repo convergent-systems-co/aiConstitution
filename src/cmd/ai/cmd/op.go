@@ -202,8 +202,17 @@ func newOpWhoamiCmd() *cobra.Command {
 			c := exec.Command("op", "whoami", "--format", "json") //nolint:gosec
 			c.Stdin = os.Stdin
 			c.Stdout = cmd.OutOrStdout()
-			c.Stderr = cmd.ErrOrStderr()
-			return c.Run()
+			var errBuf strings.Builder
+			c.Stderr = &errBuf
+			if err := c.Run(); err != nil {
+				msg := errBuf.String()
+				if strings.Contains(msg, "not signed in") || strings.Contains(msg, "account is not") {
+					return fmt.Errorf("not signed in to 1Password — run: ai op signin")
+				}
+				_, _ = fmt.Fprint(cmd.ErrOrStderr(), msg)
+				return err
+			}
+			return nil
 		},
 	}
 }
