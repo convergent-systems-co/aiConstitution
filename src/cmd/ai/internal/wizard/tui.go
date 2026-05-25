@@ -201,6 +201,8 @@ func (m Model) handleTextKey(msg tea.KeyMsg) Model {
 			m.textBuf = string(runes[:len(runes)-1])
 		}
 
+	case tea.KeySpace:
+		m.textBuf += " "
 	case tea.KeyRunes:
 		m.textBuf += string(msg.Runes)
 	}
