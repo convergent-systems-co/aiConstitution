@@ -148,3 +148,11 @@ func BrandCacheDir() string { return filepath.Join(ConfigDir(), ".brand-cache") 
 
 // CheckpointsDir returns the per-project HANDOFF.md checkpoint dir.
 func CheckpointsDir() string { return filepath.Join(ConfigDir(), "checkpoints") }
+
+// PluginsDir returns ~/.ai/plugins/ — the root for installed plugin directories.
+// Each plugin lives at ~/.ai/plugins/<name>/ with a manifest.yaml inside.
+func PluginsDir() string { return filepath.Join(AIRoot(), "plugins") }
+
+// PluginsStateFile returns the per-machine plugins enabled/disabled state file.
+// Path: ~/.config/aiConstitution/plugins.json
+func PluginsStateFile() string { return filepath.Join(ConfigDir(), "plugins.json") }

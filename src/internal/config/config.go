@@ -11,6 +11,16 @@
 //  3. Compiled-in defaults.
 package config
 
+import (
+	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
+
+	"github.com/BurntSushi/toml"
+	"github.com/convergent-systems-co/aiConstitution/src/internal/paths"
+)
+
 // Settings is the in-memory representation of settings.toml.
 //
 // TBD: the full struct mirrors settings.toml.example at the repo
@@ -186,17 +196,112 @@ func Defaults() Settings {
 	}
 }
 
-// Load reads ~/.config/aiConstitution/settings.toml and returns the
-// parsed Settings, layered atop Defaults().
-//
-// TBD: actual TOML parsing + env-var overlay. Stub for v0.8.
+// Load reads ~/.config/aiConstitution/settings.toml, layers it atop
+// Defaults(), then applies environment-variable overrides.
 func Load() (Settings, error) {
-	return Defaults(), nil
+	s := Defaults()
+
+	settingsPath := paths.SettingsTOML()
+	data, err := os.ReadFile(settingsPath) //nolint:gosec // G304: path is derived from user config dir, not user input
+	if err != nil && !os.IsNotExist(err) {
+		return s, err
+	}
+	if err == nil {
+		if _, err2 := toml.Decode(string(data), &s); err2 != nil {
+			return s, err2
+		}
+	}
+
+	applyEnvOverrides(&s)
+	return s, nil
 }
 
-// Save writes Settings to ~/.config/aiConstitution/settings.toml.
+// Save writes s to ~/.config/aiConstitution/settings.toml atomically.
+func Save(s Settings) error {
+	dir := paths.ConfigDir()
+	if err := os.MkdirAll(dir, 0o750); err != nil {
+		return err
+	}
+	f, err := os.CreateTemp(dir, "settings-*.toml.tmp")
+	if err != nil {
+		return err
+	}
+	tmpName := f.Name()
+	defer func() { _ = os.Remove(tmpName) }()
+
+	enc := toml.NewEncoder(f)
+	if err := enc.Encode(s); err != nil {
+		_ = f.Close()
+		return err
+	}
+	if err := f.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmpName, filepath.Join(dir, "settings.toml"))
+}
+
+// ApplyAnswers maps wizard answer keys into the corresponding Settings
+// fields on s. Known keys are coerced into their target Go type. Unknown
+// keys are silently ignored. Parse failures on a known key are silently
+// ignored (the existing field value survives) — the wizard is best-effort
+// configuration, not strict validation; settings.toml schema validation
+// is the authoritative gate.
 //
-// TBD for v0.8.
-func Save(_ Settings) error {
-	return nil
+// Mappings (per SPEC.md §13.6):
+//
+//	defaultMode         -> s.Focus.DefaultMode           (string)
+//	shareNewHooks       -> s.Upstream.ShareNewHooks      (bool)
+//	reviewCadenceDays   -> s.Review.CadenceDays          (int)
+//	syncIncludeSettings -> s.Sync.IncludeSettingsFile    (bool)
+func ApplyAnswers(s *Settings, answers map[string]string) {
+	if s == nil || len(answers) == 0 {
+		return
+	}
+	for k, v := range answers {
+		switch k {
+		case "defaultMode":
+			s.Focus.DefaultMode = v
+		case "shareNewHooks":
+			if b, ok := parseBoolish(v); ok {
+				s.Upstream.ShareNewHooks = b
+			}
+		case "reviewCadenceDays":
+			if n, err := strconv.Atoi(v); err == nil {
+				s.Review.CadenceDays = n
+			}
+		case "syncIncludeSettings":
+			if b, ok := parseBoolish(v); ok {
+				s.Sync.IncludeSettingsFile = b
+			}
+		}
+	}
+}
+
+// parseBoolish accepts the common truthy/falsey forms used in
+// questions.yaml option values: true/false, yes/no, 1/0. Comparison is
+// case-insensitive. Returns (value, true) on a match; (false, false) on
+// an unrecognized form.
+func parseBoolish(v string) (bool, bool) {
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "true", "yes", "1", "on", "enabled":
+		return true, true
+	case "false", "no", "0", "off", "disabled":
+		return false, true
+	}
+	return false, false
+}
+
+// applyEnvOverrides overlays AICONST_* environment variables onto s.
+func applyEnvOverrides(s *Settings) {
+	if v := os.Getenv("AICONST_REVIEW_CADENCE_DAYS"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			s.Review.CadenceDays = n
+		}
+	}
+	if v := os.Getenv("AICONST_AI_ROOT"); v != "" {
+		s.Paths.AIRoot = v
+	}
+	if v := os.Getenv("AICONST_CONFIG_DIR"); v != "" {
+		s.Paths.ConfigDir = v
+	}
 }

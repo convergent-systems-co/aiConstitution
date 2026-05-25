@@ -100,7 +100,13 @@ specification (currently draft v0.8).`,
 		newBackupCmd(),
 		newWorktreeCmd(),
 		newCloneCmd(),
+		newPmModeCmd(),
+		newSpawnCmd(),
+		newInitCmd(),
 		newVersionCmd(),
+		newGenerateCmd(),
+		newMigrateCmd(),
+		newInitIntegrateCmd(),
 		newOpCmd(),
 	)
 

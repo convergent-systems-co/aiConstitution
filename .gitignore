@@ -331,3 +331,6 @@ terraform.rc
 # Uncomment the line below if you want to ignore planout files.
 # planout
 ### END: Terraform
+
+# Issue creation state map (local-only, never tracked)
+scripts/.issue-map.json

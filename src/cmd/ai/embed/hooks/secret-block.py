@@ -2,14 +2,24 @@
 """hooks/secret-block.py — PreToolUse hook that denies Bash commands
 containing secret-shaped strings before they execute.
 
-Reads patterns from hooks/patterns.json (+ patterns.local.json if
-present). Belt-and-suspenders alongside the secret-handling rules in
-Common.md §4. Per SPEC.md §10.1.
+Reads the canonical pattern set from hooks/patterns.json
+(+ patterns.local.json if present). Belt-and-suspenders alongside the
+secret-handling rules in Common.md §4. Per SPEC.md §10.1.
 
 Input contract (Claude Code PreToolUse):
   - The full tool-use payload arrives on stdin as JSON.
-  - Exit 0 → allow. Exit 1 (or non-zero) → block.
+  - On detection: emit JSON permissionDecision deny on stdout, exit 0.
+  - On clean: exit 0, no stdout.
   - Stderr is shown to the user.
+
+Output schema:
+  {
+    "hookSpecificOutput": {
+      "hookEventName": "PreToolUse",
+      "permissionDecision": "deny",
+      "permissionDecisionReason": "<explanation>"
+    }
+  }
 
 Self-check:
   --self-check  Loads patterns.json and compiles every regex.
@@ -24,6 +34,18 @@ from pathlib import Path
 # script is exec'd directly from ~/.ai/hooks/.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import _lib  # noqa: E402
+
+
+def deny(reason: str) -> None:
+    """Emit a permission-deny decision via JSON stdout and exit 0."""
+    print(json.dumps({
+        "hookSpecificOutput": {
+            "hookEventName": "PreToolUse",
+            "permissionDecision": "deny",
+            "permissionDecisionReason": reason,
+        }
+    }))
+    sys.exit(0)
 
 
 def extract_command(payload: dict) -> str:
@@ -44,7 +66,7 @@ def extract_command(payload: dict) -> str:
     return json.dumps(payload)
 
 
-def main(argv: list[str]) -> int:
+def main(argv: list) -> int:
     if "--self-check" in argv:
         return _lib.self_check_ok()
 
@@ -59,21 +81,61 @@ def main(argv: list[str]) -> int:
         # If we can't parse, still scan the raw text for patterns.
         payload = {"raw": raw}
 
-    command = extract_command(payload) if isinstance(payload, dict) else raw
+    # Only guard PreToolUse events on Bash/shell tools.
+    if isinstance(payload, dict):
+        hook_event = (
+            payload.get("hookEventName")
+            or payload.get("hook_event_name")
+            or ""
+        )
+        if hook_event and hook_event != "PreToolUse":
+            return 0
+
+        tool_name = payload.get("tool_name") or payload.get("toolName") or ""
+        if tool_name and tool_name not in ("Bash", "shell", "execute"):
+            return 0
+
+        # Extract the command to scan.
+        tool_input = (
+            payload.get("tool_input")
+            or payload.get("toolInput")
+            or payload.get("toolArgs")
+            or {}
+        )
+        if isinstance(tool_input, dict):
+            command = tool_input.get("command") or tool_input.get("cmd") or ""
+        else:
+            command = extract_command(payload)
+    else:
+        command = raw
+
+    if not command:
+        return 0
+
     patterns = _lib.load_patterns()
     hits = _lib.scan_lines(command.splitlines() or [command], patterns)
     if not hits:
         return 0
 
-    _lib.log(f"blocking — {len(hits)} secret-like match(es) in tool input:")
-    for h in hits[:10]:
-        _lib.log(
-            f"  pattern={h['pattern_id']} severity={h['severity']} "
-            f"line={h['line']} col={h['col']} snippet={h['snippet']}"
-        )
-    _lib.log("Per Common.md §1.P4 (no secrets in artifacts; non-overridable).")
-    _lib.log("See SPEC.md §10.1 for canonical pattern source.")
-    return 1
+    # Build a deny reason that does NOT echo the full secret value.
+    # Take the first hit and construct a truncated/redacted snippet.
+    hit = hits[0]
+    pattern_id = hit.get("pattern_id", "unknown")
+    severity = hit.get("severity", "medium")
+    snippet = hit.get("snippet", "[redacted]")
+
+    extra = ""
+    if len(hits) > 1:
+        extra = f" (and {len(hits) - 1} more match(es))"
+
+    deny(
+        f"Possible secret detected in Bash command: pattern={pattern_id} severity={severity}{extra}.\n"
+        f"Snippet (redacted): {snippet}\n"
+        "Per Common.md §1.P4 (no secrets in artifacts; non-overridable).\n"
+        "Use OS clipboard transfer (Common.md §4.2) instead of embedding secrets in commands."
+    )
+    # deny() calls sys.exit(0); this return is unreachable but satisfies type checkers.
+    return 0
 
 
 if __name__ == "__main__":

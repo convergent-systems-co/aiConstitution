@@ -33,6 +33,7 @@ import json
 import os
 import subprocess
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -110,10 +111,79 @@ def parse_push_refspec(args: list[str]) -> list[str]:
     return [t for t in targets if t]
 
 
+def _ai_root() -> Path:
+    """Return the effective AI_ROOT path."""
+    return Path(os.environ.get("AI_ROOT", str(Path.home() / ".ai")))
+
+
+def _utc_timestamp() -> str:
+    """Return a UTC ISO-8601 timestamp safe for use in filenames.
+
+    Includes microseconds so that two events within the same second each
+    produce a distinct filename (e.g. two rapid blocking calls in a test).
+    """
+    return datetime.now(tz=timezone.utc).strftime("%Y-%m-%dT%H%M%S-%fZ")
+
+
+def write_violation_record(subcmd: str, branch: str) -> None:
+    """Write a violation audit record to $AI_ROOT/audit/violations/.
+
+    Per Common.md §5.3 — one markdown file per violation event.
+    The file is write-and-forget; failure to write MUST NOT prevent the
+    guard from denying the operation.
+    """
+    ai_root = _ai_root()
+    vdir = ai_root / "audit" / "violations"
+    try:
+        vdir.mkdir(parents=True, exist_ok=True)
+        ts = _utc_timestamp()
+        fpath = vdir / f"{ts}-branch-guard.md"
+        content = (
+            f"# Violation — {ts}\n\n"
+            f"- **File / Rule violated:** Common.md §2.2 — protected-branch gate\n"
+            f"- **What happened:** `git {subcmd}` was attempted on protected branch '{branch}'.\n"
+            f"- **How noticed:** hook-detected (branch-guard.py PreToolUse / wrapper)\n"
+            f"- **Remediation:** Operation denied. Branch off and open a PR.\n"
+            f"- **Proposed amendment (if any):** none\n"
+        )
+        fpath.write_text(content, encoding="utf-8")
+    except Exception as e:  # noqa: BLE001 — best-effort; guard must not crash
+        _lib.log(f"warning: could not write violation record: {e}")
+
+
+def write_drift_record(subcmd: str, branch: str, detail: str) -> None:
+    """Write a drift (near-miss) audit record to $AI_ROOT/audit/drift/.
+
+    Called when a quantitative check passes but is ≥90% of its threshold,
+    indicating the system is approaching a policy boundary without crossing it.
+    This is a defense-in-depth signal; the operation is NOT denied.
+
+    Currently the branch-guard has no quantitative threshold checks — this
+    function is wired and tested as a contract for when such checks are added.
+    """
+    ai_root = _ai_root()
+    ddir = ai_root / "audit" / "drift"
+    try:
+        ddir.mkdir(parents=True, exist_ok=True)
+        ts = _utc_timestamp()
+        fpath = ddir / f"{ts}-branch-guard.md"
+        content = (
+            f"# Drift — {ts}\n\n"
+            f"- **Hook:** branch-guard.py\n"
+            f"- **Near-miss:** `git {subcmd}` on branch '{branch}'\n"
+            f"- **Detail:** {detail}\n"
+            f"- **Action:** none (operation permitted; drift record written for audit)\n"
+        )
+        fpath.write_text(content, encoding="utf-8")
+    except Exception as e:  # noqa: BLE001 — best-effort; drift must not crash guard
+        _lib.log(f"warning: could not write drift record: {e}")
+
+
 def violation(subcmd: str, branch: str) -> int:
     _lib.log(f"blocking — `git {subcmd}` would mutate protected branch '{branch}'.")
     _lib.log("Per ~/.ai/Common.md §2.2 (protected-branch gate).")
     _lib.log("Resolution: branch off (e.g. `git checkout -b work/<slug>`), commit there, and open a PR.")
+    write_violation_record(subcmd, branch)
     return 1
 
 

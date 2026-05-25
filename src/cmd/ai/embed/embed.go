@@ -33,6 +33,21 @@ import (
 //go:embed all:hooks all:wrappers
 var assets stdembed.FS
 
+//go:embed questions.yaml
+var questionsYAML []byte
+
+// QuestionsYAML returns the embedded questions.yaml bytes.
+func QuestionsYAML() []byte { return questionsYAML }
+
+//go:embed all:templates
+var templates stdembed.FS
+
+// ConstitutionTemplate returns the embedded constitution.tmpl bytes.
+func ConstitutionTemplate() ([]byte, error) {
+	return templates.ReadFile("templates/constitution.tmpl")
+}
+
+
 // HooksFS returns a sub-FS rooted at the embedded hooks/ tree.
 func HooksFS() fs.FS {
 	sub, err := fs.Sub(assets, "hooks")
