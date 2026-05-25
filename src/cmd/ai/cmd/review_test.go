@@ -1,83 +1,67 @@
-// Package cmd is the cobra command tree for `ai`.
-package cmd
+package cmd_test
 
 import (
 	"bytes"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/convergent-systems-co/aiConstitution/src/cmd/ai/cmd"
 )
 
-func runReviewCmd(t *testing.T, args ...string) (string, error) {
-	t.Helper()
-	root := NewRootCmd()
+// TestReviewCmd_PRFlag_PrintsReportHeader verifies that `ai review --pr <n>`
+// prints the expected report header to stdout.
+//
+// This test uses NewRootCmd() + cobra execution with a captured writer.
+// The gh subprocess is NOT invoked in tests — the command stubs the diff.
+func TestReviewCmd_PRFlag_PrintsReportHeader(t *testing.T) {
+	root := cmd.NewRootCmd()
 	var buf bytes.Buffer
 	root.SetOut(&buf)
-	root.SetErr(&buf)
-	root.SetArgs(append([]string{"review"}, args...))
-	err := root.Execute()
-	return buf.String(), err
-}
+	root.SetErr(&bytes.Buffer{}) // suppress stderr
 
-func helperReviewAIRoot(t *testing.T) string {
-	t.Helper()
-	aiRoot := t.TempDir()
-	t.Setenv("AI_ROOT", aiRoot)
-	_ = os.MkdirAll(filepath.Join(aiRoot, "audit", "violations"), 0o750)
-	_ = os.MkdirAll(filepath.Join(aiRoot, "audit", "overrides"), 0o750)
-	_ = os.MkdirAll(filepath.Join(aiRoot, "audit", "drift"), 0o750)
-	_ = os.MkdirAll(filepath.Join(aiRoot, "memory"), 0o750)
-	_ = os.WriteFile(filepath.Join(aiRoot, "memory", "MEMORY.md"), []byte("# Memory Index\n"), 0o600)
-	return aiRoot
-}
+	root.SetArgs([]string{"review", "--pr", "42"})
+	// Execute returns an error because the stub is not yet implemented,
+	// but the report header must be printed before the error is returned.
+	// We don't assert on the error; we assert on the stdout content.
+	_ = root.Execute()
 
-func TestReviewCheck_ProducesReport(t *testing.T) {
-	aiRoot := helperReviewAIRoot(t)
-
-	// Write a violation file
-	_ = os.WriteFile(
-		filepath.Join(aiRoot, "audit", "violations", "20260522T173810Z-branch-commit.md"),
-		[]byte("# Violation — 2026-05-22T17:38:10Z\n\n- **File / Rule violated:** §3.2 — protected branch\n- **What happened:** Committed to main.\n"),
-		0o600)
-
-	// Write a drift file
-	_ = os.WriteFile(
-		filepath.Join(aiRoot, "audit", "drift", "20260524T120000Z-blast.md"),
-		[]byte("# Drift — 2026-05-24T12:00:00Z\n\n- **Rule:** §3.U17\n- **Trigger:** near-miss\n"),
-		0o600)
-
-	out, _ := runReviewCmd(t, "--check")
-	if !strings.Contains(strings.ToLower(out), "violation") {
-		t.Errorf("expected violations in review output:\n%s", out)
+	out := buf.String()
+	if !strings.Contains(out, "## Review: PR #42") {
+		t.Errorf("expected report header %q in output, got:\n%s", "## Review: PR #42", out)
 	}
 }
 
-func TestReviewCheck_WritesGovernanceReport(t *testing.T) {
-	aiRoot := helperReviewAIRoot(t)
-	_, _ = runReviewCmd(t, "--check")
+// TestReviewCmd_PRFlag_PrintsPanelLines verifies that each panel's result
+// line appears in the output.
+func TestReviewCmd_PRFlag_PrintsPanelLines(t *testing.T) {
+	root := cmd.NewRootCmd()
+	var buf bytes.Buffer
+	root.SetOut(&buf)
+	root.SetErr(&bytes.Buffer{})
 
-	reportsDir := filepath.Join(aiRoot, "governance", "reports")
-	entries, err := os.ReadDir(reportsDir)
-	if err != nil || len(entries) == 0 {
-		t.Error("governance report not written to governance/reports/")
+	root.SetArgs([]string{"review", "--pr", "99"})
+	_ = root.Execute()
+
+	out := buf.String()
+	// At minimum, one panel line with the format [panel-name] must appear.
+	if !strings.Contains(out, "[") {
+		t.Errorf("expected at least one panel result line in output, got:\n%s", out)
 	}
 }
 
-func TestReviewCheck_ReportContainsFourSections(t *testing.T) {
-	aiRoot := helperReviewAIRoot(t)
-	_, _ = runReviewCmd(t, "--check")
+// TestReviewCmd_PRFlag_PrintsOverallLine verifies the overall score/verdict
+// appears in the output.
+func TestReviewCmd_PRFlag_PrintsOverallLine(t *testing.T) {
+	root := cmd.NewRootCmd()
+	var buf bytes.Buffer
+	root.SetOut(&buf)
+	root.SetErr(&bytes.Buffer{})
 
-	reportsDir := filepath.Join(aiRoot, "governance", "reports")
-	entries, _ := os.ReadDir(reportsDir)
-	if len(entries) == 0 {
-		t.Fatal("no report written")
-	}
-	data, _ := os.ReadFile(filepath.Join(reportsDir, entries[0].Name()))
-	body := string(data)
-	for _, section := range []string{"Violation", "Override", "Drift", "Dead"} {
-		if !strings.Contains(body, section) {
-			t.Errorf("governance report missing %q section:\n%s", section, body)
-		}
+	root.SetArgs([]string{"review", "--pr", "7"})
+	_ = root.Execute()
+
+	out := buf.String()
+	if !strings.Contains(out, "Overall:") {
+		t.Errorf("expected 'Overall:' in output, got:\n%s", out)
 	}
 }

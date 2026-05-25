@@ -1,0 +1,20 @@
+[
+  {
+    "name": "code-review",
+    "description": "Reviews code correctness, style, and architecture against Code.md standards",
+    "weight": 0.5,
+    "domains": ["code", "refactor", "tests"]
+  },
+  {
+    "name": "security-review",
+    "description": "Reviews for security vulnerabilities, secret handling, and input validation",
+    "weight": 0.3,
+    "domains": ["security", "secrets", "auth"]
+  },
+  {
+    "name": "documentation-review",
+    "description": "Reviews documentation completeness, accuracy, and clarity",
+    "weight": 0.2,
+    "domains": ["docs", "readme", "adr"]
+  }
+]

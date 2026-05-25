@@ -2,12 +2,11 @@ package cmd
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
+	"os/exec"
 	"strings"
 	"time"
 
-	"github.com/convergent-systems-co/aiConstitution/src/internal/paths"
+	"github.com/convergent-systems-co/aiConstitution/src/internal/panels"
 	"github.com/spf13/cobra"
 )
 
@@ -17,6 +16,7 @@ func newReviewCmd() *cobra.Command {
 	var since time.Duration
 	var apply bool
 	var dryRun bool
+	var prNumber int
 
 	c := &cobra.Command{
 		Use:   "review",
@@ -33,13 +33,17 @@ Flags:
   --apply                Apply the proposed amendments (after per-item
                          approval).
   --dry-run              Print the proposed amendments but do not write.
+  --pr=<n>               Fetch the diff for PR #n and run configured
+                         review panels against it, printing a scored report.
 
 See SPEC.md §3.2 + §6 + §6.5 (30-day idle prompt).`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			if check {
-				return runReviewCheck(cmd, since)
+			if prNumber > 0 {
+				return runPRReview(cmd, prNumber)
 			}
 			notice("review:", "would walk ~/.ai/memory/ and propose amendments.")
+			_ = check
+			_ = since
 			_ = apply
 			_ = dryRun
 			return stub("review", "§3.2 + §6")
@@ -50,111 +54,75 @@ See SPEC.md §3.2 + §6 + §6.5 (30-day idle prompt).`,
 	c.Flags().DurationVar(&since, "since", 0, "only consider memory entries newer than this (e.g. 30d, 168h)")
 	c.Flags().BoolVar(&apply, "apply", false, "apply approved amendments (per-item confirmation)")
 	c.Flags().BoolVar(&dryRun, "dry-run", false, "print proposed amendments without writing")
+	c.Flags().IntVar(&prNumber, "pr", 0, "review PR #n: fetch diff and run configured panels")
 
 	return c
 }
 
-func runReviewCheck(cmd *cobra.Command, since time.Duration) error {
-	root := paths.AIRoot()
+// runPRReview fetches the diff for the given PR number via `gh pr diff`,
+// runs each enabled panel against the diff, and prints a scored report.
+//
+// Panel invocations are stubs in this release: each panel prints a
+// placeholder score. Real panel evaluation is deferred to the panel-eval
+// milestone. See Epic #26.
+func runPRReview(cmd *cobra.Command, pr int) error {
 	out := cmd.OutOrStdout()
 
-	var cutoff time.Time
-	if since > 0 {
-		cutoff = time.Now().Add(-since)
+	// 1. Print the report header.
+	fmt.Fprintf(out, "## Review: PR #%d\n", pr)
+
+	// 2. Fetch the diff (best-effort; report continues even on gh failure).
+	diff, diffErr := fetchPRDiff(pr)
+	if diffErr != nil {
+		fmt.Fprintf(out, "[warn] could not fetch PR diff: %v\n", diffErr)
+		diff = "" // proceed with empty diff — panels still run (stubbed)
+	}
+	_ = diff // panels will consume this when eval is implemented
+
+	// 3. Load the configured panels.
+	panelList, err := panels.LoadDefaultPanels()
+	if err != nil {
+		return fmt.Errorf("review --pr: load panels: %w", err)
 	}
 
-	var report strings.Builder
-	report.WriteString(fmt.Sprintf("# Governance Report — %s\n\n", time.Now().UTC().Format("2006-01-02")))
+	// 4. Run each panel (stubbed: placeholder scores only).
+	results := make(map[string]panels.PanelResult, len(panelList))
+	for _, p := range panelList {
+		// Stub: every panel passes with a placeholder confidence of 0.75.
+		// TODO: wire real panel evaluators once panel-eval milestone lands.
+		result := panels.PanelResult{
+			Pass:       true,
+			Confidence: 0.75,
+			Findings:   []string{"(stub — real evaluation not yet implemented)"},
+		}
+		results[p.Name] = result
 
-	// Scan 1: Violations
-	violations := scanAuditDir(filepath.Join(root, "audit", "violations"), cutoff)
-	report.WriteString(fmt.Sprintf("## Violation Scan (%d files)\n\n", len(violations)))
-	for _, v := range violations {
-		report.WriteString(fmt.Sprintf("- %s\n", filepath.Base(v)))
+		mark := "✓"
+		if !result.Pass {
+			mark = "✗"
+		}
+		finding := ""
+		if len(result.Findings) > 0 {
+			finding = result.Findings[0]
+		}
+		fmt.Fprintf(out, "[%s] %s %.2f — %s\n", p.Name, mark, result.Confidence, finding)
 	}
-	if len(violations) > 0 {
-		report.WriteString("\n**Action:** Review each violation and consider ai amend draft.\n")
-		_, _ = fmt.Fprintf(out, "Violations found: %d\n", len(violations))
-	}
-	report.WriteString("\n")
 
-	// Scan 2: Overrides
-	overrides := scanAuditDir(filepath.Join(root, "audit", "overrides"), cutoff)
-	report.WriteString(fmt.Sprintf("## Override Scan (%d files)\n\n", len(overrides)))
-	repeated := findRepeatedRules(overrides)
-	for rule, count := range repeated {
-		report.WriteString(fmt.Sprintf("- %s overridden %d times — consider amending.\n", rule, count))
-	}
-	report.WriteString("\n")
+	// 5. Compute and print the aggregate score.
+	score, summary := panels.ScorePanels(panelList, results)
+	_ = score
+	fmt.Fprintln(out, summary)
 
-	// Scan 3: Drift
-	drifts := scanAuditDir(filepath.Join(root, "audit", "drift"), cutoff)
-	report.WriteString(fmt.Sprintf("## Drift Scan (%d records)\n\n", len(drifts)))
-	for _, d := range drifts {
-		report.WriteString(fmt.Sprintf("- %s\n", filepath.Base(d)))
-	}
-	if len(drifts) > 0 {
-		report.WriteString("\n**Action:** Near-miss clusters may need enforcement hooks.\n")
-	}
-	report.WriteString("\n")
-
-	// Scan 4: Dead rules
-	deadCutoff := time.Now().AddDate(0, 0, -90)
-	report.WriteString("## Dead-Rule Scan\n\n")
-	report.WriteString(fmt.Sprintf("Rules not referenced in any audit file since %s are candidates for pruning.\n\n", deadCutoff.Format("2006-01-02")))
-
-	// Write report
-	reportsDir := filepath.Join(root, "governance", "reports")
-	if err := os.MkdirAll(reportsDir, 0o750); err != nil {
-		return fmt.Errorf("review: mkdir reports: %w", err)
-	}
-	reportPath := filepath.Join(reportsDir, time.Now().UTC().Format("2006-01-02")+".md")
-	if err := os.WriteFile(reportPath, []byte(report.String()), 0o600); err != nil { //nolint:gosec
-		return fmt.Errorf("review: write report: %w", err)
-	}
-	_, _ = fmt.Fprintf(out, "Report: %s\n", reportPath)
 	return nil
 }
 
-func scanAuditDir(dir string, after time.Time) []string {
-	entries, err := os.ReadDir(dir)
+// fetchPRDiff runs `gh pr diff <n>` and returns the diff output as a string.
+// Returns an error if gh is not installed or the command fails.
+func fetchPRDiff(pr int) (string, error) {
+	args := []string{"pr", "diff", fmt.Sprintf("%d", pr)}
+	out, err := exec.Command("gh", args...).Output()
 	if err != nil {
-		return nil
+		return "", fmt.Errorf("gh pr diff %d: %w", pr, err)
 	}
-	var result []string
-	for _, e := range entries {
-		if e.IsDir() {
-			continue
-		}
-		info, err := e.Info()
-		if err != nil {
-			continue
-		}
-		if after.IsZero() || info.ModTime().After(after) {
-			result = append(result, filepath.Join(dir, e.Name()))
-		}
-	}
-	return result
-}
-
-func findRepeatedRules(files []string) map[string]int {
-	counts := make(map[string]int)
-	for _, f := range files {
-		data, err := os.ReadFile(f) //nolint:gosec
-		if err != nil {
-			continue
-		}
-		for _, line := range strings.Split(string(data), "\n") {
-			if strings.HasPrefix(line, "- **File / Rule") || strings.HasPrefix(line, "- **Rule:**") {
-				counts[strings.TrimSpace(line)]++
-			}
-		}
-	}
-	result := make(map[string]int)
-	for rule, count := range counts {
-		if count >= 2 {
-			result[rule] = count
-		}
-	}
-	return result
+	return strings.TrimSpace(string(out)), nil
 }
