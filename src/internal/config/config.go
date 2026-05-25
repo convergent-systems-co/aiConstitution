@@ -38,6 +38,7 @@ type Settings struct {
 	Atoms           AtomsSettings           `toml:"atoms"`
 	Plugins         PluginsSettings         `toml:"plugins"`
 	Drafts          DraftsSettings          `toml:"drafts"`
+	Personas        PersonasSettings        `toml:"personas"`
 	Focus           FocusSettings           `toml:"focus"`
 	Wizard          WizardSettings          `toml:"wizard"`
 	Sync            SyncSettings            `toml:"sync"`
@@ -109,6 +110,12 @@ type AtomsSettings struct {
 type PluginsSettings struct {
 	Enabled                []string `toml:"enabled"`
 	PlannerPersonaFallback bool     `toml:"plannerPersonaFallback"`
+}
+
+// PersonasSettings carries the [personas] section — which derivative
+// persona files are loaded by default on every session.
+type PersonasSettings struct {
+	Default []string `toml:"default"`
 }
 
 // DraftsSettings carries the [drafts] section — publish-nudge cadence
@@ -186,9 +193,10 @@ func Defaults() Settings {
 			BrandRegistry:     "https://brand-atoms.com",
 			VerifyContentHash: true,
 		},
-		Plugins: PluginsSettings{Enabled: []string{}, PlannerPersonaFallback: true},
-		Drafts:  DraftsSettings{PublishNudgeAfterDays: 30, SuppressNudge: false},
-		Focus:   FocusSettings{DefaultMode: "none", PreferStableVersions: true},
+		Plugins:  PluginsSettings{Enabled: []string{}, PlannerPersonaFallback: true},
+		Drafts:   DraftsSettings{PublishNudgeAfterDays: 30, SuppressNudge: false},
+		Personas: PersonasSettings{Default: []string{"common"}},
+		Focus:    FocusSettings{DefaultMode: "none", PreferStableVersions: true},
 		Wizard:  WizardSettings{LastSeenWizardVersion: "0.2"},
 		Sync:    SyncSettings{IncludeSettingsFile: true},
 		Paths:   PathsSettings{AIRoot: "", ConfigDir: ""},
