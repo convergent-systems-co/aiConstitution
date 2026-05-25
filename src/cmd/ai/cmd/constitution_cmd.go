@@ -220,7 +220,7 @@ func newConstitutionRestoreCmd() *cobra.Command {
 	var backupTS string
 
 	c := &cobra.Command{
-		Use:   "restore",
+		Use:   "restore [backup-id]",
 		Short: "Extract the latest ~/.ai-backups/*.tar.gz back to ~/.ai/ and re-wire tools",
 		Long: `restore extracts the most recent (or specified) backup archive back
 into ~/.ai/, replacing whatever is there now. After extraction it:
@@ -230,8 +230,13 @@ into ~/.ai/, replacing whatever is there now. After extraction it:
   3. Restores ~/.claude/CLAUDE.md with @-include directive
   4. Recreates the ~/.copilot/instructions/constitution.md symlink
   5. Regenerates Constitution.runtime.md`,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			return runConstitutionRestore(cmd, backupTS)
+		RunE: func(cmd *cobra.Command, args []string) error {
+			// Positional arg takes precedence over --backup flag.
+			id := backupTS
+			if len(args) > 0 {
+				id = strings.TrimSuffix(args[0], ".tar.gz")
+			}
+			return runConstitutionRestore(cmd, id)
 		},
 	}
 	c.Flags().StringVar(&backupTS, "backup", "",
