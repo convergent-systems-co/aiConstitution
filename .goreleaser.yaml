@@ -41,7 +41,7 @@ snapshot:
   version_template: "{{ incpatch .Version }}-next"
 
 brews:
-  - name: atoms
+  - name: ai
     description: "AI Constitution CLI — govern your AI assistant with a personal constitution"
     homepage: "https://github.com/convergent-systems-co/aiConstitution"
     license: "Apache-2.0"
@@ -52,7 +52,7 @@ brews:
     commit_author:
       name: goreleaserbot
       email: bot@goreleaser.com
-    commit_msg_template: "feat(formula): update atoms to {{ .Tag }}"
+    commit_msg_template: "feat(formula): update ai to {{ .Tag }}"
     directory: Formula
     install: |
       bin.install "ai"
