@@ -154,23 +154,32 @@ func tarGzDir(src, dst string) error {
 			return filepath.SkipDir
 		}
 
-		hdr, err := tar.FileInfoHeader(info, "")
-		if err != nil {
-			return err
+		// Read file content first so we have the exact size before writing
+		// the tar header. This prevents "write too long" when a file grows
+		// between stat time and read time (e.g. audit logs, node_modules).
+		if info.Mode()&os.ModeSymlink != 0 || info.IsDir() {
+			hdr, err := tar.FileInfoHeader(info, "")
+			if err != nil {
+				return err
+			}
+			hdr.Name = rel
+			return tw.WriteHeader(hdr)
 		}
-		hdr.Name = rel
+		data, err := os.ReadFile(path) //nolint:gosec
+		if err != nil {
+			// Skip unreadable files (e.g. sockets, devices).
+			return nil //nolint:nilerr
+		}
+		hdr := &tar.Header{
+			Name:    rel,
+			Mode:    int64(info.Mode()),
+			Size:    int64(len(data)),
+			ModTime: info.ModTime(),
+		}
 		if err := tw.WriteHeader(hdr); err != nil {
 			return err
 		}
-		if info.IsDir() {
-			return nil
-		}
-		file, err := os.Open(path) //nolint:gosec
-		if err != nil {
-			return err
-		}
-		defer func() { _ = file.Close() }()
-		_, err = io.Copy(tw, file)
+		_, err = tw.Write(data)
 		return err
 	})
 }
