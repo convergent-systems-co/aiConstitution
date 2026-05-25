@@ -97,6 +97,11 @@ phases:
 	m := NewModel(tax)
 	rawM, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m, _ = rawM.(Model)
+	// Accept the review screen if we landed on it
+	if m.review {
+		rawM2, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+		m, _ = rawM2.(Model)
+	}
 	if !m.Done() {
 		t.Error("model should be Done after answering the only question")
 	}

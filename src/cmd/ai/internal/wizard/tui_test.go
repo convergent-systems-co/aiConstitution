@@ -89,7 +89,10 @@ phases:
         default: "yes"
 `)
 	m := NewModel(tax)
-	m, _ = pressEnter(m)
+	m, _ = pressEnter(m) // answer question → enters review
+	if m.review {
+		m, _ = pressEnter(m) // accept review → done
+	}
 	if !m.Done() {
 		t.Error("should be Done after answering the only question")
 	}
@@ -118,7 +121,10 @@ phases:
 		t.Error("View() must not be empty for select question")
 	}
 	// Enter selects current option
-	m, _ = pressEnter(m)
+	m, _ = pressEnter(m) // select option → enters review
+	if m.review {
+		m, _ = pressEnter(m) // accept review → done
+	}
 	if !m.Done() {
 		t.Error("should be Done after selecting the only question")
 	}
