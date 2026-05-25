@@ -2,6 +2,9 @@ package cmd
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/convergent-systems-co/aiConstitution/src/internal/constitution"
 	"github.com/convergent-systems-co/aiConstitution/src/internal/paths"
@@ -41,7 +44,48 @@ See SPEC.md §3.2 + §3.3.`,
 			if status["Constitution.local.md"] {
 				_, _ = fmt.Fprintf(out, "  %-30s %s\n", "Constitution.local.md", "present (local override)")
 			}
+
+			_, _ = fmt.Fprintln(out, "\nActive personas (CLAUDE.md block):")
+			claudeMD := paths.ClaudeMD()
+			active := readActivePersonas(claudeMD)
+			if len(active) == 0 {
+				_, _ = fmt.Fprintln(out, "  (no personas block found — run `ai compress`)")
+			} else {
+				for _, p := range active {
+					_, _ = fmt.Fprintf(out, "  %s\n", p)
+				}
+			}
 			return nil
 		},
 	}
+}
+
+// readActivePersonas parses the <!-- ai:personas --> block in CLAUDE.md
+// and returns the persona slugs in order.
+func readActivePersonas(claudeMDPath string) []string {
+	data, err := os.ReadFile(claudeMDPath) //nolint:gosec
+	if err != nil {
+		return nil
+	}
+	content := string(data)
+	start := strings.Index(content, "<!-- ai:personas")
+	end := strings.Index(content, "<!-- /ai:personas -->")
+	if start == -1 || end == -1 || end <= start {
+		return nil
+	}
+	block := content[start:end]
+	var slugs []string
+	for _, line := range strings.Split(block, "\n") {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, "@") {
+			continue
+		}
+		base := filepath.Base(line[1:])
+		if !strings.HasSuffix(base, ".md") {
+			continue
+		}
+		slug := strings.ToLower(strings.TrimSuffix(base, ".md"))
+		slugs = append(slugs, slug)
+	}
+	return slugs
 }
