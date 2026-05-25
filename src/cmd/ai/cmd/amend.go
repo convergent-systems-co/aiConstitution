@@ -507,7 +507,8 @@ func newAmendListCmd() *cobra.Command {
 			entries, err := os.ReadDir(plansDir)
 			if err != nil {
 				if os.IsNotExist(err) {
-					// No plans directory yet — print nothing.
+					// No plans directory yet.
+					_, _ = fmt.Fprintln(cmd.OutOrStdout(), "(no drafts)")
 					return nil
 				}
 				return fmt.Errorf("amend list: %w", err)
