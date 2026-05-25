@@ -153,6 +153,17 @@ func runDoctor(cmd *cobra.Command) error {
 	// Check #11: Constitution.runtime.md staleness
 	checkRuntimeFresh(out, root)
 
+	// Integration checks: Copilot, Cursor, AGENTS.md (warn-only)
+	home2, _ := os.UserHomeDir()
+	cwd2, _ := os.Getwd()
+	for _, ir := range []checkResult{
+		checkCopilotSymlink(home2),
+		checkCursorRules(cwd2),
+		checkAgentsMD(cwd2),
+	} {
+		_, _ = fmt.Fprintf(out, "  [%s] %s\n", ir.mark, ir.message)
+	}
+
 	if hasError {
 		return fmt.Errorf("doctor: one or more checks failed")
 	}
@@ -376,4 +387,98 @@ func checkBinPath(binDir, pathVar string) (status PathStatus, message string) {
 		}
 	}
 	return PathOK, fmt.Sprintf("%s is on PATH before system bins", binDir)
+}
+
+// ─── Integration checks (Copilot / Cursor / Codex) ────────────────────────
+
+// checkCopilotSymlink checks that ~/.copilot/instructions/constitution.md
+// is a valid symlink. Returns a warn-level result when missing; skip when
+// the directory doesn't exist at all.
+func checkCopilotSymlink(home string) checkResult {
+	dir := filepath.Join(home, ".copilot", "instructions")
+	if _, err := os.Stat(dir); os.IsNotExist(err) {
+		return checkResult{mark: "✓", message: "Copilot instructions dir absent (not installed — OK)"}
+	}
+	link := filepath.Join(dir, "constitution.md")
+	if _, err := os.Lstat(link); os.IsNotExist(err) {
+		return checkResult{mark: "!", message: "Copilot constitution.md symlink missing — run: ai hooks install --copilot"}
+	}
+	return checkResult{mark: "✓", message: "Copilot constitution.md symlink present"}
+}
+
+// checkCursorRules checks .cursor/rules/constitution.md in cwd.
+func checkCursorRules(cwd string) checkResult {
+	rules := filepath.Join(cwd, ".cursor", "rules")
+	if _, err := os.Stat(rules); os.IsNotExist(err) {
+		return checkResult{mark: "✓", message: "Cursor rules dir absent (not a Cursor project — OK)"}
+	}
+	link := filepath.Join(rules, "constitution.md")
+	if _, err := os.Lstat(link); os.IsNotExist(err) {
+		return checkResult{mark: "!", message: ".cursor/rules/constitution.md missing — run: ai init-integrate --cursor"}
+	}
+	return checkResult{mark: "✓", message: ".cursor/rules/constitution.md present"}
+}
+
+// checkAgentsMD checks AGENTS.md in cwd contains the @-include.
+func checkAgentsMD(cwd string) checkResult {
+	p := filepath.Join(cwd, "AGENTS.md")
+	data, err := os.ReadFile(p) //nolint:gosec
+	if os.IsNotExist(err) {
+		return checkResult{mark: "✓", message: "AGENTS.md absent (not a Codex project — OK)"}
+	}
+	if err != nil {
+		return checkResult{mark: "!", message: fmt.Sprintf("AGENTS.md unreadable: %v", err)}
+	}
+	if strings.Contains(string(data), "@~/.ai/Constitution.md") {
+		return checkResult{mark: "✓", message: "AGENTS.md contains constitution @-include"}
+	}
+	return checkResult{mark: "!", message: "AGENTS.md missing constitution @-include — run: ai init-integrate --codex"}
+}
+
+// ─── TL3 naming aliases (used by integrate_test.go) ─────────────────────────
+
+type doctorStatus int
+const (
+	doctorOK   doctorStatus = iota
+	doctorWarn doctorStatus = iota
+	doctorSkip doctorStatus = iota
+)
+
+type doctorResult struct {
+	name    string
+	status  doctorStatus
+	message string
+}
+
+func checkDoctorCopilot(home string) doctorResult {
+	r := checkCopilotSymlink(home)
+	if strings.Contains(r.message, "absent") {
+		return doctorResult{name: "Copilot", status: doctorSkip, message: r.message}
+	}
+	if r.mark == "✓" {
+		return doctorResult{name: "Copilot", status: doctorOK, message: r.message}
+	}
+	return doctorResult{name: "Copilot", status: doctorWarn, message: r.message}
+}
+
+func checkDoctorCursor(cwd string) doctorResult {
+	r := checkCursorRules(cwd)
+	if strings.Contains(r.message, "absent") {
+		return doctorResult{name: "Cursor", status: doctorSkip, message: r.message}
+	}
+	if r.mark == "✓" {
+		return doctorResult{name: "Cursor", status: doctorOK, message: r.message}
+	}
+	return doctorResult{name: "Cursor", status: doctorWarn, message: r.message}
+}
+
+func checkDoctorAgentsMD(cwd string) doctorResult {
+	r := checkAgentsMD(cwd)
+	if strings.Contains(r.message, "absent") {
+		return doctorResult{name: "AGENTS.md", status: doctorSkip, message: r.message}
+	}
+	if r.mark == "✓" {
+		return doctorResult{name: "AGENTS.md", status: doctorOK, message: r.message}
+	}
+	return doctorResult{name: "AGENTS.md", status: doctorWarn, message: r.message}
 }

@@ -778,3 +778,25 @@ exec python3 %q "$@"
 	fmt.Println("installed", dst)
 	return nil
 }
+
+// ─── Copilot integration ───────────────────────────────────────────────────
+
+// runHooksCopilotInstall creates ~/.copilot/instructions/constitution.md as a
+// symlink pointing to <aiRoot>/Constitution.runtime.md.
+func runHooksCopilotInstall(aiRoot, home string) error {
+	target := filepath.Join(aiRoot, "Constitution.runtime.md")
+	if _, err := os.Stat(target); err != nil {
+		return fmt.Errorf("hooks copilot: Constitution.runtime.md missing at %s — run: ai generate runtime", target)
+	}
+	dir := filepath.Join(home, ".copilot", "instructions")
+	if err := os.MkdirAll(dir, 0o750); err != nil {
+		return fmt.Errorf("hooks copilot: mkdir %s: %w", dir, err)
+	}
+	link := filepath.Join(dir, "constitution.md")
+	// Remove stale or existing symlink before (re)creating.
+	_ = os.Remove(link)
+	if err := os.Symlink(target, link); err != nil {
+		return fmt.Errorf("hooks copilot: symlink: %w", err)
+	}
+	return nil
+}

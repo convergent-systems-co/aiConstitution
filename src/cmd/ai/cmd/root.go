@@ -105,6 +105,7 @@ specification (currently draft v0.8).`,
 		newVersionCmd(),
 		newGenerateCmd(),
 		newMigrateCmd(),
+		newInitIntegrateCmd(),
 	)
 
 	return root
