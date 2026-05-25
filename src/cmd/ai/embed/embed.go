@@ -47,6 +47,7 @@ func ConstitutionTemplate() ([]byte, error) {
 	return templates.ReadFile("templates/constitution.tmpl")
 }
 
+
 // HooksFS returns a sub-FS rooted at the embedded hooks/ tree.
 func HooksFS() fs.FS {
 	sub, err := fs.Sub(assets, "hooks")
