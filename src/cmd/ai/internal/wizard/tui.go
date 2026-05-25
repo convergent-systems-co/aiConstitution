@@ -164,7 +164,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		// Per-type input handling.
-		switch q.Type {
+		switch q.Type() {
 		case internalwizard.TypeText:
 			m = m.handleTextKey(msg)
 		case internalwizard.TypeSelect:
@@ -331,8 +331,8 @@ func (m Model) View() string {
 
 // effectiveID returns the stable ID for a question, preferring ID over QID.
 func effectiveID(q internalwizard.Question) string {
-	if q.ID != "" {
-		return q.ID
+	if q.QID != "" {
+		return q.QID
 	}
 	return q.QID
 }

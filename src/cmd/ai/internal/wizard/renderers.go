@@ -1,6 +1,6 @@
 // Package wizard — renderers.go
 //
-// RenderQuestion dispatches to a type-specific renderer based on q.Type.
+// RenderQuestion dispatches to a type-specific renderer based on q.Type().
 // Each renderer returns a self-contained string suitable for printing to the
 // terminal. No external styling library is used; ASCII art only, per the
 // TUI / terminal output-medium rule (Common.md §U16.1).
@@ -17,7 +17,7 @@ import (
 // It is exported so that renderer tests can call it directly without going
 // through the full Update/View cycle.
 func RenderQuestion(m Model, q internalwizard.Question) string {
-	switch q.Type {
+	switch q.Type() {
 	case internalwizard.TypeText:
 		return renderText(m, q)
 	case internalwizard.TypeSelect:

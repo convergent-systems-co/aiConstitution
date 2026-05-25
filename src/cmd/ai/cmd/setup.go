@@ -67,7 +67,7 @@ func runSetupTUI() error {
 	}
 
 	// Run the Bubble Tea program.
-	m := tui.NewModel(tax)
+	m := tui.NewModel(*tax)
 	prog := tea.NewProgram(m)
 	finalModel, err := prog.Run()
 	if err != nil {
