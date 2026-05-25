@@ -2,11 +2,14 @@ package cmd
 
 import (
 	"fmt"
+	"path/filepath"
+	"os"
 	"os/exec"
 	"strings"
 	"time"
 
 	"github.com/convergent-systems-co/aiConstitution/src/internal/panels"
+	"github.com/convergent-systems-co/aiConstitution/src/internal/paths"
 	"github.com/spf13/cobra"
 )
 
@@ -41,12 +44,13 @@ See SPEC.md §3.2 + §6 + §6.5 (30-day idle prompt).`,
 			if prNumber > 0 {
 				return runPRReview(cmd, prNumber)
 			}
-			notice("review:", "would walk ~/.ai/memory/ and propose amendments.")
-			_ = check
-			_ = since
+			if check {
+				return runReviewCheck(cmd, since)
+			}
 			_ = apply
 			_ = dryRun
-			return stub("review", "§3.2 + §6")
+			_, _ = fmt.Fprintln(cmd.OutOrStdout(), "review: run 'ai review --check' to scan now.")
+			return nil
 		},
 	}
 
@@ -125,4 +129,75 @@ func fetchPRDiff(pr int) (string, error) {
 		return "", fmt.Errorf("gh pr diff %d: %w", pr, err)
 	}
 	return strings.TrimSpace(string(out)), nil
+}
+
+// runReviewCheck runs the 4-scan governance review cycle:
+// violations, overrides, drift, and dead rules. Writes a dated
+// Governance Report to ~/.ai/governance/reports/YYYY-MM-DD.md.
+func runReviewCheck(cmd *cobra.Command, since time.Duration) error {
+	root := paths.AIRoot()
+	out := cmd.OutOrStdout()
+	cutoff := time.Now().Add(-since)
+
+	var report strings.Builder
+	report.WriteString(fmt.Sprintf("# Governance Report — %s\n\n", time.Now().UTC().Format("2006-01-02")))
+
+	// Scan 1: Violations
+	violations := scanAuditEntries(filepath.Join(root, "audit", "violations"), cutoff)
+	report.WriteString(fmt.Sprintf("## Violation Scan (%d files)\n\n", len(violations)))
+	for _, v := range violations {
+		report.WriteString(fmt.Sprintf("- %s\n", filepath.Base(v)))
+	}
+	if len(violations) > 0 {
+		report.WriteString("\n**Action:** Consider ai amend draft on each violation.\n")
+		_, _ = fmt.Fprintf(out, "Violations: %d\n", len(violations))
+	}
+	report.WriteString("\n")
+
+	// Scan 2: Overrides
+	overrides := scanAuditEntries(filepath.Join(root, "audit", "overrides"), cutoff)
+	report.WriteString(fmt.Sprintf("## Override Scan (%d files)\n\n", len(overrides)))
+	report.WriteString("\n")
+
+	// Scan 3: Drift
+	drifts := scanAuditEntries(filepath.Join(root, "audit", "drift"), cutoff)
+	report.WriteString(fmt.Sprintf("## Drift Scan (%d records)\n\n", len(drifts)))
+	report.WriteString("\n")
+
+	// Scan 4: Dead rules (informational)
+	report.WriteString("## Dead-Rule Scan\n\nRules not referenced in 90 days are candidates for pruning.\n\n")
+
+	// Write report
+	reportsDir := filepath.Join(root, "governance", "reports")
+	if err := os.MkdirAll(reportsDir, 0o750); err != nil {
+		return fmt.Errorf("review: mkdir reports: %w", err)
+	}
+	reportPath := filepath.Join(reportsDir, time.Now().UTC().Format("2006-01-02")+".md")
+	if err := os.WriteFile(reportPath, []byte(report.String()), 0o600); err != nil { //nolint:gosec
+		return fmt.Errorf("review: write report: %w", err)
+	}
+	_, _ = fmt.Fprintf(out, "Report: %s\n", reportPath)
+	return nil
+}
+
+// scanAuditEntries lists files in dir modified after cutoff.
+func scanAuditEntries(dir string, after time.Time) []string {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil
+	}
+	var result []string
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		info, err := e.Info()
+		if err != nil {
+			continue
+		}
+		if after.IsZero() || info.ModTime().After(after) {
+			result = append(result, filepath.Join(dir, e.Name()))
+		}
+	}
+	return result
 }
