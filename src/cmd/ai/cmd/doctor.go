@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"bufio"
 	"fmt"
 	"io"
 	"os"
@@ -80,7 +81,6 @@ func runDoctor(w io.Writer, fix bool, resetHead string) error {
 //	[⚠] terminal-notifier: not found — run: brew install terminal-notifier
 func checkTerminalNotifier(w io.Writer) {
 	if runtime.GOOS != "darwin" {
-		// Not a macOS system; terminal-notifier is not applicable.
 		return
 	}
 
@@ -90,7 +90,22 @@ func checkTerminalNotifier(w io.Writer) {
 		return
 	}
 
-	fmt.Fprintln(w, "[⚠] terminal-notifier: not found — run: brew install terminal-notifier")
+	// Not installed — ask the user if they want to install it now.
+	fmt.Fprint(w, "terminal-notifier not found. Install it now? [y/N] ")
+	scanner := bufio.NewScanner(os.Stdin)
+	if scanner.Scan() && (scanner.Text() == "y" || scanner.Text() == "Y") {
+		fmt.Fprintln(w, "Running: brew install terminal-notifier")
+		cmd := exec.Command("brew", "install", "terminal-notifier") //nolint:gosec
+		cmd.Stdout = w
+		cmd.Stderr = w
+		if err := cmd.Run(); err != nil {
+			fmt.Fprintf(w, "[✗] terminal-notifier: install failed: %v\n", err)
+			return
+		}
+		fmt.Fprintln(w, "[✓] terminal-notifier: installed")
+	} else {
+		fmt.Fprintln(w, "[⚠] terminal-notifier: skipped — install later with: brew install terminal-notifier")
+	}
 }
 
 // PathStatus and companion types — needed by export_test.go and integrate_test.go
