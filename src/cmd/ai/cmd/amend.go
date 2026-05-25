@@ -387,6 +387,25 @@ func bumpMinor(version string) (string, error) {
 	return fmt.Sprintf("%s.%d", parts[0], minor+1), nil
 }
 
+
+// isHeadingLine reports whether line is a Markdown heading (## or deeper).
+func isHeadingLine(line string) bool {
+	return strings.HasPrefix(line, "## ")
+}
+
+// headingDepthOf returns the heading level (2 for ##, 3 for ###, etc.).
+func headingDepthOf(line string) int {
+	depth := 0
+	for _, ch := range line {
+		if ch == '#' {
+			depth++
+		} else {
+			break
+		}
+	}
+	return depth
+}
+
 // replaceSectionBody finds the section whose heading matches target (case-insensitive
 // normalized) and replaces its body (lines between this heading and next ##)
 // with proposedChange.
@@ -401,19 +420,21 @@ func replaceSectionBody(content, target, proposedChange string) (string, error) 
 	for i := 0; i < len(lines); i++ {
 		line := lines[i]
 
-		// Detect a ## heading line.
-		if strings.HasPrefix(line, "## ") {
-			headingText := strings.TrimPrefix(line, "## ")
-			normalHeading := strings.ToLower(strings.TrimSpace(headingText))
+		// Detect any Markdown heading (##, ###, ####, etc.).
+		if isHeadingLine(line) {
+			headingText := strings.TrimLeft(line, "#")
+			headingText = strings.TrimSpace(headingText)
+			normalHeading := strings.ToLower(headingText)
 
-			if normalHeading == normalTarget {
+			if normalHeading == normalTarget || strings.Contains(normalHeading, normalTarget) {
 				// Enter target section.
 				inTarget = true
 				result = append(result, line)
-				// Skip original body lines until next ## or EOF.
+				// Skip original body lines until next same-or-higher heading or EOF.
+				headingDepth := headingDepthOf(line)
 				for i+1 < len(lines) {
 					next := lines[i+1]
-					if strings.HasPrefix(next, "## ") {
+					if isHeadingLine(next) && headingDepthOf(next) <= headingDepth {
 						break
 					}
 					i++
