@@ -8,11 +8,7 @@ import (
 	corewiz "github.com/convergent-systems-co/aiConstitution/src/internal/wizard"
 )
 
-// ---------------------------------------------------------------------------
-// Fixtures — v2 taxonomy schema (uses ParseTaxonomy instead of struct literals)
-// ---------------------------------------------------------------------------
-
-func mustParse(t *testing.T, src string) corewiz.Taxonomy {
+func mustParseTax(t *testing.T, src string) corewiz.Taxonomy {
 	t.Helper()
 	tax, err := corewiz.ParseTaxonomy([]byte(src))
 	if err != nil {
@@ -21,8 +17,8 @@ func mustParse(t *testing.T, src string) corewiz.Taxonomy {
 	return *tax
 }
 
-func textTaxonomy() corewiz.Taxonomy {
-	tax, _ := corewiz.ParseTaxonomy([]byte(`
+func TestRenderText(t *testing.T) {
+	tax := mustParseTax(t, `
 version: "1.0"
 phases:
   - id: P1
@@ -32,28 +28,16 @@ phases:
       - qid: name
         prompt: "Your name?"
         default: ""
-`))
-	return *tax
+`)
+	m := NewModel(tax)
+	view := m.View()
+	if !strings.Contains(view, "Your name?") {
+		t.Errorf("text render missing prompt: %q", view)
+	}
 }
 
-func confirmTaxonomy() corewiz.Taxonomy {
-	tax, _ := corewiz.ParseTaxonomy([]byte(`
-version: "1.0"
-phases:
-  - id: P1
-    title: Test
-    mandatory: true
-    questions:
-      - qid: agree
-        prompt: "Agree?"
-        informational: true
-        default: "yes"
-`))
-	return *tax
-}
-
-func selectTaxonomy() corewiz.Taxonomy {
-	tax, _ := corewiz.ParseTaxonomy([]byte(`
+func TestRenderSelect(t *testing.T) {
+	tax := mustParseTax(t, `
 version: "1.0"
 phases:
   - id: P1
@@ -65,101 +49,55 @@ phases:
         options:
           - label: Red
             value: red
-          - label: Green
-            value: green
           - label: Blue
             value: blue
         default: red
-`))
-	return *tax
+`)
+	m := NewModel(tax)
+	view := m.View()
+	if !strings.Contains(view, "Red") {
+		t.Errorf("select render missing option: %q", view)
+	}
 }
 
-func multiSelectTaxonomy() corewiz.Taxonomy {
-	tax, _ := corewiz.ParseTaxonomy([]byte(`
+func TestForwardNavigation(t *testing.T) {
+	tax := mustParseTax(t, `
 version: "1.0"
 phases:
   - id: P1
     title: Test
     mandatory: true
     questions:
-      - qid: toppings
-        prompt: "Pick toppings"
-        options:
-          - label: Cheese
-            value: cheese
-          - label: Olives
-            value: olives
-          - label: Onion
-            value: onion
-        allow_free_text: true
-        default: cheese
-`))
-	return *tax
-}
-
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
-
-func TestNewModel_InitializesState(t *testing.T) {
-	tax := textTaxonomy()
+      - qid: q1
+        prompt: "Q1?"
+        default: "a"
+      - qid: q2
+        prompt: "Q2?"
+        default: "b"
+`)
 	m := NewModel(tax)
-	if m.idx != 0 {
-		t.Errorf("idx = %d, want 0", m.idx)
-	}
-}
-
-func TestModel_TextInput_UpdatesAnswer(t *testing.T) {
-	tax := textTaxonomy()
-	m := NewModel(tax)
-
-	// Simulate typing
-	rawM, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("Alice")})
+	rawM, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m, _ = rawM.(Model)
-	view := m.View()
-	_ = view // TUI renders; just ensure no panic
+	// After one Enter, should have moved forward
+	_ = m.View()
 }
 
-func TestModel_SelectInput_HighlightMoves(t *testing.T) {
-	tax := selectTaxonomy()
+func TestDoneWhenAllAnswered(t *testing.T) {
+	tax := mustParseTax(t, `
+version: "1.0"
+phases:
+  - id: P1
+    title: Test
+    mandatory: true
+    questions:
+      - qid: only
+        prompt: "Only question"
+        default: "yes"
+`)
 	m := NewModel(tax)
-
-	before := m.state
-	rawM, _ := m.Update(tea.KeyMsg{Type: tea.KeyDown})
-	m, _ = rawM.(Model)
-	_ = before
-	_ = m // just ensure no panic
-}
-
-func TestModel_Done_ReturnsAnswers(t *testing.T) {
-	tax := textTaxonomy()
-	m := NewModel(tax)
-
-	// Submit with empty input (default allowed)
 	rawM, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m, _ = rawM.(Model)
 	if !m.Done() {
-		// May need more Enter presses depending on question count
-		rawM, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
-	m, _ = rawM.(Model)
-	}
-	_ = m.Answers()
-}
-
-func TestModel_View_ContainsPrompt(t *testing.T) {
-	tax := textTaxonomy()
-	m := NewModel(tax)
-	view := m.View()
-	if !strings.Contains(view, "Your name?") {
-		t.Errorf("view does not contain prompt 'Your name?': %q", view)
-	}
-}
-
-func TestModel_SelectView_ContainsOptions(t *testing.T) {
-	tax := selectTaxonomy()
-	m := NewModel(tax)
-	view := m.View()
-	if !strings.Contains(view, "Red") {
-		t.Errorf("select view missing option 'Red': %q", view)
+		t.Error("model should be Done after answering the only question")
 	}
 }

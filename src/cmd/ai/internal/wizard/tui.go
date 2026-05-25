@@ -1,82 +1,102 @@
-// Package wizard implements the Bubble Tea TUI for the
-// constitution-setup wizard. It owns navigation, answer accumulation,
-// the completion signal, and per-question-type input rendering.
+// Package wizard provides the Bubble Tea TUI model for the `ai setup` wizard.
 //
-// Question parsing and the active-question filter live in the upstream
-// package github.com/convergent-systems-co/aiConstitution/src/internal/wizard;
-// this package consumes Taxonomy + Question and adds the interactive
-// shell.
+// The model drives a sequence of questions drawn from a parsed wizard.Taxonomy.
+// Questions are presented one at a time. Forward navigation (Enter / Right)
+// advances; backward navigation ('b' / Left) returns to the previous question.
+// The model is Done when every question in the active set has been answered.
 //
-// Per spec §13. Owner: domain:wizard.
+// On completion, call AnswersToAnswerSet(m.Answers()) to convert the raw
+// map[string]string into a typed AnswerSet, then WriteConstitutionFiles to
+// materialise the output files.
+//
+// See SPEC.md §3.1 and §4.
 package wizard
 
 import (
-	"fmt"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
-	corewiz "github.com/convergent-systems-co/aiConstitution/src/internal/wizard"
+
+	internalwizard "github.com/convergent-systems-co/aiConstitution/src/internal/wizard"
 )
 
-// NextMsg advances the wizard to the next question. When sent past
-// the final active question, the model checks completion and sets
-// done=true if all required questions have been answered.
-type NextMsg struct{}
-
-// PrevMsg retreats to the previous question. Clamps at index 0.
-type PrevMsg struct{}
-
-// AnswerMsg records an answer for the currently displayed question.
-// Renderers translate keyboard input into this message; callers may
-// also send it directly (used by tests).
-type AnswerMsg struct {
-	Value string
+// AnswerSet holds the strongly-typed answers extracted from the wizard's raw
+// answer map. Only the fields used by the post-wizard helpers are populated
+// here; the full answers map is always accessible via Model.Answers().
+type AnswerSet struct {
+	// PrincipalName is the value of Q01 (what name the constitution recognises
+	// as principal).
+	PrincipalName string
+	// Domains is the value of Q07 (code / writing / both).
+	Domains string
+	// AutonomyPosture is the value of Q09 (canonical / rephrase / weaken).
+	AutonomyPosture string
 }
 
-// qstate holds per-question in-progress input that has not yet been
-// committed into the answer map. One entry exists per visited question
-// so that returning via PrevMsg restores the partial input.
-type qstate struct {
-	// text: buffer for KeyRunes / KeyBackspace.
-	textBuf []rune
-	// confirm: 0 = yes (default), 1 = no.
-	confirmIdx int
-	// select / multi-select: highlighted option index.
-	highlight int
-	// multi-select: bitmap of selected option indices.
-	selected map[int]bool
-}
-
-// Model is the bubbletea.Model for the wizard. The zero value is not
-// usable — construct via NewModel.
-type Model struct {
-	tax     corewiz.Taxonomy
-	answers map[string]string
-	idx     int
-	done    bool
-	state   map[string]*qstate // keyed by Question.QID
-}
-
-// NewModel constructs a Model from a parsed Taxonomy.
-func NewModel(tax corewiz.Taxonomy) Model {
-	return Model{
-		tax:     tax,
-		answers: make(map[string]string),
-		idx:     0,
-		done:    false,
-		state:   make(map[string]*qstate),
+// AnswersToAnswerSet converts the raw wizard answer map into a typed AnswerSet.
+// Unknown keys are silently ignored so that callers do not break when the
+// taxonomy version changes.
+func AnswersToAnswerSet(answers map[string]string) AnswerSet {
+	return AnswerSet{
+		PrincipalName:   answers["Q01"],
+		Domains:         answers["Q07"],
+		AutonomyPosture: answers["Q09"],
 	}
 }
 
-// Index returns the current question index (into the active list as
-// computed from the current answers map).
-func (m Model) Index() int { return m.idx }
+// Model is the Bubble Tea model for the constitution-setup wizard.
+//
+// It holds:
+//   - a snapshot of the parsed Taxonomy
+//   - the index of the current active question
+//   - the accumulated answers
+//   - per-type transient state (text buffer, select cursor, multi-select toggle set)
+type Model struct {
+	tax internalwizard.Taxonomy
 
-// Done reports whether the wizard has completed all required questions.
-func (m Model) Done() bool { return m.done }
+	// qIdx is the index into the active-question slice returned by
+	// tax.ActiveQuestions(answers). It is recomputed on each render.
+	qIdx int
 
-// Answers returns a copy of the accumulated answer map. The returned
-// map is owned by the caller and safe to mutate.
+	// answers accumulates QID → value as the user progresses.
+	answers map[string]string
+
+	// done is set to true when all active questions have been answered.
+	done bool
+
+	// textBuf holds the in-progress text for TypeText questions.
+	textBuf string
+
+	// cursor is the highlighted option index for TypeSelect and
+	// TypeMultiSelect questions.
+	cursor int
+
+	// selected tracks which option indices are toggled on for
+	// TypeMultiSelect questions.
+	selected map[int]bool
+}
+
+// NewModel constructs a Model from a parsed Taxonomy.
+func NewModel(tax internalwizard.Taxonomy) Model {
+	return Model{
+		tax:      tax,
+		answers:  make(map[string]string),
+		selected: make(map[int]bool),
+	}
+}
+
+// Init satisfies the tea.Model interface. The wizard needs no startup command.
+func (m Model) Init() tea.Cmd {
+	return nil
+}
+
+// Done reports whether the wizard has reached a terminal state (all active
+// questions answered).
+func (m Model) Done() bool {
+	return m.done
+}
+
+// Answers returns a copy of the accumulated question→value map.
 func (m Model) Answers() map[string]string {
 	out := make(map[string]string, len(m.answers))
 	for k, v := range m.answers {
@@ -85,273 +105,234 @@ func (m Model) Answers() map[string]string {
 	return out
 }
 
-// Init implements tea.Model. The wizard has no startup command —
-// input flows in from the program's runtime.
-func (m Model) Init() tea.Cmd { return nil }
+// activeQuestions returns the current set of active questions given the
+// accumulated answers so far.
+func (m Model) activeQuestions() []internalwizard.Question {
+	return m.tax.ActiveQuestions(m.answers)
+}
 
-// Update implements tea.Model. Handles the three semantic messages
-// (NextMsg, PrevMsg, AnswerMsg) plus tea.KeyMsg, which is dispatched
-// by the current question's Type to the matching renderer handler.
+// currentQuestion returns the question at m.qIdx, or the zero value if the
+// slice is empty or the index is out of range.
+func (m Model) currentQuestion() (internalwizard.Question, bool) {
+	active := m.activeQuestions()
+	if len(active) == 0 || m.qIdx >= len(active) {
+		return internalwizard.Question{}, false
+	}
+	return active[m.qIdx], true
+}
+
+// Update processes a message and returns the next model state.
+//
+// Handled messages:
+//   - tea.KeyMsg — keyboard input routed by question type and key.
+//
+// Key bindings:
+//
+//	TypeText:        printable rune → append; Backspace → delete last;
+//	                 Enter → commit text as answer, advance.
+//	TypeSelect:      Up/Down → move cursor; Enter → commit selected option.
+//	TypeMultiSelect: Up/Down → move cursor; Space → toggle; Enter → commit joined values.
+//	TypeConfirm:     'y' → commit "yes"; 'n' → commit "no"; Enter → commit "yes".
+//	All types:       'b' or Left → back; 'q' or Ctrl+C → quit without saving.
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if m.done {
+		return m, tea.Quit
+	}
+
+	q, ok := m.currentQuestion()
+	if !ok {
+		// No active questions — wizard is complete.
+		m.done = true
+		return m, tea.Quit
+	}
+
 	switch msg := msg.(type) {
-	case NextMsg:
-		active := m.tax.ActiveQuestions(m.answers)
-		if m.idx < len(active)-1 {
-			m.idx++
+	case tea.KeyMsg:
+		switch {
+		case msg.Type == tea.KeyCtrlC || (msg.Type == tea.KeyRunes && string(msg.Runes) == "q"):
+			return m, tea.Quit
+
+		case msg.Type == tea.KeyLeft || (msg.Type == tea.KeyRunes && string(msg.Runes) == "b"):
+			// Back navigation.
+			if m.qIdx > 0 {
+				m.qIdx--
+				m.textBuf = ""
+				m.cursor = 0
+				m.selected = make(map[int]bool)
+			}
 			return m, nil
 		}
-		if m.allRequiredAnswered(active) {
-			m.done = true
-			return m, tea.Quit
-		}
-		return m, nil
 
-	case PrevMsg:
-		if m.idx > 0 {
-			m.idx--
+		// Per-type input handling.
+		switch q.Type() {
+		case internalwizard.TypeText:
+			m = m.handleTextKey(msg)
+		case internalwizard.TypeSelect:
+			m = m.handleSelectKey(msg, q)
+		case internalwizard.TypeMultiSelect:
+			m = m.handleMultiSelectKey(msg, q)
+		case internalwizard.TypeConfirm:
+			m = m.handleConfirmKey(msg)
 		}
-		return m, nil
-
-	case AnswerMsg:
-		active := m.tax.ActiveQuestions(m.answers)
-		if m.idx >= 0 && m.idx < len(active) {
-			m.answers[active[m.idx].QID] = msg.Value
-		}
-		return m, nil
-
-	case tea.KeyMsg:
-		return m.handleKey(msg)
 	}
+
 	return m, nil
 }
 
-// handleKey dispatches a tea.KeyMsg to the renderer matching the
-// current question's Type.
-func (m Model) handleKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
-	active := m.tax.ActiveQuestions(m.answers)
-	if m.idx < 0 || m.idx >= len(active) {
-		return m, nil
-	}
-	q := active[m.idx]
-	st := m.ensureState(q)
-
-	switch q.Type() {
-	case corewiz.TypeText:
-		return m.handleTextKey(k, q, st)
-	case corewiz.TypeConfirm:
-		return m.handleConfirmKey(k, q, st)
-	case corewiz.TypeSelect:
-		return m.handleSelectKey(k, q, st)
-	case corewiz.TypeMultiSelect:
-		return m.handleMultiSelectKey(k, q, st)
-	}
-	return m, nil
-}
-
-// ensureState returns the qstate for q, creating it on first visit.
-func (m Model) ensureState(q corewiz.Question) *qstate {
-	st, ok := m.state[q.QID]
-	if ok {
-		return st
-	}
-	st = &qstate{selected: make(map[int]bool)}
-	m.state[q.QID] = st
-	return st
-}
-
-// ---------------------------------------------------------------------------
-// text renderer
-// ---------------------------------------------------------------------------
-
-func (m Model) handleTextKey(k tea.KeyMsg, q corewiz.Question, st *qstate) (tea.Model, tea.Cmd) {
-	switch k.Type {
-	case tea.KeyRunes, tea.KeySpace:
-		st.textBuf = append(st.textBuf, k.Runes...)
-		// Space key arrives with empty Runes on some terminals; coerce.
-		if k.Type == tea.KeySpace && len(k.Runes) == 0 {
-			st.textBuf = append(st.textBuf, ' ')
-		}
-	case tea.KeyBackspace:
-		if n := len(st.textBuf); n > 0 {
-			st.textBuf = st.textBuf[:n-1]
-		}
+// handleTextKey processes a key press for TypeText questions.
+func (m Model) handleTextKey(msg tea.KeyMsg) Model {
+	switch msg.Type {
 	case tea.KeyEnter:
-		m.answers[q.QID] = string(st.textBuf)
-	}
-	return m, nil
-}
-
-// ---------------------------------------------------------------------------
-// confirm renderer
-// ---------------------------------------------------------------------------
-
-func (m Model) handleConfirmKey(k tea.KeyMsg, q corewiz.Question, st *qstate) (tea.Model, tea.Cmd) {
-	switch k.Type {
-	case tea.KeyLeft:
-		st.confirmIdx = 0 // yes
-	case tea.KeyRight:
-		st.confirmIdx = 1 // no
-	case tea.KeyEnter:
-		if st.confirmIdx == 1 {
-			m.answers[q.QID] = "no"
-		} else {
-			m.answers[q.QID] = "yes"
+		// Commit the accumulated text and advance.
+		q, ok := m.currentQuestion()
+		if !ok {
+			return m
 		}
+		m.answers[effectiveID(q)] = m.textBuf
+		m.textBuf = ""
+		m.cursor = 0
+		m.selected = make(map[int]bool)
+		return m.advance()
+
+	case tea.KeyBackspace, tea.KeyDelete:
+		if len(m.textBuf) > 0 {
+			// Trim the last UTF-8 character.
+			runes := []rune(m.textBuf)
+			m.textBuf = string(runes[:len(runes)-1])
+		}
+
+	case tea.KeyRunes:
+		m.textBuf += string(msg.Runes)
 	}
-	return m, nil
+	return m
 }
 
-// ---------------------------------------------------------------------------
-// select renderer
-// ---------------------------------------------------------------------------
-
-func (m Model) handleSelectKey(k tea.KeyMsg, q corewiz.Question, st *qstate) (tea.Model, tea.Cmd) {
-	switch k.Type {
+// handleSelectKey processes a key press for TypeSelect questions.
+func (m Model) handleSelectKey(msg tea.KeyMsg, q internalwizard.Question) Model {
+	switch msg.Type {
 	case tea.KeyUp:
-		if st.highlight > 0 {
-			st.highlight--
+		if m.cursor > 0 {
+			m.cursor--
 		}
 	case tea.KeyDown:
-		if st.highlight < len(q.Options)-1 {
-			st.highlight++
+		if m.cursor < len(q.Options)-1 {
+			m.cursor++
 		}
 	case tea.KeyEnter:
-		if st.highlight >= 0 && st.highlight < len(q.Options) {
-			m.answers[q.QID] = q.Options[st.highlight].Value
+		val := ""
+		if m.cursor < len(q.Options) {
+			val = q.Options[m.cursor].Value
 		}
+		m.answers[effectiveID(q)] = val
+		m.cursor = 0
+		m.selected = make(map[int]bool)
+		return m.advance()
 	}
-	return m, nil
+	return m
 }
 
-// ---------------------------------------------------------------------------
-// multi-select renderer
-// ---------------------------------------------------------------------------
-
-func (m Model) handleMultiSelectKey(k tea.KeyMsg, q corewiz.Question, st *qstate) (tea.Model, tea.Cmd) {
-	switch k.Type {
+// handleMultiSelectKey processes a key press for TypeMultiSelect questions.
+func (m Model) handleMultiSelectKey(msg tea.KeyMsg, q internalwizard.Question) Model {
+	switch msg.Type {
 	case tea.KeyUp:
-		if st.highlight > 0 {
-			st.highlight--
+		if m.cursor > 0 {
+			m.cursor--
 		}
 	case tea.KeyDown:
-		if st.highlight < len(q.Options)-1 {
-			st.highlight++
+		if m.cursor < len(q.Options)-1 {
+			m.cursor++
 		}
 	case tea.KeySpace:
-		if st.highlight >= 0 && st.highlight < len(q.Options) {
-			st.selected[st.highlight] = !st.selected[st.highlight]
+		// Toggle current option.
+		if m.selected[m.cursor] {
+			delete(m.selected, m.cursor)
+		} else {
+			m.selected[m.cursor] = true
 		}
 	case tea.KeyEnter:
-		vals := make([]string, 0, len(q.Options))
+		// Commit as comma-joined values in option order.
+		var vals []string
 		for i, opt := range q.Options {
-			if st.selected[i] {
+			if m.selected[i] {
 				vals = append(vals, opt.Value)
 			}
 		}
-		m.answers[q.QID] = strings.Join(vals, ",")
+		m.answers[effectiveID(q)] = strings.Join(vals, ",")
+		m.cursor = 0
+		m.selected = make(map[int]bool)
+		return m.advance()
 	}
-	return m, nil
+	return m
 }
 
-// ---------------------------------------------------------------------------
-// View
-// ---------------------------------------------------------------------------
-
-// View implements tea.Model. Renders the current question per its
-// Type. Position indicator is shown above the renderer output.
-func (m Model) View() string {
-	active := m.tax.ActiveQuestions(m.answers)
-	if len(active) == 0 {
-		return "(no active questions)"
-	}
-	if m.done {
-		return "Done.\n"
-	}
-	if m.idx < 0 || m.idx >= len(active) {
-		return "(out of range)"
-	}
-	q := active[m.idx]
-	st := m.state[q.QID]
-	if st == nil {
-		st = &qstate{selected: make(map[int]bool)}
-	}
-
-	var b strings.Builder
-	fmt.Fprintf(&b, "[%d/%d] %s\n", m.idx+1, len(active), q.Prompt)
-	b.WriteString(renderQuestion(q, st, m.answers))
-	return b.String()
-}
-
-func renderQuestion(q corewiz.Question, st *qstate, answers map[string]string) string {
-	switch q.Type() {
-	case corewiz.TypeText:
-		return renderText(st)
-	case corewiz.TypeConfirm:
-		return renderConfirm(st)
-	case corewiz.TypeSelect:
-		return renderSelect(q, st)
-	case corewiz.TypeMultiSelect:
-		return renderMultiSelect(q, st)
-	default:
-		if ans, ok := answers[q.QID]; ok {
-			return fmt.Sprintf("  current: %s\n", ans)
+// handleConfirmKey processes a key press for TypeConfirm questions.
+func (m Model) handleConfirmKey(msg tea.KeyMsg) Model {
+	switch {
+	case msg.Type == tea.KeyEnter || (msg.Type == tea.KeyRunes && string(msg.Runes) == "y"):
+		q, ok := m.currentQuestion()
+		if !ok {
+			return m
 		}
+		m.answers[effectiveID(q)] = "yes"
+		m.cursor = 0
+		m.selected = make(map[int]bool)
+		return m.advance()
+
+	case msg.Type == tea.KeyRunes && string(msg.Runes) == "n":
+		q, ok := m.currentQuestion()
+		if !ok {
+			return m
+		}
+		m.answers[effectiveID(q)] = "no"
+		m.cursor = 0
+		m.selected = make(map[int]bool)
+		return m.advance()
+	}
+	return m
+}
+
+// advance moves to the next question, or marks the model Done if all active
+// questions have been answered.
+func (m Model) advance() Model {
+	active := m.activeQuestions()
+	// Count answered active questions.
+	answered := 0
+	for _, q := range active {
+		if _, ok := m.answers[effectiveID(q)]; ok {
+			answered++
+		}
+	}
+	if answered >= len(active) {
+		m.done = true
+		return m
+	}
+	// Find the next unanswered question.
+	for i, q := range active {
+		if _, ok := m.answers[effectiveID(q)]; !ok {
+			m.qIdx = i
+			return m
+		}
+	}
+	m.done = true
+	return m
+}
+
+// View renders the current question for the terminal.
+func (m Model) View() string {
+	if m.done {
+		return "Setup complete. Press any key to continue.\n"
+	}
+	q, ok := m.currentQuestion()
+	if !ok {
 		return ""
 	}
+	return RenderQuestion(m, q)
 }
 
-func renderText(st *qstate) string {
-	return fmt.Sprintf("  > %s_\n", string(st.textBuf))
-}
-
-func renderConfirm(st *qstate) string {
-	yes, no := "yes", "no"
-	if st.confirmIdx == 0 {
-		yes = "[yes]"
-	} else {
-		no = "[no]"
+// effectiveID returns the stable ID for a question, preferring ID over QID.
+func effectiveID(q internalwizard.Question) string {
+	if q.QID != "" {
+		return q.QID
 	}
-	return fmt.Sprintf("  %s   %s\n", yes, no)
-}
-
-func renderSelect(q corewiz.Question, st *qstate) string {
-	var b strings.Builder
-	for i, opt := range q.Options {
-		marker := "  "
-		if i == st.highlight {
-			marker = "> "
-		}
-		fmt.Fprintf(&b, "  %s%s\n", marker, opt.Label)
-	}
-	return b.String()
-}
-
-func renderMultiSelect(q corewiz.Question, st *qstate) string {
-	var b strings.Builder
-	for i, opt := range q.Options {
-		highlight := "  "
-		if i == st.highlight {
-			highlight = "> "
-		}
-		check := "[ ]"
-		if st.selected[i] {
-			check = "[x]"
-		}
-		fmt.Fprintf(&b, "  %s%s %s\n", highlight, check, opt.Label)
-	}
-	return b.String()
-}
-
-// allRequiredAnswered reports whether every required question in the
-// active list has a recorded answer.
-func (m Model) allRequiredAnswered(active []corewiz.Question) bool {
-	for _, q := range active {
-		if !q.Required() {
-			continue
-		}
-		if _, ok := m.answers[q.QID]; !ok {
-			return false
-		}
-	}
-	return true
+	return q.QID
 }
