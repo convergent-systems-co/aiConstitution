@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
+	"strings"
 	"os/exec"
 	"runtime"
 
@@ -89,4 +91,47 @@ func checkTerminalNotifier(w io.Writer) {
 	}
 
 	fmt.Fprintln(w, "[⚠] terminal-notifier: not found — run: brew install terminal-notifier")
+}
+
+// PathStatus and companion types — needed by export_test.go and integrate_test.go
+type PathStatus int
+const ( PathOK PathStatus = iota; PathMissing; PathShadowed )
+
+func checkBinPath(binDir, pathVar string) (PathStatus, string) {
+	if binDir == "" { return PathOK, "" }
+	binDir = filepath.Clean(binDir)
+	systemBins := []string{"/usr/local/bin", "/opt/homebrew/bin"}
+	entries := strings.Split(pathVar, string(os.PathListSeparator))
+	binIdx := -1; systemIdxs := map[string]int{}
+	for i, e := range entries {
+		clean := filepath.Clean(strings.TrimSpace(e))
+		if clean == binDir && binIdx < 0 { binIdx = i }
+		for _, s := range systemBins { if clean == s { if _, ok := systemIdxs[s]; !ok { systemIdxs[s] = i } } }
+	}
+	if binIdx < 0 { return PathMissing, fmt.Sprintf("%s not on PATH", binDir) }
+	for _, s := range systemBins { if si, ok := systemIdxs[s]; ok && si < binIdx { return PathShadowed, fmt.Sprintf("%s after %s", binDir, s) } }
+	return PathOK, fmt.Sprintf("%s before system bins", binDir)
+}
+
+type doctorStatus int
+const ( doctorOK doctorStatus = iota; doctorWarn; doctorSkip )
+type doctorResult struct { name string; status doctorStatus; message string }
+
+func checkDoctorCopilot(home string) doctorResult {
+	dir := filepath.Join(home, ".copilot", "instructions")
+	if _, err := os.Stat(dir); os.IsNotExist(err) { return doctorResult{status: doctorSkip} }
+	if _, err := os.Lstat(filepath.Join(dir, "constitution.md")); os.IsNotExist(err) { return doctorResult{status: doctorWarn, message: "Copilot symlink missing"} }
+	return doctorResult{status: doctorOK, message: "Copilot symlink present"}
+}
+func checkDoctorCursor(cwd string) doctorResult {
+	if _, err := os.Stat(filepath.Join(cwd, ".cursor", "rules")); os.IsNotExist(err) { return doctorResult{status: doctorSkip} }
+	if _, err := os.Lstat(filepath.Join(cwd, ".cursor", "rules", "constitution.md")); os.IsNotExist(err) { return doctorResult{status: doctorWarn} }
+	return doctorResult{status: doctorOK}
+}
+func checkDoctorAgentsMD(cwd string) doctorResult {
+	data, err := os.ReadFile(filepath.Join(cwd, "AGENTS.md")) //nolint:gosec
+	if os.IsNotExist(err) { return doctorResult{status: doctorSkip} }
+	if err != nil { return doctorResult{status: doctorWarn} }
+	if strings.Contains(string(data), "@~/.ai/Constitution.md") { return doctorResult{status: doctorOK} }
+	return doctorResult{status: doctorWarn}
 }
