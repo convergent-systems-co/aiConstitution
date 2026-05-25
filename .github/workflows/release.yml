@@ -24,6 +24,7 @@ jobs:
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ github.token }}
+          PACKAGE_PUBLISH_TOKEN: ${{ secrets.PACKAGE_PUBLISH_TOKEN }}
 
       - name: Generate SBOM (syft)
         uses: anchore/sbom-action@v0

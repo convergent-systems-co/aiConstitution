@@ -39,6 +39,32 @@ checksum:
 snapshot:
   version_template: "{{ incpatch .Version }}-next"
 
+brews:
+  - name: atoms
+    description: "AI Constitution CLI — govern your AI assistant with a personal constitution"
+    homepage: "https://github.com/convergent-systems-co/aiConstitution"
+    license: "Apache-2.0"
+    repository:
+      owner: convergent-systems-co
+      name: homebrew-tap
+      token: "{{ .Env.PACKAGE_PUBLISH_TOKEN }}"
+    commit_author:
+      name: goreleaserbot
+      email: bot@goreleaser.com
+    commit_msg_template: "feat(formula): update atoms to {{ .Tag }}"
+    directory: Formula
+    install: |
+      bin.install "ai"
+    caveats: |
+      The ai binary may be blocked by macOS Gatekeeper on first run.
+      To clear the quarantine flag:
+
+        xattr -d com.apple.quarantine "#{bin}/ai"
+
+      Then run: ai doctor
+    test: |
+      system "#{bin}/ai", "version"
+
 changelog:
   use: github
   filters:
