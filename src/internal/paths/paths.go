@@ -166,3 +166,11 @@ func ProjectYAML(dir string) string {
 	}
 	return filepath.Join(dir, "project.yaml")
 }
+
+// PluginsDir returns ~/.ai/plugins/ — the root for installed plugin directories.
+// Each plugin lives at ~/.ai/plugins/<name>/ with a manifest.yaml inside.
+func PluginsDir() string { return filepath.Join(AIRoot(), "plugins") }
+
+// PluginsStateFile returns the per-machine plugins enabled/disabled state file.
+// Path: ~/.config/aiConstitution/plugins.json
+func PluginsStateFile() string { return filepath.Join(ConfigDir(), "plugins.json") }

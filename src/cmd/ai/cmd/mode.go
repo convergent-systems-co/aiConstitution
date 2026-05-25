@@ -1,7 +1,11 @@
 package cmd
 
 import (
+	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
+	"time"
 
 	"github.com/convergent-systems-co/aiConstitution/src/internal/config"
 	"github.com/convergent-systems-co/aiConstitution/src/internal/paths"
@@ -9,7 +13,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// newModeCmd implements `ai mode {current,list,clear,show,share}` and
+// newModeCmd implements `ai mode {current,list,clear,show,share,pm}` and
 // `ai mode <name>`. See SPEC.md §3.7 + §7.
 func newModeCmd() *cobra.Command {
 	c := &cobra.Command{
@@ -34,6 +38,7 @@ Subcommands:
   clear     Deactivate the current mode (return to four-file only).
   show      Show resolved content for a name.
   share     File a draft as an upstream atom PR.
+  pm        Shortcut: activate PM mode (plan-first discipline).
 
 See SPEC.md §3.7 + §7.`,
 		Args: cobra.MaximumNArgs(1),
@@ -127,6 +132,9 @@ See SPEC.md §3.7 + §7.`,
 		},
 	})
 
+	// pm — named activation shortcut for PM mode (#219)
+	c.AddCommand(newPmSubCmd())
+
 	return c
 }
 
@@ -137,4 +145,65 @@ func newFocusCmd() *cobra.Command {
 	c.Short = "Alias of `ai mode`"
 	c.Aliases = nil
 	return c
+}
+
+// pmModeJSON is the on-disk shape written by pm-mode.
+type pmModeJSON struct {
+	Mode        string `json:"mode"`
+	ActivatedAt string `json:"activatedAt"`
+	Discipline  string `json:"discipline"`
+}
+
+// writePmModeJSON encodes and writes the PM mode state to mode.json.
+func writePmModeJSON(cmd *cobra.Command) error {
+	modeFile := paths.ModeJSON()
+	if err := os.MkdirAll(filepath.Dir(modeFile), 0o750); err != nil {
+		return fmt.Errorf("pm-mode: mkdir: %w", err)
+	}
+
+	payload := pmModeJSON{
+		Mode:        "pm",
+		ActivatedAt: time.Now().UTC().Format(time.RFC3339),
+		Discipline:  "plan-first",
+	}
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("pm-mode: marshal: %w", err)
+	}
+	if err := os.WriteFile(modeFile, data, 0o644); err != nil {
+		return fmt.Errorf("pm-mode: write %s: %w", modeFile, err)
+	}
+
+	fmt.Fprintln(cmd.OutOrStdout(), "PM mode activated. plan-first discipline is active.")
+	return nil
+}
+
+// newPmSubCmd implements `ai mode pm` — a named shortcut for PM mode.
+func newPmSubCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "pm",
+		Short: "Activate PM mode (plan-first discipline)",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return writePmModeJSON(cmd)
+		},
+	}
+}
+
+// newPmModeCmd implements the top-level `ai pm-mode` shortcut (#219).
+// This is registered at root level for ergonomics; internally it delegates
+// to the same writer as `ai mode pm`.
+func newPmModeCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "pm-mode",
+		Short: "Activate PM mode (plan-first discipline) — shortcut for `ai mode pm`",
+		Long: `pm-mode writes ~/.config/aiConstitution/mode.json with:
+  {"mode":"pm","activatedAt":"<UTC>","discipline":"plan-first"}
+
+Use `+"`"+`ai mode current`+"`"+` to confirm the active mode.
+
+See SPEC.md §3.7 + Common.md §pm-mode.`,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return writePmModeJSON(cmd)
+		},
+	}
 }

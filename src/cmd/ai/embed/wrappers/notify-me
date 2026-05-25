@@ -1,0 +1,128 @@
+#!/usr/bin/env bash
+# notify-me — cross-tool OS notification wrapper for the `ai` system.
+#
+# Usage:
+#   notify-me --title <str> --message <str> [--level info|warn|urgent]
+#
+# Dispatch priority (macOS):
+#   1. terminal-notifier (brew install terminal-notifier)
+#   2. osascript (built-in AppleScript bridge, always available on macOS)
+#
+# Exit behavior:
+#   - Success: exits 0, nothing written to stdout.
+#   - Failure: exits non-zero, error written to stderr.
+#
+# ntfy push (optional, --level urgent only):
+#   When a ntfy topic is configured, an HTTP POST is sent to
+#   https://ntfy.sh/<topic> with Priority: urgent.
+#   Topic resolution order:
+#     1. $AI_NTFY_TOPIC environment variable.
+#     2. ntfy_topic key in ~/.config/aiConstitution/settings.toml.
+#   When no topic is configured the ntfy step is silently skipped.
+#
+# Per issues #243 (macOS dispatch) and #246 (ntfy extension).
+
+set -uo pipefail
+
+# ── argument parsing ──────────────────────────────────────────────────────────
+
+TITLE=""
+MESSAGE=""
+LEVEL="info"
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --title)
+      [[ $# -ge 2 ]] || { echo "notify-me: --title requires a value" >&2; exit 1; }
+      TITLE="$2"; shift 2 ;;
+    --message)
+      [[ $# -ge 2 ]] || { echo "notify-me: --message requires a value" >&2; exit 1; }
+      MESSAGE="$2"; shift 2 ;;
+    --level)
+      [[ $# -ge 2 ]] || { echo "notify-me: --level requires a value (info|warn|urgent)" >&2; exit 1; }
+      LEVEL="$2"; shift 2 ;;
+    *)
+      echo "notify-me: unknown argument: $1" >&2
+      exit 1 ;;
+  esac
+done
+
+[[ -n "$TITLE" ]]   || { echo "notify-me: --title is required" >&2; exit 1; }
+[[ -n "$MESSAGE" ]] || { echo "notify-me: --message is required" >&2; exit 1; }
+
+# ── local notification dispatch ───────────────────────────────────────────────
+
+_dispatch_local() {
+  if command -v terminal-notifier >/dev/null 2>&1; then
+    terminal-notifier \
+      -title   "$TITLE" \
+      -message "$MESSAGE" \
+      -sound   default
+    return $?
+  fi
+
+  if command -v osascript >/dev/null 2>&1; then
+    # AppleScript string-escape: replace any single-quote with '" & quote & "'.
+    local safe_title safe_msg
+    safe_title=$(printf '%s' "$TITLE"   | sed "s/'/'\\''/g")
+    safe_msg=$(printf '%s'   "$MESSAGE" | sed "s/'/'\\''/g")
+    osascript -e "display notification \"$safe_msg\" with title \"$safe_title\""
+    return $?
+  fi
+
+  echo "notify-me: no notification utility found (tried terminal-notifier, osascript)" >&2
+  return 1
+}
+
+_dispatch_local
+
+# ── ntfy push (urgent only) ───────────────────────────────────────────────────
+
+_ntfy_push() {
+  # Topic resolution: env var first, then settings.toml.
+  local topic="${AI_NTFY_TOPIC:-}"
+
+  if [[ -z "$topic" ]]; then
+    # Locate settings.toml via $AICONST_CONFIG_DIR or XDG default.
+    local config_dir="${AICONST_CONFIG_DIR:-}"
+    if [[ -z "$config_dir" ]]; then
+      config_dir="${XDG_CONFIG_HOME:-$HOME/.config}/aiConstitution"
+    fi
+    local settings="$config_dir/settings.toml"
+    if [[ -f "$settings" ]]; then
+      # Extract ntfy_topic = "value" or ntfy_topic = 'value' (no parser dep).
+      # Works on both BSD sed (macOS) and GNU sed (Linux).
+      topic=$(grep -E '^\s*ntfy_topic\s*=' "$settings" 2>/dev/null \
+              | head -1 \
+              | sed 's/.*=[ \t]*["'"'"']*//;s/["'"'"'][[:space:]]*$//')
+    fi
+  fi
+
+  # If still no topic, silently skip — not an error.
+  [[ -n "$topic" ]] || return 0
+
+  local url="https://ntfy.sh/$topic"
+
+  if command -v curl >/dev/null 2>&1; then
+    curl --silent --show-error \
+      -d "$MESSAGE" \
+      -H "Title: $TITLE" \
+      -H "Priority: urgent" \
+      "$url" >/dev/null
+  elif command -v wget >/dev/null 2>&1; then
+    wget --quiet \
+      --post-data="$MESSAGE" \
+      --header="Title: $TITLE" \
+      --header="Priority: urgent" \
+      -O /dev/null \
+      "$url"
+  fi
+  # Silently ignore ntfy failures — the local notification already succeeded.
+  return 0
+}
+
+if [[ "$LEVEL" == "urgent" ]]; then
+  _ntfy_push
+fi
+
+exit 0

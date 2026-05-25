@@ -1,0 +1,180 @@
+---
+import Base from '../layouts/Base.astro';
+---
+<Base title="Setup Guide — aiConstitution">
+  <section class="cs-prose">
+    <p class="cs-section-label">Setup · Greenfield · Brownfield</p>
+    <h1>Setup Guide</h1>
+    <p>
+      Two paths depending on whether you are starting fresh or already have an
+      existing <code>~/.ai/</code> constitution.
+    </p>
+
+    <nav style="display: flex; gap: var(--space-4); margin-block: var(--space-8);">
+      <a class="cs-action" href="#greenfield">Greenfield →</a>
+      <a class="cs-action" href="#brownfield">Brownfield →</a>
+    </nav>
+  </section>
+
+  <!-- ─── GREENFIELD ────────────────────────────────────────────────────── -->
+  <section id="greenfield" class="cs-prose" style="margin-block-start: var(--space-16);">
+    <p class="cs-section-label">Path A</p>
+    <h2>Greenfield — starting from scratch</h2>
+    <p>
+      No existing constitution. You want the wizard to generate one
+      personalized to you, wire all hooks, and be ready inside thirty minutes.
+    </p>
+
+    <h3>1. Install <code>ai</code></h3>
+<pre><code>brew install convergent-systems-co/tap/ai</code></pre>
+    <p>
+      On macOS, Gatekeeper may block the first run. Clear the quarantine flag:
+    </p>
+<pre><code>xattr -d com.apple.quarantine "$(which ai)"</code></pre>
+
+    <h3>2. Run the setup wizard</h3>
+<pre><code>ai setup</code></pre>
+    <p>
+      The Bubble Tea wizard asks ~14 questions across five phases:
+    </p>
+    <ul>
+      <li><strong>Identity</strong> — your name, AI tools you use, work context</li>
+      <li><strong>Domains</strong> — what kinds of work you do (Technical, Prose, Data, Legal…)</li>
+      <li><strong>Autonomy</strong> — cost ceiling, file blast radius, protected branches</li>
+      <li><strong>Behavioral style</strong> — pushback persistence, response length, disagreement tone</li>
+      <li><strong>Review</strong> — inspect the generated constitution before writing it to disk</li>
+    </ul>
+    <p>
+      On completion, setup writes:
+    </p>
+    <ul>
+      <li><code>~/.ai/Constitution.md</code> — your unified governing document</li>
+      <li><code>~/.ai/Constitution.runtime.md</code> — compact version for Copilot / Cursor</li>
+      <li><code>~/.ai/hooks/</code> — enforcement hook scripts</li>
+      <li><code>~/.claude/CLAUDE.md</code> — <code>@-include</code> so Claude Code loads your constitution</li>
+      <li><code>~/.copilot/instructions/constitution.md</code> — symlink for Copilot CLI</li>
+    </ul>
+
+    <h3>3. Verify</h3>
+<pre><code>ai doctor</code></pre>
+    <p>
+      All checks should show <code>[✓]</code>. Start a new Claude Code session —
+      the constitution loads at session start from <code>~/.claude/CLAUDE.md</code>.
+    </p>
+
+    <h3>4. Run your first review</h3>
+<pre><code>ai review --check</code></pre>
+    <p>
+      Produces a governance report in <code>~/.ai/governance/reports/</code>
+      covering violations, overrides, drift, and dead rules. Run it again in
+      30 days — the default cadence.
+    </p>
+  </section>
+
+  <!-- ─── BROWNFIELD ────────────────────────────────────────────────────── -->
+  <section id="brownfield" class="cs-prose" style="margin-block-start: var(--space-24);">
+    <p class="cs-section-label">Path B</p>
+    <h2>Brownfield — migrating an existing constitution</h2>
+    <p>
+      You already have a <code>~/.ai/</code> directory — perhaps the original
+      four-file layout (<code>Constitution.md</code>, <code>Common.md</code>,
+      <code>Code.md</code>, <code>Writing.md</code>) or an older single-file
+      setup. Follow this path to migrate to the v2 unified format without
+      losing any of your existing rules.
+    </p>
+
+    <h3>1. Install <code>ai</code></h3>
+<pre><code>brew install convergent-systems-co/tap/ai</code></pre>
+
+    <h3>2. Back up your existing constitution</h3>
+<pre><code>ai constitution backup</code></pre>
+    <p>
+      This archives the entire <code>~/.ai/</code> directory to
+      <code>~/.ai-backups/&lt;timestamp&gt;.tar.gz</code> — outside
+      <code>~/.ai/</code> so the backup survives a restore. If anything goes
+      wrong, run <code>ai constitution restore</code> to get back to exactly
+      where you were.
+    </p>
+
+    <h3>3. Detect your current layout</h3>
+<pre><code>ai doctor</code></pre>
+    <p>
+      Doctor tells you whether you are on the legacy four-file layout or the
+      v2 unified format. If you see warnings about missing
+      <code>Constitution.md</code> or stale runtime, proceed to step 4.
+    </p>
+
+    <h3>4a. If you have the four-file legacy layout</h3>
+    <p>
+      Migrate in three steps — each is safe to re-run:
+    </p>
+<pre><code># Merge Constitution.md + Common.md + Code.md + Writing.md → one file
+# Originals archived to ~/.ai/archive/pre-v2/
+ai migrate --flatten
+
+# Insert §2 Behavioral Standards section
+ai migrate --add-behavioral
+
+# Generate the compact runtime for Copilot / Cursor
+ai migrate --generate-runtime</code></pre>
+
+    <h3>4b. If you already have a unified Constitution.md</h3>
+<pre><code># Just regenerate the runtime
+ai generate runtime
+
+# Re-wire hooks and tool integrations
+ai hooks install
+</code></pre>
+
+    <h3>5. Verify</h3>
+<pre><code>ai doctor</code></pre>
+    <p>
+      All checks should show <code>[✓]</code>. Start a new Claude Code session
+      to load the migrated constitution. Your existing memory files, audit
+      logs, and governance plans are preserved — migration only touches the
+      constitution document and tool wiring.
+    </p>
+
+    <h3>6. Regenerate your constitution from the wizard (optional)</h3>
+    <p>
+      If you want the wizard to produce a fresh personalized constitution
+      (discarding the migrated one), run:
+    </p>
+<pre><code>ai constitution backup   # archive current state first
+ai setup                 # re-run the wizard
+</code></pre>
+    <p>
+      Your backup is always in <code>~/.ai-backups/</code> and restorable with
+      <code>ai constitution restore</code>.
+    </p>
+  </section>
+
+  <!-- ─── WHAT'S NEXT ───────────────────────────────────────────────────── -->
+  <section class="cs-prose" style="margin-block-start: var(--space-24);">
+    <h2>What's next</h2>
+    <ul>
+      <li>
+        <strong>Amend your constitution</strong> — when a violation or drift
+        record surfaces a gap, use <code>ai amend draft &lt;violation-file&gt;</code>
+        → <code>ai amend apply &lt;draft&gt;</code> to patch the rule and bump the
+        version.
+      </li>
+      <li>
+        <strong>Add a domain</strong> — if you start doing legal or data work,
+        re-run <code>ai setup</code> and add a new domain. It merges the new
+        section into your existing constitution.
+      </li>
+      <li>
+        <strong>Sync across machines</strong> — use <code>ai sync push</code>
+        and <code>ai sync pull</code> (backed by a private git remote) to keep
+        your constitution consistent across laptops.
+      </li>
+      <li>
+        <strong>Test a different constitution</strong> — use
+        <code>ai constitution backup --clear-links</code> to sandbox a test
+        without affecting your live session, then
+        <code>ai constitution restore</code> to return.
+      </li>
+    </ul>
+  </section>
+</Base>

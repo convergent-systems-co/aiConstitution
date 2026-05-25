@@ -30,10 +30,22 @@ cd aiConstitution
 make build      # produces dist/ai
 ./dist/ai version</code></pre>
 
+    <p>
+      New to aiConstitution? Follow the <a href="/setup"><strong>Setup Guide</strong></a> —
+      greenfield (starting fresh) and brownfield (migrating an existing constitution) paths.
+    </p>
+
     <h2>First run</h2>
-<pre><code>ai setup        # guided wizard
-ai --tui        # same, explicit
-ai doctor       # verify the install</code></pre>
+<pre><code>ai setup        # reference-first guided wizard (8 questions)
+ai doctor       # verify the install
+ai compress     # optional: generate ~5KB compact constitution for AI loading
+ai compress --wire  # switch Claude Code to load compact version</code></pre>
+
+    <p>
+      See the <a href="/commands"><strong>Command Reference</strong></a> for
+      every <code>ai</code> command, or the <a href="/setup">Setup Guide</a>
+      for greenfield and brownfield installation paths.
+    </p>
 
     <p>
       After setup, the four canonical files are at <code>~/.ai/</code>,

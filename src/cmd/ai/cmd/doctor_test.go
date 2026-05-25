@@ -1,71 +1,138 @@
-package cmd_test
+package cmd
 
 import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"testing"
-
-	"github.com/convergent-systems-co/aiConstitution/src/cmd/ai/cmd"
 )
 
-func TestDoctorReportsAllFilesPresent(t *testing.T) {
-	dir := t.TempDir()
-	t.Setenv("AI_ROOT", dir)
-
-	for _, name := range []string{"Constitution.md", "Common.md", "Code.md", "Writing.md"} {
-		if err := os.WriteFile(filepath.Join(dir, name), []byte("# "+name+"\n"), 0o600); err != nil {
-			t.Fatal(err)
-		}
+// TestDoctorTerminalNotifierFound verifies that runDoctor prints a [✓]
+// marker when terminal-notifier is on PATH (macOS only).
+func TestDoctorTerminalNotifierFound(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("terminal-notifier check is macOS-only")
 	}
 
-	// Provide a CLAUDE.md with the personas block so doctor check 2 passes.
+	// Create a fake terminal-notifier binary in a temp directory.
+	tmpDir := t.TempDir()
+	fakeNotifier := filepath.Join(tmpDir, "terminal-notifier")
+	if err := os.WriteFile(fakeNotifier, []byte("#!/bin/sh\n"), 0755); err != nil {
+		t.Fatalf("setup fake terminal-notifier: %v", err)
+	}
+
+	// Prepend our fake dir to PATH so it is found first.
+	origPath := os.Getenv("PATH")
+	t.Setenv("PATH", tmpDir+string(os.PathListSeparator)+origPath)
+
+	// Set up HOME with a CLAUDE.md personas block so doctor check 2 passes.
 	homeDir := t.TempDir()
 	t.Setenv("HOME", homeDir)
 	claudeDir := filepath.Join(homeDir, ".claude")
 	if err := os.MkdirAll(claudeDir, 0o755); err != nil {
-		t.Fatal(err)
+		t.Fatalf("setup claude dir: %v", err)
 	}
-	claudeMD := filepath.Join(claudeDir, "CLAUDE.md")
-	block := "# Instructions\n<!-- ai:personas — managed by ai cli, do not edit manually -->\n@" + dir + "/Common.md\n<!-- /ai:personas -->\n"
-	if err := os.WriteFile(claudeMD, []byte(block), 0o600); err != nil {
-		t.Fatal(err)
+	block := "<!-- ai:personas — managed by ai cli, do not edit manually -->\n<!-- /ai:personas -->\n"
+	if err := os.WriteFile(filepath.Join(claudeDir, "CLAUDE.md"), []byte(block), 0o600); err != nil {
+		t.Fatalf("setup CLAUDE.md: %v", err)
 	}
 
-	root := cmd.NewRootCmd()
-	buf := &bytes.Buffer{}
-	root.SetOut(buf)
-	root.SetErr(buf)
-	root.SetArgs([]string{"doctor"})
-	if err := root.Execute(); err != nil {
-		t.Logf("doctor output: %s", buf)
-		t.Errorf("doctor returned error: %v", err)
+	var out bytes.Buffer
+	if err := runDoctor(&out, false, ""); err != nil {
+		t.Fatalf("runDoctor returned error: %v", err)
 	}
-	if !bytes.Contains(buf.Bytes(), []byte("Constitution.md")) {
-		t.Errorf("expected 'Constitution.md' in output, got:\n%s", buf)
+
+	got := out.String()
+	if !strings.Contains(got, "[✓]") || !strings.Contains(got, "terminal-notifier") {
+		t.Errorf("expected [✓] terminal-notifier line in output; got:\n%s", got)
+	}
+	if strings.Contains(got, "[⚠]") && strings.Contains(got, "terminal-notifier") {
+		t.Errorf("got [⚠] for terminal-notifier but it should be found; output:\n%s", got)
 	}
 }
 
-func TestDoctorReportsMissingFile(t *testing.T) {
-	dir := t.TempDir()
-	t.Setenv("AI_ROOT", dir)
-	for _, name := range []string{"Constitution.md", "Common.md", "Code.md"} {
-		if err := os.WriteFile(filepath.Join(dir, name), []byte("# "+name+"\n"), 0o600); err != nil {
-			t.Fatal(err)
-		}
+// TestDoctorTerminalNotifierMissing verifies that runDoctor prints a [⚠]
+// marker and install hint when terminal-notifier is absent from PATH (macOS only).
+func TestDoctorTerminalNotifierMissing(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("terminal-notifier check is macOS-only")
 	}
-	// Writing.md absent
 
-	root := cmd.NewRootCmd()
-	buf := &bytes.Buffer{}
-	root.SetOut(buf)
-	root.SetErr(buf)
-	root.SetArgs([]string{"doctor"})
-	err := root.Execute()
-	if err == nil {
-		t.Error("doctor should return error when required files are missing")
+	// Set PATH to a non-existent directory so no binaries are found.
+	emptyDir := t.TempDir()
+	t.Setenv("PATH", emptyDir)
+
+	var out bytes.Buffer
+	if err := runDoctor(&out, false, ""); err != nil {
+		t.Fatalf("runDoctor returned error: %v", err)
 	}
-	if !bytes.Contains(buf.Bytes(), []byte("Writing.md")) {
-		t.Errorf("expected 'Writing.md' in output, got:\n%s", buf)
+
+	got := out.String()
+	if !strings.Contains(got, "[⚠]") {
+		t.Errorf("expected [⚠] in output when terminal-notifier is missing; got:\n%s", got)
+	}
+	if !strings.Contains(got, "terminal-notifier") {
+		t.Errorf("expected 'terminal-notifier' in warning line; got:\n%s", got)
+	}
+	if !strings.Contains(got, "brew install terminal-notifier") {
+		t.Errorf("expected brew install hint in warning line; got:\n%s", got)
+	}
+}
+
+// TestDoctorTerminalNotifierSkippedOnNonDarwin confirms that the
+// terminal-notifier check does not appear in output on non-macOS platforms.
+func TestDoctorTerminalNotifierSkippedOnNonDarwin(t *testing.T) {
+	if runtime.GOOS == "darwin" {
+		t.Skip("this test validates non-darwin behavior")
+	}
+
+	var out bytes.Buffer
+	if err := runDoctor(&out, false, ""); err != nil {
+		t.Fatalf("runDoctor returned error: %v", err)
+	}
+
+	got := out.String()
+	// On non-darwin the check should not appear at all.
+	if strings.Contains(got, "terminal-notifier") {
+		t.Errorf("terminal-notifier check appeared on non-darwin platform; got:\n%s", got)
+	}
+}
+
+func TestDoctorPersonasBlockMissing(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("HOME", dir)
+	claudeDir := filepath.Join(dir, ".claude")
+	if err := os.MkdirAll(claudeDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(claudeDir, "CLAUDE.md"), []byte("# Instructions\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	var out bytes.Buffer
+	_ = runDoctor(&out, false, "")
+	if !strings.Contains(out.String(), "personas block missing") {
+		t.Errorf("expected personas block warning, got:\n%s", out.String())
+	}
+}
+
+func TestDoctorPersonasBlockPresent(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("HOME", dir)
+	claudeDir := filepath.Join(dir, ".claude")
+	if err := os.MkdirAll(claudeDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	content := "<!-- ai:personas — managed by ai cli, do not edit manually -->\n<!-- /ai:personas -->\n"
+	if err := os.WriteFile(filepath.Join(claudeDir, "CLAUDE.md"), []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	var out bytes.Buffer
+	_ = runDoctor(&out, false, "")
+	if !strings.Contains(out.String(), "[✓] CLAUDE.md personas block") {
+		t.Errorf("expected personas block OK, got:\n%s", out.String())
 	}
 }

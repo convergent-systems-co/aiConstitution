@@ -16,7 +16,7 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-go@v6
         with:
-          go-version: "1.22"
+          go-version: "1.26"
       - run: go work sync
       - uses: goreleaser/goreleaser-action@v7
         with:
@@ -24,6 +24,7 @@ jobs:
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ github.token }}
+          PACKAGE_PUBLISH_TOKEN: ${{ secrets.PACKAGE_PUBLISH_TOKEN }}
 
       - name: Generate SBOM (syft)
         uses: anchore/sbom-action@v0

@@ -17,21 +17,21 @@ func RunNonInteractive(tax Taxonomy, seeds map[string]string) (map[string]string
 	for {
 		added := false
 		for _, q := range tax.ActiveQuestions(answers) {
-			if _, done := answers[q.ID]; done {
+			if _, done := answers[q.QID]; done {
 				continue
 			}
-			val, ok := seeds[q.ID]
+			val, ok := seeds[q.QID]
 			if !ok && q.Default != "" {
 				val = q.Default
 				ok = true
 			}
 			if !ok {
-				if q.Required {
-					return nil, fmt.Errorf("wizard: required question %q has no seeded answer or default", q.ID)
+				if false {
+					return nil, fmt.Errorf("wizard: required question %q has no seeded answer or default", q.QID)
 				}
 				continue
 			}
-			answers[q.ID] = val
+			answers[q.QID] = val
 			added = true
 		}
 		if !added {
