@@ -148,3 +148,21 @@ func BrandCacheDir() string { return filepath.Join(ConfigDir(), ".brand-cache") 
 
 // CheckpointsDir returns the per-project HANDOFF.md checkpoint dir.
 func CheckpointsDir() string { return filepath.Join(ConfigDir(), "checkpoints") }
+
+// ClaudeMD returns the global Claude Code user instruction file.
+// This is the file that holds the <!-- ai:personas --> block.
+func ClaudeMD() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ".claude/CLAUDE.md"
+	}
+	return filepath.Join(home, ".claude", "CLAUDE.md")
+}
+
+// ProjectYAML returns the project.yaml path under dir. Returns "" if dir is empty.
+func ProjectYAML(dir string) string {
+	if dir == "" {
+		return ""
+	}
+	return filepath.Join(dir, "project.yaml")
+}
