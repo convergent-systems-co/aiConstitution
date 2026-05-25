@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -91,6 +93,61 @@ func (f Files) Validate() []Finding {
 		}
 	}
 	return findings
+}
+
+// Section represents one extracted persona section from Constitution.md.
+// Governance sections (e.g., "## 0. Governance Rules") are excluded.
+type Section struct {
+	Number   int    // ordinal from the heading (## N.)
+	Name     string // word before "Rules" (e.g., "Common", "Code")
+	Slug     string // lowercase Name (e.g., "common", "code")
+	FileName string // derivative output filename (e.g., "Common.md")
+	Body     string // raw markdown content of this section
+}
+
+// sectionHeaderRe matches "## N. <Name> Rules" with optional whitespace.
+var sectionHeaderRe = regexp.MustCompile(`(?m)^## (\d+)\. (\w+) Rules\s*$`)
+
+// ParseSections extracts persona sections from Constitution.md content.
+// Sections whose Name is "Governance" are excluded — they contain
+// meta-rules only, not enforceable AI directives.
+func ParseSections(content string) []Section {
+	matches := sectionHeaderRe.FindAllStringIndex(content, -1)
+	if len(matches) == 0 {
+		return nil
+	}
+
+	var sections []Section
+	for i, loc := range matches {
+		header := content[loc[0]:loc[1]]
+		sub := sectionHeaderRe.FindStringSubmatch(header)
+		if sub == nil {
+			continue
+		}
+		num, _ := strconv.Atoi(sub[1])
+		name := sub[2]
+		if strings.EqualFold(name, "Governance") {
+			continue
+		}
+
+		bodyStart := loc[1]
+		var bodyEnd int
+		if i+1 < len(matches) {
+			bodyEnd = matches[i+1][0]
+		} else {
+			bodyEnd = len(content)
+		}
+		body := strings.TrimSpace(content[bodyStart:bodyEnd])
+
+		sections = append(sections, Section{
+			Number:   num,
+			Name:     name,
+			Slug:     strings.ToLower(name),
+			FileName: name + ".md",
+			Body:     body,
+		})
+	}
+	return sections
 }
 
 // FileStatus returns a map of file name → present (true/false) for
