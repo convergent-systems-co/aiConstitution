@@ -13,6 +13,7 @@ import (
 	tui "github.com/convergent-systems-co/aiConstitution/src/cmd/ai/internal/wizard"
 	"github.com/convergent-systems-co/aiConstitution/src/internal/config"
 	internalwizard "github.com/convergent-systems-co/aiConstitution/src/internal/wizard"
+	"github.com/convergent-systems-co/aiConstitution/src/internal/constitution"
 	"github.com/convergent-systems-co/aiConstitution/src/internal/paths"
 )
 
@@ -66,6 +67,31 @@ See SPEC.md §3.1, §4, and questions.yaml.`,
 // constitution files and optionally hooks, CLAUDE.md, and the Copilot symlink.
 // When noHooks is true, only the constitution files are written.
 func runSetupTUI(noHooks bool) error {
+	// Detect and migrate legacy four-file layout before running the wizard.
+	// This ensures the wizard sees the existing rules and the user can
+	// compare what their original constitution looked like vs the new one.
+	aiRootPre := paths.AIRoot()
+	status := constitution.FileStatusV2(aiRootPre)
+	if !status["v2"] && status["Common.md"] {
+		fmt.Println("Detected existing four-file constitution layout.")
+		fmt.Println("Migrating your existing rules into a unified Constitution.md first...")
+		migrateOut := &cobra.Command{}
+		migrateOut.SetOut(os.Stdout)
+		if err := runMigrateFlatten(migrateOut, aiRootPre); err != nil {
+			return fmt.Errorf("setup: auto-migrate flatten: %w", err)
+		}
+		if err := runMigrateAddBehavioral(migrateOut, aiRootPre); err != nil {
+			return fmt.Errorf("setup: auto-migrate behavioral: %w", err)
+		}
+		if err := runMigrateGenerateRuntime(migrateOut, aiRootPre); err != nil {
+			return fmt.Errorf("setup: auto-migrate runtime: %w", err)
+		}
+		fmt.Println("Migration complete. Your original rules are in Constitution.md.")
+		fmt.Println("The wizard will now generate a fresh personalized constitution.")
+		fmt.Println("You can compare the two after setup is complete.")
+		fmt.Println()
+	}
+
 	// Load the embedded questions taxonomy.
 	taxData := embed.QuestionsYAML()
 	tax, err := internalwizard.ParseTaxonomy(taxData)
