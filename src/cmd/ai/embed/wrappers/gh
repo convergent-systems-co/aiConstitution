@@ -24,6 +24,18 @@ if [[ -z "$real_gh" ]]; then
   exit 127
 fi
 
+# Block visibility mutations per Common.md §2.2 (destructive action gate).
+# gh repo edit --visibility=public / --visibility public are irreversible
+# blast-radius operations that require explicit §2.2 override confirmation.
+for arg in "$@"; do
+  case "$arg" in
+    --visibility|--visibility=*)
+      echo "[ai/gh-wrapper] blocked: gh repo visibility mutations require explicit §2.2 override." >&2
+      echo "[ai/gh-wrapper] Per ~/.ai/Common.md §2.2 (destructive action gate)." >&2
+      exit 1;;
+  esac
+done
+
 # preHooks: destructive-gh-guard.
 if [[ -x "$HOOKS/destructive-gh-guard.py" ]]; then
   if ! "$HOOKS/destructive-gh-guard.py" --mode=wrapper "$@" </dev/null; then

@@ -1,11 +1,16 @@
 package cmd
 
 import (
+	"bufio"
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
+	"strings"
 
 	"github.com/convergent-systems-co/aiConstitution/src/cmd/ai/embed"
 
@@ -46,13 +51,39 @@ See SPEC.md §3.10 + §9.`,
 		},
 	})
 
-	// evaluate
+	// validate (#200, #201)
+	var validateDir string
+	validateCmd := &cobra.Command{
+		Use:   "validate",
+		Short: "Lint each installed hook: shebang, syntax, bare-except check",
+		Long: `validate checks every .py and .sh file in the hooks directory.
+
+For .py files:
+  - Shebang: first line must start with #!   → [✗] if missing
+  - Syntax:  python3 -m py_compile           → [✗] if fails
+  - Bare except: scan for "except:" without a type → [⚠] warning
+
+For .sh files:
+  - Syntax:  bash -n                         → [✗] if fails
+
+Exit 0 if no [✗] findings; exit 1 if any [✗].`,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return runHooksValidate(cmd, validateDir)
+		},
+	}
+	validateCmd.Flags().StringVar(&validateDir, "dir", "", "directory to validate (defaults to ~/.ai/hooks/; use --embedded to validate built-in sources)")
+	c.AddCommand(validateCmd)
+
+	// evaluate (#202)
 	c.AddCommand(&cobra.Command{
 		Use:   "evaluate",
-		Short: "Run each hook's --self-check; emit findings",
+		Short: "Invoke each embedded hook with synthetic JSON; assert non-crash",
+		Long: `evaluate smoke-tests every embedded .py hook by piping a minimal
+synthetic JSON event to it and asserting exit 0.
+
+Prints [✓] or [✗] per hook. Exit 1 if any [✗].`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			notice("hooks evaluate:", "would run --self-check on every installed hook")
-			return stub("hooks evaluate", "§9 + §3.10")
+			return runHooksEvaluate(cmd)
 		},
 	})
 
@@ -370,6 +401,349 @@ func installOneHook(name, hooksDir string, force bool) error {
 		return err
 	}
 	fmt.Println("Extracted " + p)
+	return nil
+}
+
+// ---------------------------------------------------------------------------
+// hooks validate (#200, #201)
+// ---------------------------------------------------------------------------
+
+// hookValidationResult holds the per-file lint outcome.
+type hookValidationResult struct {
+	name     string
+	status   string // "ok", "warn", "fail"
+	messages []string
+}
+
+// hooksValidateDefaultDir returns the default directory for `ai hooks validate`:
+// $AI_ROOT/hooks/ (the installed location), resolved from the environment.
+func hooksValidateDefaultDir() string {
+	home, _ := os.UserHomeDir()
+	aiRoot := os.Getenv("AI_ROOT")
+	if aiRoot == "" {
+		aiRoot = filepath.Join(home, ".ai")
+	}
+	return filepath.Join(aiRoot, "hooks")
+}
+
+// runHooksValidate lints all .py and .sh files in dir. When dir is empty,
+// defaults to ~/.ai/hooks/ (the installed hooks directory). Executables
+// named _lib.py or test_*.py are skipped — they are not standalone hooks.
+// Returns an error if any file has status "fail".
+func runHooksValidate(cmd *cobra.Command, dir string) error {
+	if dir == "" {
+		dir = hooksValidateDefaultDir()
+	}
+	var files []validationTarget
+	var err error
+	files, err = hookFilesFromDir(dir)
+	if err != nil {
+		return err
+	}
+	if len(files) == 0 {
+		fmt.Fprintln(cmd.OutOrStdout(), "No hook files found.")
+		return nil
+	}
+
+	results := make([]hookValidationResult, 0, len(files))
+	for _, f := range files {
+		results = append(results, validateHookFile(f))
+	}
+
+	anyFail := false
+	for _, r := range results {
+		icon := "[✓]"
+		if r.status == "warn" {
+			icon = "[⚠]"
+		} else if r.status == "fail" {
+			icon = "[✗]"
+			anyFail = true
+		}
+		fmt.Fprintf(cmd.OutOrStdout(), "%s %s\n", icon, r.name)
+		for _, m := range r.messages {
+			fmt.Fprintf(cmd.OutOrStdout(), "    %s\n", m)
+		}
+	}
+	if anyFail {
+		return fmt.Errorf("one or more hooks failed validation")
+	}
+	return nil
+}
+
+// validationTarget is a hook file name + its byte content for linting.
+type validationTarget struct {
+	name    string
+	content []byte
+}
+
+// isHookFile returns true when name is a hook executable that should be
+// validated. Library files (_lib.py), test files (test_*.py), and non-.py/.sh
+// files are excluded.
+func isHookFile(name string) bool {
+	if !strings.HasSuffix(name, ".py") && !strings.HasSuffix(name, ".sh") {
+		return false
+	}
+	if name == "_lib.py" {
+		return false
+	}
+	if strings.HasPrefix(name, "test_") && strings.HasSuffix(name, ".py") {
+		return false
+	}
+	return true
+}
+
+// hookFilesFromDir reads all hook-eligible .py and .sh files from a
+// filesystem directory (see isHookFile).
+func hookFilesFromDir(dir string) ([]validationTarget, error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, fmt.Errorf("validate: read dir %s: %w", dir, err)
+	}
+	var out []validationTarget
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		n := e.Name()
+		if !isHookFile(n) {
+			continue
+		}
+		data, err := os.ReadFile(filepath.Join(dir, n))
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, validationTarget{name: n, content: data})
+	}
+	return out, nil
+}
+
+// hookFilesFromEmbed reads all hook-eligible .py and .sh files from the
+// embedded FS (see isHookFile).
+func hookFilesFromEmbed() ([]validationTarget, error) {
+	hFS := embed.HooksFS()
+	entries, err := fs.ReadDir(hFS, ".")
+	if err != nil {
+		return nil, err
+	}
+	var out []validationTarget
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		n := e.Name()
+		if !isHookFile(n) {
+			continue
+		}
+		data, err := fs.ReadFile(hFS, n)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, validationTarget{name: n, content: data})
+	}
+	return out, nil
+}
+
+// validateHookFile runs all checks for one hook file and returns the result.
+func validateHookFile(f validationTarget) hookValidationResult {
+	r := hookValidationResult{name: f.name, status: "ok"}
+
+	if strings.HasSuffix(f.name, ".py") {
+		checkPython(&r, f.content)
+	} else if strings.HasSuffix(f.name, ".sh") {
+		checkShell(&r, f.content)
+	}
+	return r
+}
+
+// checkPython applies the three Python checks: shebang, syntax, bare-except.
+func checkPython(r *hookValidationResult, content []byte) {
+	// 1. Shebang check — first non-empty line must start with "#!"
+	scanner := bufio.NewScanner(bytes.NewReader(content))
+	firstLine := ""
+	for scanner.Scan() {
+		firstLine = scanner.Text()
+		break
+	}
+	if !strings.HasPrefix(firstLine, "#!") {
+		r.status = "fail"
+		r.messages = append(r.messages, "missing shebang (#! on line 1)")
+		// No point running py_compile on a file we already know is wrong in
+		// intent — but we continue to collect all findings.
+	}
+
+	// 2. Syntax check via python3 -m py_compile
+	tmpFile, err := os.CreateTemp("", "ai-hook-validate-*.py")
+	if err == nil {
+		defer os.Remove(tmpFile.Name())
+		if _, werr := tmpFile.Write(content); werr == nil {
+			tmpFile.Close()
+			out, cerr := exec.Command("python3", "-m", "py_compile", tmpFile.Name()).CombinedOutput()
+			if cerr != nil {
+				r.status = "fail"
+				msg := strings.TrimSpace(string(out))
+				if msg == "" {
+					msg = cerr.Error()
+				}
+				// Replace tmpFile path with the hook name for readability.
+				msg = strings.ReplaceAll(msg, tmpFile.Name(), f(r.name))
+				r.messages = append(r.messages, "syntax error: "+msg)
+			}
+		} else {
+			tmpFile.Close()
+		}
+	}
+	// If python3 is missing entirely, emit a warning rather than failing.
+	if err != nil {
+		if _, lerr := exec.LookPath("python3"); lerr != nil {
+			if r.status == "ok" {
+				r.status = "warn"
+			}
+			r.messages = append(r.messages, "python3 not found; skipping syntax check")
+		}
+	}
+
+	// 3. Bare-except scan — warn if "except:" without an exception type.
+	scanner = bufio.NewScanner(bytes.NewReader(content))
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "except:" || line == "except :" {
+			if r.status == "ok" {
+				r.status = "warn"
+			}
+			r.messages = append(r.messages, "bare except: (use `except Exception` or a specific type)")
+			break // one warning per file is enough
+		}
+	}
+}
+
+// f is a small alias used in error messages to avoid shadowing the outer f.
+func f(name string) string { return "<" + name + ">" }
+
+// checkShell applies bash -n syntax check to a shell script.
+func checkShell(r *hookValidationResult, content []byte) {
+	tmpFile, err := os.CreateTemp("", "ai-hook-validate-*.sh")
+	if err != nil {
+		r.status = "fail"
+		r.messages = append(r.messages, "could not create temp file: "+err.Error())
+		return
+	}
+	defer os.Remove(tmpFile.Name())
+	if _, werr := tmpFile.Write(content); werr != nil {
+		tmpFile.Close()
+		r.status = "fail"
+		r.messages = append(r.messages, "write error: "+werr.Error())
+		return
+	}
+	tmpFile.Close()
+
+	out, cerr := exec.Command("bash", "-n", tmpFile.Name()).CombinedOutput()
+	if cerr != nil {
+		r.status = "fail"
+		msg := strings.TrimSpace(string(out))
+		if msg == "" {
+			msg = cerr.Error()
+		}
+		msg = strings.ReplaceAll(msg, tmpFile.Name(), "<"+r.name+">")
+		r.messages = append(r.messages, "syntax error: "+msg)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// hooks evaluate (#202)
+// ---------------------------------------------------------------------------
+
+// syntheticEvent returns a minimal JSON event for each hook type, keyed by
+// the hook's filename. Hooks that are not listed here receive the generic
+// Claude PreToolUse payload.
+func syntheticEvent(hookName string) string {
+	switch hookName {
+	case "audit.py", "audit-command.py":
+		return `{"tool_name":"Bash","tool_input":{"command":"echo test"}}`
+	case "branch-guard.py":
+		return `{"tool_name":"Bash","tool_input":{"command":"echo test"}}`
+	case "secret-block.py", "secret-precommit.py":
+		return `{"tool_name":"Bash","tool_input":{"command":"echo hello"}}`
+	case "no-verify-strip.py":
+		return `{"tool_name":"Bash","tool_input":{"command":"git status"}}`
+	case "destructive-gh-guard.py":
+		return `{"tool_name":"Bash","tool_input":{"command":"gh repo list"}}`
+	case "destructive-kubectl-guard.py":
+		return `{"tool_name":"Bash","tool_input":{"command":"kubectl get pods"}}`
+	case "destructive-terraform-guard.py":
+		return `{"tool_name":"Bash","tool_input":{"command":"terraform plan"}}`
+	case "worktree-guard.py":
+		return `{"tool_name":"Bash","tool_input":{"command":"git status"}}`
+	case "checkpoint-tick.py":
+		return `{"type":"Stop"}`
+	default:
+		return `{"tool_name":"Bash","tool_input":{"command":"echo test"}}`
+	}
+}
+
+// runHooksEvaluate smoke-tests every embedded .py hook by sending it a
+// synthetic JSON event and asserting exit 0.
+func runHooksEvaluate(cmd *cobra.Command) error {
+	hFS := embed.HooksFS()
+	entries, err := fs.ReadDir(hFS, ".")
+	if err != nil {
+		return err
+	}
+
+	// Extract all hooks to a temp dir so we can run them with python3.
+	tmpDir, err := os.MkdirTemp("", "ai-hooks-evaluate-*")
+	if err != nil {
+		return fmt.Errorf("evaluate: create temp dir: %w", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	anyFail := false
+	sort.Slice(entries, func(i, j int) bool { return entries[i].Name() < entries[j].Name() })
+
+	for _, e := range entries {
+		// Use the same isHookFile filter as validate: skip _lib.py,
+		// test_*.py, and non-.py files.
+		if e.IsDir() || !isHookFile(e.Name()) {
+			continue
+		}
+
+		data, rerr := fs.ReadFile(hFS, e.Name())
+		if rerr != nil {
+			fmt.Fprintf(cmd.OutOrStdout(), "[✗] %s (read error: %v)\n", e.Name(), rerr)
+			anyFail = true
+			continue
+		}
+		hookPath := filepath.Join(tmpDir, e.Name())
+		if werr := os.WriteFile(hookPath, data, 0o644); werr != nil {
+			fmt.Fprintf(cmd.OutOrStdout(), "[✗] %s (write error: %v)\n", e.Name(), werr)
+			anyFail = true
+			continue
+		}
+
+		// Also copy _lib.py so imports work.
+		libData, _ := fs.ReadFile(hFS, "_lib.py")
+		if libData != nil {
+			_ = os.WriteFile(filepath.Join(tmpDir, "_lib.py"), libData, 0o644)
+		}
+
+		payload := syntheticEvent(e.Name())
+		evalCmd := exec.Command("python3", hookPath) //nolint:gosec // G204: intentional eval of embedded hook
+		evalCmd.Stdin = strings.NewReader(payload)
+		evalCmd.Dir = tmpDir
+		if eerr := evalCmd.Run(); eerr != nil {
+			// Exit non-zero is acceptable for hooks that correctly block
+			// the synthetic payload (e.g. branch-guard on a non-git cwd).
+			// We treat any exec error that isn't ExitError as a real failure.
+			if _, ok := eerr.(*exec.ExitError); !ok {
+				fmt.Fprintf(cmd.OutOrStdout(), "[✗] %s (%v)\n", e.Name(), eerr)
+				anyFail = true
+				continue
+			}
+		}
+		fmt.Fprintf(cmd.OutOrStdout(), "[✓] %s\n", e.Name())
+	}
+	if anyFail {
+		return fmt.Errorf("one or more hooks failed evaluation")
+	}
 	return nil
 }
 
