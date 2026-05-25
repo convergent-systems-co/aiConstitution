@@ -64,8 +64,15 @@ func newPluginsInstallCmd() *cobra.Command {
 	var force bool
 
 	c := &cobra.Command{
-		Use:   "install <url-or-path>",
-		Short: "Install a plugin from a URL (*.tar.gz) or local path",
+		Use:   "install <name[@version]|url|path>",
+		Short: "Install a plugin from plugin-atoms.com, a URL, or a local path",
+		Long: `install fetches and installs a plugin.
+
+Sources (checked in order):
+  name          Resolved from https://plugin-atoms.com/<name>/latest/plugin.tar.gz
+  name@version  Resolved from https://plugin-atoms.com/<name>/<version>/plugin.tar.gz
+  https://...   Direct URL download
+  /path/to/...  Local file path`,
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runPluginsInstall(cmd, args[0], force)
@@ -78,6 +85,9 @@ func newPluginsInstallCmd() *cobra.Command {
 // runPluginsInstall is the install dispatcher. Extracted to keep the
 // cobra constructor under cyclomatic-complexity limits.
 func runPluginsInstall(cmd *cobra.Command, source string, force bool) error {
+	// Resolve bare atom names (name or name@version) to plugin-atoms.com URLs.
+	source = resolvePluginAtomURL(source)
+
 	// Fetch the archive to a temp file.
 	tmpFile, err := fetchArchive(source)
 	if err != nil {
@@ -313,6 +323,35 @@ func runPluginsUpdate(cmd *cobra.Command, name string) error {
 }
 
 // --- helpers ----------------------------------------------------------------
+
+
+// resolvePluginAtomURL resolves a bare plugin name or name@version to the
+// canonical plugin-atoms.com download URL. Direct URLs and local paths are
+// returned unchanged.
+//
+// Resolution format:
+//   name          → https://plugin-atoms.com/<name>/latest/plugin.tar.gz
+//   name@version  → https://plugin-atoms.com/<name>/<version>/plugin.tar.gz
+func resolvePluginAtomURL(source string) string {
+	// Already a URL or local path — leave as-is.
+	if strings.HasPrefix(source, "https://") ||
+		strings.HasPrefix(source, "http://") ||
+		strings.HasPrefix(source, "/") ||
+		strings.HasPrefix(source, "./") ||
+		strings.HasPrefix(source, "../") {
+		return source
+	}
+	// Local file that exists — leave as-is.
+	if _, err := os.Stat(source); err == nil {
+		return source
+	}
+	// Bare name or name@version — resolve to plugin-atoms.com.
+	name, version, _ := strings.Cut(source, "@")
+	if version == "" {
+		version = "latest"
+	}
+	return fmt.Sprintf("https://plugin-atoms.com/%s/%s/plugin.tar.gz", name, version)
+}
 
 // fetchArchive downloads or copies a plugin archive (*.tar.gz) to a temp file.
 // Source may be an HTTPS URL or a local filesystem path.
