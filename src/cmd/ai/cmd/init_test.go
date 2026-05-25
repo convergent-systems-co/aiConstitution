@@ -26,9 +26,10 @@ func changeDir(t *testing.T, dir string) {
 }
 
 // runInit runs `ai init [args...]` with the given aiRoot.
-func runInit(t *testing.T, aiRoot string, args ...string) (stdout, stderr string, err error) {
+func runInit(t *testing.T, aiRoot string, args ...string) (string, error) {
 	t.Helper()
-	return runRootCmd(t, aiRoot, append([]string{"init"}, args...)...)
+	t.Setenv("AI_ROOT", aiRoot)
+	return runRootCmd(t, append([]string{"init"}, args...)...)
 }
 
 // Test_init_project_yaml_go verifies project.yaml is written with Go stack.
@@ -41,7 +42,7 @@ func Test_init_project_yaml_go(t *testing.T) {
 	changeDir(t, dir)
 
 	aiRoot := t.TempDir()
-	_, _, err := runInit(t, aiRoot)
+	_, err := runInit(t, aiRoot)
 	if err != nil {
 		t.Fatalf("init failed: %v", err)
 	}
@@ -71,7 +72,7 @@ func Test_init_project_yaml_node(t *testing.T) {
 	changeDir(t, dir)
 
 	aiRoot := t.TempDir()
-	_, _, err := runInit(t, aiRoot)
+	_, err := runInit(t, aiRoot)
 	if err != nil {
 		t.Fatalf("init failed: %v", err)
 	}
@@ -98,7 +99,7 @@ func Test_init_project_yaml_python(t *testing.T) {
 	changeDir(t, dir)
 
 	aiRoot := t.TempDir()
-	_, _, err := runInit(t, aiRoot)
+	_, err := runInit(t, aiRoot)
 	if err != nil {
 		t.Fatalf("init failed: %v", err)
 	}
@@ -125,7 +126,7 @@ func Test_init_project_yaml_requirements(t *testing.T) {
 	changeDir(t, dir)
 
 	aiRoot := t.TempDir()
-	_, _, err := runInit(t, aiRoot)
+	_, err := runInit(t, aiRoot)
 	if err != nil {
 		t.Fatalf("init failed: %v", err)
 	}
@@ -145,7 +146,7 @@ func Test_init_project_yaml_unknown(t *testing.T) {
 	changeDir(t, dir)
 
 	aiRoot := t.TempDir()
-	_, _, err := runInit(t, aiRoot)
+	_, err := runInit(t, aiRoot)
 	if err != nil {
 		t.Fatalf("init failed: %v", err)
 	}
@@ -176,7 +177,7 @@ func Test_init_idempotent(t *testing.T) {
 	}
 
 	aiRoot := t.TempDir()
-	stdout, _, err := runInit(t, aiRoot)
+	stdout, err := runInit(t, aiRoot)
 	if err != nil {
 		t.Fatalf("init failed on second run: %v", err)
 	}
@@ -200,7 +201,7 @@ func Test_init_writes_claude_md(t *testing.T) {
 	changeDir(t, dir)
 
 	aiRoot := t.TempDir()
-	_, _, err := runInit(t, aiRoot)
+	_, err := runInit(t, aiRoot)
 	if err != nil {
 		t.Fatalf("init failed: %v", err)
 	}
@@ -230,7 +231,7 @@ func Test_init_claude_md_idempotent(t *testing.T) {
 	}
 
 	aiRoot := t.TempDir()
-	_, _, err := runInit(t, aiRoot)
+	_, err := runInit(t, aiRoot)
 	if err != nil {
 		t.Fatalf("init failed: %v", err)
 	}
@@ -251,7 +252,7 @@ func Test_init_dry_run(t *testing.T) {
 	changeDir(t, dir)
 
 	aiRoot := t.TempDir()
-	stdout, _, err := runInit(t, aiRoot, "--dry-run")
+	stdout, err := runInit(t, aiRoot, "--dry-run")
 	if err != nil {
 		t.Fatalf("init --dry-run failed: %v", err)
 	}
@@ -280,7 +281,7 @@ func Test_init_writes_copilot_instructions(t *testing.T) {
 	changeDir(t, dir)
 
 	aiRoot := t.TempDir()
-	_, _, err := runInit(t, aiRoot)
+	_, err := runInit(t, aiRoot)
 	if err != nil {
 		t.Fatalf("init failed: %v", err)
 	}

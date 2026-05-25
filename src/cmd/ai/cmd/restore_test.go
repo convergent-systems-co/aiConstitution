@@ -46,9 +46,10 @@ func makeTarGz(t *testing.T, content string) string {
 
 // runRestore runs the cobra root command with `restore <args...>` and
 // captures stdout/stderr.
-func runRestore(t *testing.T, aiRoot string, args ...string) (stdout, stderr string, err error) {
+func runRestore(t *testing.T, aiRoot string, args ...string) (string, error) {
 	t.Helper()
-	return runRootCmd(t, aiRoot, append([]string{"restore"}, args...)...)
+	t.Setenv("AI_ROOT", aiRoot)
+	return runRootCmd(t, append([]string{"restore"}, args...)...)
 }
 
 // Test_restore_extracts_targz verifies that `ai restore <path>` extracts
@@ -61,7 +62,7 @@ func Test_restore_extracts_targz(t *testing.T) {
 		t.Fatalf("remove aiRoot: %v", err)
 	}
 
-	stdout, _, err := runRestore(t, aiRoot, snapshot)
+	stdout, err := runRestore(t, aiRoot, snapshot)
 	if err != nil {
 		t.Fatalf("restore failed: %v", err)
 	}
@@ -87,7 +88,7 @@ func Test_restore_backs_up_existing(t *testing.T) {
 		t.Fatalf("write sentinel: %v", err)
 	}
 
-	stdout, _, err := runRestore(t, aiRoot, snapshot)
+	stdout, err := runRestore(t, aiRoot, snapshot)
 	if err != nil {
 		t.Fatalf("restore failed: %v", err)
 	}
@@ -130,7 +131,7 @@ func Test_restore_from_url_local(t *testing.T) {
 	// Construct a file:// URL.
 	fileURL := "file://" + snapshot
 
-	stdout, _, err := runRestore(t, aiRoot, "--from-url", fileURL)
+	stdout, err := runRestore(t, aiRoot, "--from-url", fileURL)
 	if err != nil {
 		t.Fatalf("restore --from-url failed: %v", err)
 	}
@@ -148,7 +149,7 @@ func Test_restore_from_url_local(t *testing.T) {
 // Test_restore_error_missing_file verifies an error when the path doesn't exist.
 func Test_restore_error_missing_file(t *testing.T) {
 	aiRoot := t.TempDir()
-	_, _, err := runRestore(t, aiRoot, "/nonexistent/snapshot.tar.gz")
+	_, err := runRestore(t, aiRoot, "/nonexistent/snapshot.tar.gz")
 	if err == nil {
 		t.Fatal("expected an error for missing snapshot, got nil")
 	}
@@ -173,7 +174,7 @@ func Test_restore_rejects_path_traversal(t *testing.T) {
 	f.Close()
 
 	aiRoot := t.TempDir()
-	_, _, err = runRestore(t, aiRoot, malicious)
+	_, err = runRestore(t, aiRoot, malicious)
 	if err == nil {
 		t.Fatal("expected error for path-traversal entry, got nil")
 	}
@@ -190,7 +191,7 @@ func Test_restore_error_bad_extension(t *testing.T) {
 		t.Fatalf("create bad file: %v", err)
 	}
 	aiRoot := t.TempDir()
-	_, _, err := runRestore(t, aiRoot, badFile)
+	_, err := runRestore(t, aiRoot, badFile)
 	if err == nil {
 		t.Fatal("expected an error for bad extension, got nil")
 	}
