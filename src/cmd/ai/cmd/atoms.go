@@ -128,7 +128,7 @@ func runAtomsFetch(cmd *cobra.Command, args []string) error {
 		}
 	}()
 
-	if err := extractTarGz(tmpName, stageDir); err != nil {
+	if err := atomExtractTarGz(tmpName, stageDir); err != nil {
 		return fmt.Errorf("extract atom archive: %w", err)
 	}
 
@@ -179,7 +179,7 @@ func runAtomsFetch(cmd *cobra.Command, args []string) error {
 	}
 	if err := os.Rename(moveFrom, destDir); err != nil {
 		// Rename across filesystems can fail — fall back to copy+delete.
-		if cpErr := copyDir(moveFrom, destDir); cpErr != nil {
+		if cpErr := atomCopyDir(moveFrom, destDir); cpErr != nil {
 			return fmt.Errorf("install atom dir: %w (rename failed: %v)", cpErr, err)
 		}
 		os.RemoveAll(moveFrom)
@@ -282,7 +282,7 @@ func runAtomsFork(cmd *cobra.Command, name, asName string) error {
 	if err := os.RemoveAll(dstDir); err != nil {
 		return fmt.Errorf("clear existing fork dir: %w", err)
 	}
-	if err := copyDir(srcDir, dstDir); err != nil {
+	if err := atomCopyDir(srcDir, dstDir); err != nil {
 		return fmt.Errorf("copy atom dir: %w", err)
 	}
 
@@ -461,7 +461,7 @@ func sha256OfFile(path string) (string, error) {
 // extractTarGz extracts the tar.gz at srcPath into destDir.
 // Entries whose resolved path does not start with destDir are rejected
 // (directory traversal protection per Code.md §7).
-func extractTarGz(srcPath, destDir string) error {
+func atomExtractTarGz(srcPath, destDir string) error {
 	f, err := os.Open(srcPath)
 	if err != nil {
 		return err
@@ -547,7 +547,7 @@ func findAtomTOML(destDir string) (string, error) {
 }
 
 // copyDir copies the directory tree at src to dst, creating dst if needed.
-func copyDir(src, dst string) error {
+func atomCopyDir(src, dst string) error {
 	return filepath.WalkDir(src, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -560,12 +560,12 @@ func copyDir(src, dst string) error {
 		if d.IsDir() {
 			return os.MkdirAll(target, 0755)
 		}
-		return copyFile(path, target)
+		return atomCopyFile(path, target)
 	})
 }
 
 // copyFile copies the file at src to dst.
-func copyFile(src, dst string) error {
+func atomCopyFile(src, dst string) error {
 	in, err := os.Open(src)
 	if err != nil {
 		return err
