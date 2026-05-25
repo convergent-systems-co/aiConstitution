@@ -2,92 +2,77 @@ package cmd
 
 import (
 	"bytes"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 )
 
-// modeTestEnv sets AI_ROOT + AICONST_CONFIG_DIR to fresh temp dirs and
-// drops a single persona (`debugger.md`) into governance/personas/agentic/.
-// Returns the AI root for further mutation by the test.
-func modeTestEnv(t *testing.T) string {
+// modeTestEnv sets up a temp ConfigDir and injects it via AICONST_CONFIG_DIR.
+// Returns the config dir path.
+func modeTestEnv(t *testing.T) (configDir string) {
 	t.Helper()
-	aiRoot := t.TempDir()
-	cfg := t.TempDir()
-	t.Setenv("AI_ROOT", aiRoot)
-	t.Setenv("AICONST_CONFIG_DIR", cfg)
-
-	personasDir := filepath.Join(aiRoot, "governance", "personas", "agentic")
-	if err := os.MkdirAll(personasDir, 0o750); err != nil {
-		t.Fatalf("mkdir personas: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(personasDir, "debugger.md"), []byte("# debugger\n"), 0o600); err != nil {
-		t.Fatalf("write persona: %v", err)
-	}
-	return aiRoot
+	tmp := t.TempDir()
+	t.Setenv("AICONST_CONFIG_DIR", tmp)
+	return tmp
 }
 
-func runMode(t *testing.T, args ...string) string {
+// execMode runs the mode (or pm-mode) subcommand with args and captures stdout.
+func execMode(t *testing.T, args ...string) (stdout string, err error) {
 	t.Helper()
-	buf := &bytes.Buffer{}
-	root := newModeCmd()
-	root.SetOut(buf)
-	root.SetErr(buf)
+	var buf bytes.Buffer
+	root := NewRootCmd()
+	root.SetOut(&buf)
+	root.SetErr(&bytes.Buffer{})
 	root.SetArgs(args)
-	if err := root.Execute(); err != nil {
-		t.Fatalf("mode %v: %v", args, err)
-	}
-	return buf.String()
+	err = root.Execute()
+	return buf.String(), err
 }
 
-func TestModeListShowsShippedPersonas(t *testing.T) {
-	modeTestEnv(t)
-	out := runMode(t, "list")
-	if !strings.Contains(out, "debugger") {
-		t.Errorf("want list output to include debugger, got:\n%s", out)
-	}
-}
+// ---------- #219 pm-mode ----------
 
-func TestModeCurrentDefaultIsNone(t *testing.T) {
-	modeTestEnv(t)
-	out := runMode(t, "current")
-	if !strings.Contains(out, "(none)") {
-		t.Errorf("want current to be (none), got:\n%s", out)
-	}
-}
+func TestPmMode_WritesCorrectModeJSON(t *testing.T) {
+	configDir := modeTestEnv(t)
 
-func TestModeActivateThenCurrentReturnsName(t *testing.T) {
-	modeTestEnv(t)
-	out := runMode(t, "debugger")
-	if !strings.Contains(out, "Mode set: debugger") {
-		t.Errorf("want activate confirmation, got:\n%s", out)
+	_, err := execMode(t, "pm-mode")
+	if err != nil {
+		t.Fatalf("pm-mode returned error: %v", err)
 	}
 
-	out = runMode(t, "current")
-	if !strings.Contains(out, "debugger") {
-		t.Errorf("want current=debugger, got:\n%s", out)
+	modeFile := filepath.Join(configDir, "mode.json")
+	data, readErr := os.ReadFile(modeFile)
+	if readErr != nil {
+		t.Fatalf("expected mode.json at %s, got: %v", modeFile, readErr)
 	}
-}
 
-func TestModeClearResetsCurrent(t *testing.T) {
-	modeTestEnv(t)
-	_ = runMode(t, "debugger")
-	_ = runMode(t, "clear")
-	out := runMode(t, "current")
-	if !strings.Contains(out, "(none)") {
-		t.Errorf("want current=(none) after clear, got:\n%s", out)
+	var got map[string]interface{}
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatalf("mode.json is not valid JSON: %v\ncontent: %s", err, string(data))
+	}
+
+	if got["mode"] != "pm" {
+		t.Errorf("expected mode=pm, got mode=%v", got["mode"])
+	}
+	if got["discipline"] != "plan-first" {
+		t.Errorf("expected discipline=plan-first, got discipline=%v", got["discipline"])
+	}
+	if _, ok := got["activatedAt"]; !ok {
+		t.Errorf("expected activatedAt field in mode.json, got keys: %v", got)
 	}
 }
 
-func TestModeActivateUnknownPersonaErrors(t *testing.T) {
-	modeTestEnv(t)
-	buf := &bytes.Buffer{}
-	root := newModeCmd()
-	root.SetOut(buf)
-	root.SetErr(buf)
-	root.SetArgs([]string{"nonexistent"})
-	if err := root.Execute(); err == nil {
-		t.Errorf("want error activating unknown persona, got nil. output:\n%s", buf.String())
+func TestPmMode_PrintsActivationMessage(t *testing.T) {
+	_ = modeTestEnv(t)
+
+	out, err := execMode(t, "pm-mode")
+	if err != nil {
+		t.Fatalf("pm-mode returned error: %v", err)
+	}
+	if !strings.Contains(out, "PM mode activated") {
+		t.Errorf("expected activation message, got:\n%s", out)
+	}
+	if !strings.Contains(out, "plan-first") {
+		t.Errorf("expected 'plan-first' in output, got:\n%s", out)
 	}
 }

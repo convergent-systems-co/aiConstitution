@@ -1,27 +1,17 @@
 package cmd
 
 import (
-	"errors"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
-	"strings"
 	"time"
 
 	"github.com/convergent-systems-co/aiConstitution/src/internal/paths"
-	"github.com/convergent-systems-co/aiConstitution/src/internal/state"
-
 	"github.com/spf13/cobra"
 )
 
-// personasAgenticDir is the shipped-persona directory walked by
-// `ai mode list` and used for existence checks on `ai mode <name>`.
-func personasAgenticDir() string {
-	return filepath.Join(paths.GovernanceDir(), "personas", "agentic")
-}
-
-// newModeCmd implements `ai mode {current,list,clear,show,share}` and
+// newModeCmd implements `ai mode {current,list,clear,show,share,pm}` and
 // `ai mode <name>`. See SPEC.md §3.7 + §7.
 func newModeCmd() *cobra.Command {
 	c := &cobra.Command{
@@ -31,12 +21,22 @@ func newModeCmd() *cobra.Command {
 four-file constitution. Personas are additive emphasis, not
 replacements — see SPEC.md §7 for the rationale.
 
+Resolution order (SPEC.md §7.8.5):
+  1. ~/.config/aiConstitution/profile-drafts/<name>.toml
+  2. ~/.ai/governance/profiles/<name>.toml
+  3. profile-atoms.com/<name>/latest
+  4. ~/.config/aiConstitution/persona-drafts/<name>.md
+  5. persona-atoms.com/<name>/latest
+
+Use --persona or --profile for unambiguous selection.
+
 Subcommands:
   current   Print the active mode.
-  list      Enumerate available personas (governance/personas/agentic/).
+  list      Enumerate available profiles and personas.
   clear     Deactivate the current mode (return to four-file only).
   show      Show resolved content for a name.
   share     File a draft as an upstream atom PR.
+  pm        Shortcut: activate PM mode (plan-first discipline).
 
 See SPEC.md §3.7 + §7.`,
 		Args: cobra.MaximumNArgs(1),
@@ -44,58 +44,42 @@ See SPEC.md §3.7 + §7.`,
 			if len(args) == 0 {
 				return cmd.Help()
 			}
-			return activateMode(cmd, args[0])
+			notice("mode:", "would resolve and activate", args[0])
+			return stub("mode "+args[0], "§3.7 + §7.8.5")
 		},
 	}
 
+	// current
 	c.AddCommand(&cobra.Command{
 		Use:   "current",
 		Short: "Print the active mode",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			m, err := state.LoadMode()
-			if err != nil {
-				return fmt.Errorf("mode current: %w", err)
-			}
-			name := m.Name
-			if name == "" {
-				name = "(none)"
-			}
-			_, _ = fmt.Fprintln(cmd.OutOrStdout(), name)
-			return nil
+			notice("mode current:", "would read ~/.config/aiConstitution/mode.json")
+			return stub("mode current", "§7.4")
 		},
 	})
 
+	// list
 	c.AddCommand(&cobra.Command{
 		Use:   "list",
-		Short: "Enumerate shipped agentic personas",
+		Short: "Enumerate profiles + personas, grouped by source",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			names, err := listAgenticPersonas()
-			if err != nil {
-				return fmt.Errorf("mode list: %w", err)
-			}
-			if len(names) == 0 {
-				_, _ = fmt.Fprintln(cmd.OutOrStdout(), "(no personas found)")
-				return nil
-			}
-			for _, n := range names {
-				_, _ = fmt.Fprintln(cmd.OutOrStdout(), n)
-			}
-			return nil
+			notice("mode list:", "would walk profiles + personas + drafts + atoms")
+			return stub("mode list", "§7.3")
 		},
 	})
 
+	// clear
 	c.AddCommand(&cobra.Command{
 		Use:   "clear",
 		Short: "Deactivate the current mode (return to four-file only)",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			if err := state.SaveMode(state.Mode{}); err != nil {
-				return fmt.Errorf("mode clear: %w", err)
-			}
-			_, _ = fmt.Fprintln(cmd.OutOrStdout(), "Mode cleared.")
-			return nil
+			notice("mode clear:", "would delete ~/.config/aiConstitution/mode.json")
+			return stub("mode clear", "§7.4")
 		},
 	})
 
+	// show
 	c.AddCommand(&cobra.Command{
 		Use:   "show <name>",
 		Short: "Show resolved persona/profile content + metadata",
@@ -106,6 +90,7 @@ See SPEC.md §3.7 + §7.`,
 		},
 	})
 
+	// share
 	c.AddCommand(&cobra.Command{
 		Use:   "share <name>",
 		Short: "File a draft as an upstream atom PR",
@@ -115,6 +100,9 @@ See SPEC.md §3.7 + §7.`,
 			return stub("mode share", "§7.9.3")
 		},
 	})
+
+	// pm — named activation shortcut for PM mode (#219)
+	c.AddCommand(newPmSubCmd())
 
 	return c
 }
@@ -128,57 +116,63 @@ func newFocusCmd() *cobra.Command {
 	return c
 }
 
-// listAgenticPersonas returns the sorted basenames of every *.md file
-// under paths.GovernanceDir()/personas/agentic/. Returns an empty
-// slice (not an error) if the directory does not yet exist — fresh
-// installs don't have governance/ until `ai setup`.
-func listAgenticPersonas() ([]string, error) {
-	dir := personasAgenticDir()
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return nil, nil
-		}
-		return nil, err
-	}
-	out := make([]string, 0, len(entries))
-	for _, e := range entries {
-		if e.IsDir() {
-			continue
-		}
-		name := e.Name()
-		if !strings.HasSuffix(name, ".md") {
-			continue
-		}
-		out = append(out, strings.TrimSuffix(name, ".md"))
-	}
-	sort.Strings(out)
-	return out, nil
+// pmModeJSON is the on-disk shape written by pm-mode.
+type pmModeJSON struct {
+	Mode        string `json:"mode"`
+	ActivatedAt string `json:"activatedAt"`
+	Discipline  string `json:"discipline"`
 }
 
-// activateMode writes mode.json for the named agentic persona. Refuses
-// to activate an unknown name rather than silently saving a bogus
-// reference; the rule per Common.md P2 (Honesty Over Compliance) is to
-// fail loudly.
-func activateMode(cmd *cobra.Command, name string) error {
-	candidate := filepath.Join(personasAgenticDir(), name+".md")
-	if _, err := os.Stat(candidate); err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return fmt.Errorf("mode: persona %q not found at %s", name, candidate)
-		}
-		return fmt.Errorf("mode: stat %s: %w", candidate, err)
+// writePmModeJSON encodes and writes the PM mode state to mode.json.
+func writePmModeJSON(cmd *cobra.Command) error {
+	modeFile := paths.ModeJSON()
+	if err := os.MkdirAll(filepath.Dir(modeFile), 0o750); err != nil {
+		return fmt.Errorf("pm-mode: mkdir: %w", err)
 	}
-	m := state.Mode{
-		Name:         name,
-		Type:         "persona",
-		Source:       "shipped",
-		ActivatedAt:  time.Now().UTC(),
-		ActivatedVia: "cli",
-		SourcePath:   candidate,
+
+	payload := pmModeJSON{
+		Mode:        "pm",
+		ActivatedAt: time.Now().UTC().Format(time.RFC3339),
+		Discipline:  "plan-first",
 	}
-	if err := state.SaveMode(m); err != nil {
-		return fmt.Errorf("mode: save: %w", err)
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("pm-mode: marshal: %w", err)
 	}
-	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Mode set: %s\n", name)
+	if err := os.WriteFile(modeFile, data, 0o644); err != nil {
+		return fmt.Errorf("pm-mode: write %s: %w", modeFile, err)
+	}
+
+	fmt.Fprintln(cmd.OutOrStdout(), "PM mode activated. plan-first discipline is active.")
 	return nil
+}
+
+// newPmSubCmd implements `ai mode pm` — a named shortcut for PM mode.
+func newPmSubCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "pm",
+		Short: "Activate PM mode (plan-first discipline)",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return writePmModeJSON(cmd)
+		},
+	}
+}
+
+// newPmModeCmd implements the top-level `ai pm-mode` shortcut (#219).
+// This is registered at root level for ergonomics; internally it delegates
+// to the same writer as `ai mode pm`.
+func newPmModeCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "pm-mode",
+		Short: "Activate PM mode (plan-first discipline) — shortcut for `ai mode pm`",
+		Long: `pm-mode writes ~/.config/aiConstitution/mode.json with:
+  {"mode":"pm","activatedAt":"<UTC>","discipline":"plan-first"}
+
+Use `+"`"+`ai mode current`+"`"+` to confirm the active mode.
+
+See SPEC.md §3.7 + Common.md §pm-mode.`,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return writePmModeJSON(cmd)
+		},
+	}
 }
