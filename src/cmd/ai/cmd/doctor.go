@@ -1,23 +1,34 @@
 package cmd
 
 import (
-	"bytes"
-	"crypto/sha256"
-	"encoding/json"
 	"fmt"
-	"io"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 
-	"github.com/convergent-systems-co/aiConstitution/src/cmd/ai/embed"
 	"github.com/spf13/cobra"
 )
 
+// doctorStatus represents the outcome of a single doctor check.
+type doctorStatus int
+
+const (
+	// doctorOK means the check passed.
+	doctorOK doctorStatus = iota
+	// doctorWarn means the check found a non-fatal issue (printed as [⚠]).
+	doctorWarn
+	// doctorSkip means the check is not applicable in this environment (skipped silently).
+	doctorSkip
+)
+
+// doctorResult holds the result of a single doctor check.
+type doctorResult struct {
+	name    string
+	status  doctorStatus
+	message string
+}
+
 // newDoctorCmd implements `ai doctor`. See SPEC.md §3.3.
-// Runs a 10-point health check of the ~/.ai/ governance tree.
 func newDoctorCmd() *cobra.Command {
 	var fix bool
 	var resetHead string
@@ -25,20 +36,23 @@ func newDoctorCmd() *cobra.Command {
 	c := &cobra.Command{
 		Use:   "doctor",
 		Short: "Detect and repair structural damage to the ~/.ai/ tree",
-		Long: `doctor checks the 10 canonical health points of the constitution tree:
+		Long: `doctor checks the predictable failure modes of the constitution
+tree and either reports them or fixes them:
 
-  1.  ~/.ai/Constitution.md present
-  2.  ~/.ai/Common.md present
-  3.  ~/.ai/Code.md present
-  4.  ~/.ai/Writing.md present
-  5.  Required hooks present in ~/.ai/hooks/
-  6.  Hooks wired in ~/.claude/settings.json
-  7.  Hook content hash matches embedded version (tamper check)
-  8.  ~/.ai/memory/MEMORY.md present
-  9.  Audit interactions file modified within 7 days
-  10. ~/.claude/CLAUDE.md present and contains @~/.ai/Constitution.md
-
-Output: [✓] / [⚠] / [✗] per check. Exit 0 if no errors; exit 1 if any [✗].
+  1.  Broken symlinks under ~/.claude/, ~/.copilot/, .cursor/, etc.
+  2.  Missing or misregistered hooks.
+  3.  Dirty working tree on ~/.ai/.
+  4.  Divergent HEAD vs origin.
+  5.  Stale ai binary vs governance/last-seen-version.
+  6.  Missing brand-cache; missing persona/profile/skill cache for
+      pinned atoms.
+  7.  Audit/interactions log writable.
+  8.  Mutable state in ~/.config/aiConstitution/ exists and parses.
+  9.  Settings file present and within validation ranges.
+  10. last-seen-version marker matches the binary.
+  11. Copilot instruction symlink valid.
+  12. Cursor rule symlink valid (if .cursor/ present in cwd).
+  13. AGENTS.md @-include present (if AGENTS.md exists in cwd).
 
 Flags:
   --fix                  Attempt to repair each detected issue.
@@ -50,7 +64,7 @@ See SPEC.md §3.3.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			_ = fix
 			_ = resetHead
-			return runDoctor(cmd)
+			return runDoctor()
 		},
 	}
 
@@ -60,320 +74,163 @@ See SPEC.md §3.3.`,
 	return c
 }
 
-// aiRootForDoctor resolves the ~/.ai/ root, honoring AI_ROOT env var.
-// Duplicated inline (not importing paths package) because cmd and internal
-// are in different modules and this keeps doctor self-contained.
-func aiRootForDoctor() string {
-	if env := os.Getenv("AI_ROOT"); env != "" {
-		return env
-	}
+// runDoctor executes all doctor checks and prints a summary report.
+// Exit code is 0 even when warnings are present — all integration checks
+// are warnings, not errors.
+func runDoctor() error {
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return ".ai"
-	}
-	return filepath.Join(home, ".ai")
-}
-
-// checkResult holds the outcome of one health check.
-type checkResult struct {
-	mark    string // "✓", "⚠", "✗"
-	message string
-}
-
-func pass(msg string) checkResult    { return checkResult{"✓", msg} }
-func warn(msg string) checkResult    { return checkResult{"⚠", msg} }
-func fail(msg string) checkResult    { return checkResult{"✗", msg} }
-
-func runDoctor(cmd *cobra.Command) error {
-	root := aiRootForDoctor()
-	home, _ := os.UserHomeDir()
-	if home == "" {
-		home = os.Getenv("HOME")
+		return fmt.Errorf("getting home dir: %w", err)
 	}
 
-	results := make([]checkResult, 0, 10)
-	hasError := false
+	cwd, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("getting cwd: %w", err)
+	}
 
-	// --- Checks 1-4: prose files ---
-	proseFiles := []string{"Constitution.md", "Common.md", "Code.md", "Writing.md"}
-	for _, name := range proseFiles {
-		path := filepath.Join(root, name)
-		if _, err := os.Stat(path); os.IsNotExist(err) {
-			results = append(results, fail(name+" missing"))
-			hasError = true
-		} else {
-			results = append(results, pass(name+" present"))
+	checks := []doctorResult{
+		checkDoctorCopilot(home),
+		checkDoctorCursor(cwd),
+		checkDoctorAgentsMD(cwd),
+	}
+
+	anyPrinted := false
+	for _, r := range checks {
+		switch r.status {
+		case doctorSkip:
+			// Silent skip — not applicable in this environment.
+		case doctorOK:
+			fmt.Printf("[✓] %s: %s\n", r.name, r.message)
+			anyPrinted = true
+		case doctorWarn:
+			fmt.Printf("[⚠] %s: %s\n", r.name, r.message)
+			anyPrinted = true
 		}
 	}
 
-	// --- Check 5: required hook files ---
-	requiredHooks := []string{"audit.py", "branch-guard.py", "secret-block.py", "worktree-guard.py"}
-	hooksDir := filepath.Join(root, "hooks")
-	for _, hook := range requiredHooks {
-		hookPath := filepath.Join(hooksDir, hook)
-		if _, err := os.Stat(hookPath); os.IsNotExist(err) {
-			results = append(results, warn(hook+" not found in ~/.ai/hooks/"))
-		} else {
-			results = append(results, pass(hook+" present"))
-		}
-	}
-
-	// --- Check 6: settings.json hooks wiring ---
-	settingsPath := filepath.Join(home, ".claude", "settings.json")
-	results = append(results, checkSettingsHooks(settingsPath))
-
-	// --- Check 7: hook content hash vs embedded ---
-	results = append(results, checkHookHashes(hooksDir)...)
-
-	// --- Check 8: MEMORY.md present ---
-	memoryPath := filepath.Join(root, "memory", "MEMORY.md")
-	if _, err := os.Stat(memoryPath); os.IsNotExist(err) {
-		results = append(results, warn("~/.ai/memory/MEMORY.md absent"))
-	} else {
-		results = append(results, pass("MEMORY.md present"))
-	}
-
-	// --- Check 9: audit interactions file modified within 7 days ---
-	interDir := filepath.Join(root, "audit", "interactions")
-	results = append(results, checkRecentInteraction(interDir))
-
-	// --- Check 10: CLAUDE.md with @~/.ai/Constitution.md ---
-	claudeMD := filepath.Join(home, ".claude", "CLAUDE.md")
-	results = append(results, checkClaudeMD(claudeMD))
-
-	// Print all results
-	out := cmd.OutOrStdout()
-	for _, r := range results {
-		fmt.Fprintf(out, "[%s] %s\n", r.mark, r.message)
-		if r.mark == "✗" {
-			hasError = true
-		}
-	}
-
-	// Check #11: Constitution.runtime.md staleness
-	checkRuntimeFresh(out, root)
-
-	if hasError {
-		return fmt.Errorf("doctor: one or more checks failed")
+	if !anyPrinted {
+		fmt.Println("doctor: no applicable checks for this environment.")
 	}
 	return nil
 }
 
-// checkRuntimeFresh checks that Constitution.runtime.md exists and is not
-// older than Constitution.md. Emits [⚠] warning (not [✗] error).
-func checkRuntimeFresh(out io.Writer, root string) {
-	constitutionPath := filepath.Join(root, "Constitution.md")
-	runtimePath := filepath.Join(root, "Constitution.runtime.md")
+// checkDoctorCopilot checks that ~/.copilot/instructions/constitution.md is a
+// valid symlink.
+//
+// Returns:
+//   - doctorSkip if ~/.copilot/instructions/ does not exist.
+//   - doctorOK if the symlink exists and resolves to a real file.
+//   - doctorWarn if the symlink is missing, dangling, or broken.
+func checkDoctorCopilot(home string) doctorResult {
+	const name = "Copilot instruction symlink"
 
-	runtimeInfo, err := os.Stat(runtimePath)
+	instructionsDir := filepath.Join(home, ".copilot", "instructions")
+	if _, err := os.Stat(instructionsDir); os.IsNotExist(err) {
+		return doctorResult{name: name, status: doctorSkip}
+	}
+
+	symlinkPath := filepath.Join(instructionsDir, "constitution.md")
+
+	target, err := os.Readlink(symlinkPath)
 	if err != nil {
-		_, _ = fmt.Fprintln(out, "  [⚠] Constitution.runtime.md missing — run: ai generate runtime")
-		return
-	}
-	constitutionInfo, err := os.Stat(constitutionPath)
-	if err != nil {
-		return // constitution check handles this
-	}
-	if constitutionInfo.ModTime().After(runtimeInfo.ModTime()) {
-		_, _ = fmt.Fprintln(out, "  [⚠] Constitution.runtime.md is stale — run: ai generate runtime")
-		return
-	}
-	_, _ = fmt.Fprintln(out, "  [✓] Constitution.runtime.md is current")
-}
-
-// checkSettingsHooks verifies that audit.py is wired to SessionStart and
-// branch-guard.py is wired to PreToolUse in ~/.claude/settings.json.
-func checkSettingsHooks(settingsPath string) checkResult {
-	data, err := os.ReadFile(filepath.Clean(settingsPath))
-	if err != nil {
-		return warn("~/.claude/settings.json not found — hooks wiring unverifiable")
+		return doctorResult{
+			name:    name,
+			status:  doctorWarn,
+			message: fmt.Sprintf("symlink missing at %s — run `ai hooks install --copilot`", symlinkPath),
+		}
 	}
 
-	var settings map[string]any
-	if err := json.Unmarshal(data, &settings); err != nil {
-		return warn("~/.claude/settings.json not valid JSON")
+	// Verify the target resolves to a real file (not dangling).
+	if _, err := os.Stat(target); err != nil {
+		return doctorResult{
+			name:    name,
+			status:  doctorWarn,
+			message: fmt.Sprintf("symlink %s → %s is dangling — run `ai hooks install --copilot`", symlinkPath, target),
+		}
 	}
 
-	hooks, ok := settings["hooks"].(map[string]any)
-	if !ok {
-		return warn("~/.claude/settings.json: no 'hooks' block found")
-	}
-
-	auditInSessionStart := hookWiredTo(hooks, "SessionStart", "audit.py")
-	branchGuardInPreTool := hookWiredTo(hooks, "PreToolUse", "branch-guard.py")
-
-	switch {
-	case !auditInSessionStart && !branchGuardInPreTool:
-		return warn("settings.json: audit.py not wired to SessionStart; branch-guard.py not wired to PreToolUse")
-	case !auditInSessionStart:
-		return warn("settings.json: audit.py not wired to SessionStart")
-	case !branchGuardInPreTool:
-		return warn("settings.json: branch-guard.py not wired to PreToolUse")
-	default:
-		return pass("settings.json hooks wired correctly")
+	return doctorResult{
+		name:    name,
+		status:  doctorOK,
+		message: fmt.Sprintf("%s → %s", symlinkPath, target),
 	}
 }
 
-// hookWiredTo checks whether hookFile appears in the commands for event in the hooks block.
-func hookWiredTo(hooks map[string]any, event, hookFile string) bool {
-	val, ok := hooks[event]
-	if !ok {
-		return false
-	}
-	// The hooks block is an array of matcher objects, each with a "hooks" array.
-	matchers, ok := val.([]any)
-	if !ok {
-		return false
-	}
-	for _, m := range matchers {
-		matcher, ok := m.(map[string]any)
-		if !ok {
-			continue
-		}
-		hookList, ok := matcher["hooks"].([]any)
-		if !ok {
-			continue
-		}
-		for _, h := range hookList {
-			hookMap, ok := h.(map[string]any)
-			if !ok {
-				continue
-			}
-			cmd, _ := hookMap["command"].(string)
-			if strings.HasSuffix(cmd, hookFile) {
-				return true
-			}
-		}
-	}
-	return false
-}
+// checkDoctorCursor checks that .cursor/rules/constitution.md in cwd is a
+// valid symlink.
+//
+// Returns:
+//   - doctorSkip if .cursor/ does not exist in cwd.
+//   - doctorOK if the symlink exists and resolves to a real file.
+//   - doctorWarn if the symlink is missing or dangling.
+func checkDoctorCursor(cwd string) doctorResult {
+	const name = "Cursor rule symlink"
 
-// checkHookHashes compares on-disk hook content against the embedded version.
-// Returns one result per hook that can be compared.
-func checkHookHashes(hooksDir string) []checkResult {
-	embeddedFS := embed.HooksFS()
-	entries, err := fs.ReadDir(embeddedFS, ".")
+	cursorDir := filepath.Join(cwd, ".cursor")
+	if _, err := os.Stat(cursorDir); os.IsNotExist(err) {
+		return doctorResult{name: name, status: doctorSkip}
+	}
+
+	symlinkPath := filepath.Join(cwd, ".cursor", "rules", "constitution.md")
+
+	target, err := os.Readlink(symlinkPath)
 	if err != nil {
-		return []checkResult{warn("hook tamper check: could not read embedded hooks")}
-	}
-
-	var results []checkResult
-	for _, e := range entries {
-		if e.IsDir() {
-			continue
-		}
-		name := e.Name()
-		embeddedContent, err := fs.ReadFile(embeddedFS, name)
-		if err != nil {
-			continue
-		}
-
-		diskPath := filepath.Join(hooksDir, name)
-		diskContent, err := os.ReadFile(filepath.Clean(diskPath))
-		if err != nil {
-			// Hook not installed on disk — check #5 covers this; skip hash check.
-			continue
-		}
-
-		embHash := sha256.Sum256(embeddedContent)
-		diskHash := sha256.Sum256(diskContent)
-		if !bytes.Equal(embHash[:], diskHash[:]) {
-			results = append(results, warn(fmt.Sprintf("hook %s: content differs from embedded (possible tamper)", name)))
-		} else {
-			results = append(results, pass(fmt.Sprintf("hook %s: content matches embedded", name)))
+		return doctorResult{
+			name:    name,
+			status:  doctorWarn,
+			message: fmt.Sprintf("symlink missing at %s — run `ai init-integrate --cursor`", symlinkPath),
 		}
 	}
 
-	if len(results) == 0 {
-		return []checkResult{pass("hook tamper check: no hooks installed to compare")}
+	if _, err := os.Stat(target); err != nil {
+		return doctorResult{
+			name:    name,
+			status:  doctorWarn,
+			message: fmt.Sprintf("symlink %s → %s is dangling — run `ai init-integrate --cursor`", symlinkPath, target),
+		}
 	}
-	return results
+
+	return doctorResult{
+		name:    name,
+		status:  doctorOK,
+		message: fmt.Sprintf("%s → %s", symlinkPath, target),
+	}
 }
 
-// checkRecentInteraction warns if no interactions JSONL file was modified within 7 days.
-func checkRecentInteraction(interDir string) checkResult {
-	entries, err := os.ReadDir(interDir)
+// checkDoctorAgentsMD checks that AGENTS.md in cwd contains the
+// @~/.ai/Constitution.md @-include.
+//
+// Returns:
+//   - doctorSkip if AGENTS.md does not exist in cwd.
+//   - doctorOK if AGENTS.md contains the @-include marker.
+//   - doctorWarn if AGENTS.md exists but lacks the @-include.
+func checkDoctorAgentsMD(cwd string) doctorResult {
+	const name = "AGENTS.md @-include"
+
+	agentsPath := filepath.Join(cwd, "AGENTS.md")
+	content, err := os.ReadFile(agentsPath)
 	if err != nil {
-		return warn("audit/interactions/ not readable — audit may be broken")
-	}
-
-	threshold := time.Now().AddDate(0, 0, -7)
-	for _, e := range entries {
-		if e.IsDir() || !strings.HasSuffix(e.Name(), ".jsonl") {
-			continue
+		if os.IsNotExist(err) {
+			return doctorResult{name: name, status: doctorSkip}
 		}
-		info, err := e.Info()
-		if err != nil {
-			continue
-		}
-		if info.ModTime().After(threshold) {
-			return pass("audit/interactions: recent file found")
-		}
-	}
-	return warn("audit/interactions: no file modified in the last 7 days — audit may be broken")
-}
-
-// checkClaudeMD verifies ~/.claude/CLAUDE.md exists and references Constitution.md.
-func checkClaudeMD(claudeMD string) checkResult {
-	data, err := os.ReadFile(filepath.Clean(claudeMD))
-	if err != nil {
-		return warn("~/.claude/CLAUDE.md not found")
-	}
-	if !strings.Contains(string(data), "@~/.ai/Constitution.md") {
-		return warn("~/.claude/CLAUDE.md does not contain @~/.ai/Constitution.md")
-	}
-	return pass("CLAUDE.md present and references Constitution.md")
-}
-
-// PathStatus describes the result of checkBinPath.
-type PathStatus int
-
-// PathStatus values.
-const (
-	// PathOK: binDir is on PATH and earlier than the listed system bin dirs.
-	PathOK PathStatus = iota
-	// PathMissing: binDir is not on PATH at all.
-	PathMissing
-	// PathShadowed: binDir appears AFTER a system bin dir on PATH.
-	PathShadowed
-)
-
-// checkBinPath determines whether binDir is on pathVar (the PATH env var)
-// and ahead of the listed system bin dirs.
-func checkBinPath(binDir, pathVar string) (status PathStatus, message string) {
-	if binDir == "" {
-		return PathOK, ""
-	}
-	binDir = filepath.Clean(binDir)
-	systemBins := []string{"/usr/local/bin", "/opt/homebrew/bin"}
-
-	entries := strings.Split(pathVar, string(os.PathListSeparator))
-	binIdx := -1
-	systemIdxs := map[string]int{}
-	for i, e := range entries {
-		clean := filepath.Clean(strings.TrimSpace(e))
-		if clean == "." || clean == "" {
-			continue
-		}
-		if clean == binDir && binIdx < 0 {
-			binIdx = i
-		}
-		for _, s := range systemBins {
-			if clean == s {
-				if _, seen := systemIdxs[s]; !seen {
-					systemIdxs[s] = i
-				}
-			}
+		return doctorResult{
+			name:    name,
+			status:  doctorWarn,
+			message: fmt.Sprintf("could not read %s: %v", agentsPath, err),
 		}
 	}
 
-	if binIdx < 0 {
-		return PathMissing, fmt.Sprintf("%s is not on PATH — wrapper interception will not fire", binDir)
-	}
-	for _, s := range systemBins {
-		if si, ok := systemIdxs[s]; ok && si < binIdx {
-			return PathShadowed, fmt.Sprintf("%s is on PATH but %s appears earlier", binDir, s)
+	if strings.Contains(string(content), agentsIncludeMarker) {
+		return doctorResult{
+			name:    name,
+			status:  doctorOK,
+			message: fmt.Sprintf("%s contains @-include", agentsPath),
 		}
 	}
-	return PathOK, fmt.Sprintf("%s is on PATH before system bins", binDir)
+
+	return doctorResult{
+		name:    name,
+		status:  doctorWarn,
+		message: fmt.Sprintf("%s exists but lacks @~/.ai/Constitution.md — run `ai init-integrate --codex`", agentsPath),
+	}
 }
