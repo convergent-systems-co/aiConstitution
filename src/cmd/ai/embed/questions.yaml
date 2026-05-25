@@ -1,20 +1,25 @@
 # governance/wizard/questions.yaml
-# v2 — unified constitution model
+# v2.1 — reference-first setup (8 personalization questions only)
+#
+# The constitution template already contains all invariant rules:
+# U1–U17, Clean Code, Testing, Security, Writing craft, etc.
+# These 8 questions personalize the slots unique to each user.
+# Domains are always both technical + prose (no longer a question).
 
 version: "1.0"
 
 phases:
 
   - id: P1
-    title: Identity
+    title: "You"
     mandatory: true
     questions:
 
       - qid: Q01
-        prompt: What name or handle should the AI use for you?
+        prompt: "What name or handle should your constitution use for you?"
         framing: |
-          This appears in the constitution header, audit logs, and commit
-          trailers. Use your full name, a pseudonym, or an org name.
+          This appears in the document header, audit logs, and commit
+          trailers. Full name, nickname, or handle — your choice.
         time: ~5s
         allow_free_text: true
         default: "Principal"
@@ -22,10 +27,10 @@ phases:
         persists_to_section: "§1 header / §3 Principal"
 
       - qid: Q02
-        prompt: Which AI tools will you use with this constitution?
+        prompt: "Which AI tools will this constitution govern?"
         framing: |
-          Claude Code uses the full document; Copilot CLI and Cursor use
-          the compact runtime (~3K tokens).
+          Claude Code loads the full document. Copilot CLI and Cursor
+          load the compact runtime (~3K tokens).
         time: ~5s
         options:
           - label: Claude Code
@@ -34,7 +39,7 @@ phases:
             value: copilot-cli
           - label: Cursor
             value: cursor
-          - label: Codex
+          - label: Codex / OpenAI Agents
             value: codex
         allow_free_text: true
         default: "claude-code"
@@ -42,10 +47,10 @@ phases:
         persists_to_section: "§1.6 Integration"
 
       - qid: Q03
-        prompt: What is your primary work context?
+        prompt: "What is your primary work context?"
         framing: |
-          Used in provenance lines and audit headers. Could be your employer,
-          a project name, or "personal".
+          Used in provenance lines and audit headers.
+          Could be your employer, a project, or just 'personal'.
         time: ~5s
         allow_free_text: true
         allow_defer: true
@@ -54,188 +59,93 @@ phases:
         persists_to_section: "§3 U4 provenance"
 
   - id: P2
-    title: Domains
-    mandatory: true
-    questions:
-
-      - qid: Q04
-        prompt: What kinds of work will you do with AI assistance?
-        framing: |
-          Each becomes a domain section in your constitution with best-practice
-          rules and your personal rules on top.
-        time: ~30s
-        options:
-          - label: Software / Engineering
-            value: technical
-            note: Includes code, infra, testing, change management
-          - label: Writing / Prose
-            value: prose
-            note: Includes essays, theology, journalism, fiction
-          - label: Data / Analysis
-            value: data
-            note: Custom skeleton
-          - label: Legal / Compliance
-            value: legal
-            note: Custom skeleton
-        allow_free_text: true
-        default: "technical,prose"
-        persists_to: Constitution.md
-        persists_to_section: "§4-N domain stubs"
-
-      - qid: Q05
-        prompt: For each domain, what are your key rules?
-        framing: |
-          Describe your rules in plain language. Use rationale-first format:
-          "Failure mode is consequence. Therefore: rule."
-        time: ~3m
-        allow_chat: true
-        allow_defer: true
-        default: ""
-        persists_to: Constitution.md
-        persists_to_section: "§N.Personal"
-
-  - id: P3
-    title: Autonomy
+    title: "Autonomy"
     mandatory: true
     questions:
 
       - qid: Q06
-        prompt: What is your per-task cost ceiling for cloud/API spending?
+        prompt: "What is your per-task cost ceiling for cloud/API spending?"
         framing: |
-          The AI will not spend beyond this without asking.
+          The AI will not spend beyond this amount without asking first.
         time: ~5s
         options:
-          - label: $1 (conservative)
+          - label: "$1 — conservative"
             value: "$1"
-          - label: $5 (default)
+          - label: "$5 — default"
             value: "$5"
-          - label: $25 (power user)
+          - label: "$25 — power user"
             value: "$25"
-          - label: No ceiling
+          - label: "No ceiling"
             value: "none"
-            warning: Removes a safety gate.
+            warning: Removes a safety gate. The AI may incur unbounded costs.
         default: "$5"
         persists_to: Constitution.md
         persists_to_section: "§3.2 Autonomy Gates §3.6"
 
-      - qid: Q07
-        prompt: How many files can the AI touch per task without asking?
-        time: ~5s
-        options:
-          - label: 20 (tight)
-            value: "20"
-          - label: 100 (default)
-            value: "100"
-          - label: 500 (relaxed)
-            value: "500"
-        allow_free_text: true
-        default: "100"
-        persists_to: Constitution.md
-        persists_to_section: "§3.6"
-
       - qid: Q08
-        prompt: Which branch names should the AI never commit to directly?
+        prompt: "Which branch names should the AI never commit to directly?"
+        framing: |
+          The branch-guard hook enforces this. 'main' is always protected.
         time: ~5s
         options:
-          - label: main only
+          - label: "main only"
             value: "main"
-          - label: main + release/*
+          - label: "main + release/*"
             value: "main,release/*"
-          - label: main + master + release/*
+          - label: "main + master + release/*"
             value: "main,master,release/*"
         allow_free_text: true
         default: "main"
         persists_to: Constitution.md
         persists_to_section: "§3.2 + branch-guard.json"
 
-      - qid: Q09
-        prompt: What is your default autonomy posture for routine work?
-        time: ~5s
-        options:
-          - label: Autonomous (default)
-            value: autonomous
-          - label: Cautious
-            value: cautious
-            warning: Significantly slows down routine work.
-        default: "autonomous"
-        persists_to: Constitution.md
-        persists_to_section: "§3.2 §2.1"
-
-  - id: P4
-    title: Behavioral Style
+  - id: P3
+    title: "Style"
     mandatory: true
     questions:
 
       - qid: Q10
-        prompt: How hard should the AI push back when it disagrees with you?
+        prompt: "How hard should the AI push back when it disagrees with you?"
         framing: |
-          Controls how persistent the AI is when it thinks you are wrong.
+          The AI never silently complies — this controls how persistent it
+          is before deferring to your judgment.
         time: ~5s
         options:
-          - label: Flag once, then follow my lead (default)
+          - label: "Flag once, then follow my lead"
             value: flag-once
-          - label: Keep pushing until I say "noted, move on"
+          - label: "Keep pushing until I say 'noted, move on'"
             value: push-until-told
-          - label: Only flag safety-critical errors
+          - label: "Only flag safety-critical errors"
             value: flag-safety-only
         default: "flag-once"
         persists_to: Constitution.md
         persists_to_section: "§2.1 personal overlay"
 
       - qid: Q11
-        prompt: What response length do you prefer by default?
+        prompt: "What response length do you prefer by default?"
         time: ~5s
         options:
-          - label: Match the complexity of my request (default)
+          - label: "Match the complexity of my request"
             value: match-complexity
-          - label: Always short — bottom line up front
+          - label: "Short — bottom line up front"
             value: shortest
-          - label: Full reasoning always visible
+          - label: "Full reasoning always visible"
             value: full
         default: "match-complexity"
         persists_to: Constitution.md
         persists_to_section: "§2.2 personal overlay"
 
-      - qid: Q12
-        prompt: What tone should the AI use when it disagrees with you?
-        time: ~5s
-        options:
-          - label: Direct with framing (default)
-            value: direct-framing
-          - label: Direct, no softening
-            value: direct
-          - label: Collaborative
-            value: collaborative
-        default: "direct-framing"
-        persists_to: Constitution.md
-        persists_to_section: "§2.4 personal overlay"
-
       - qid: Q13
-        prompt: Should AI involvement be noted in git commit trailers?
+        prompt: "Should AI involvement be noted in git commit trailers?"
+        framing: |
+          Adds 'Co-Authored-By: Claude…' to commits where the AI wrote
+          significant code. Useful for audit trails.
         time: ~5s
         options:
-          - label: Yes — add Co-Authored-By trailer (default)
+          - label: "Yes — add Co-Authored-By trailer"
             value: "true"
-          - label: No — omit AI attribution
+          - label: "No — keep commits clean"
             value: "false"
         default: "true"
         persists_to: Constitution.md
         persists_to_section: "§3.6 provenance"
-
-  - id: P5
-    title: Review
-    mandatory: true
-    questions:
-
-      - qid: Q14
-        prompt: Review your constitution before writing it to disk
-        framing: |
-          The full Constitution.md will be shown. Review it and confirm
-          before it is written to ~/.ai/Constitution.md.
-        time: ~3m
-        informational: false
-        allow_chat: true
-        allow_defer: false
-        default: "confirmed"
-        persists_to: Constitution.md
-        persists_to_section: "final review"

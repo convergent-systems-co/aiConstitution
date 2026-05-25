@@ -57,10 +57,14 @@ func TestAnswersToAnswerSet_BasicMapping(t *testing.T) {
 	}
 }
 
-func TestAnswersToAnswerSet_MissingPrincipal_ReturnsError(t *testing.T) {
-	_, err := wizard.AnswersToAnswerSet(map[string]string{})
-	if err == nil {
-		t.Error("expected error when Q01 (principal) is missing")
+func TestAnswersToAnswerSet_MissingPrincipal_DefaultsToReference(t *testing.T) {
+	// v2.1 reference-first: missing Q01 defaults to 'Principal', never errors.
+	as, err := wizard.AnswersToAnswerSet(map[string]string{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if as.Principal != "Principal" {
+		t.Errorf("Principal = %q, want %q", as.Principal, "Principal")
 	}
 }
 
