@@ -78,7 +78,7 @@ phases:
             value: legal
             note: Custom skeleton
         allow_free_text: true
-        default: "technical"
+        default: "technical,prose"
         persists_to: Constitution.md
         persists_to_section: "§4-N domain stubs"
 

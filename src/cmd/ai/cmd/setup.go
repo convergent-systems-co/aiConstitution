@@ -140,8 +140,34 @@ func runSetupPostWizard(aiRoot, claudeDir, copilotDir string, answers map[string
 		return fmt.Errorf("setup: save settings: %w", err)
 	}
 
+	// Render and write Constitution.md from wizard answers + embedded template.
+	as, err := internalwizard.AnswersToAnswerSet(answers)
+	if err != nil {
+		return fmt.Errorf("setup: map answers to constitution: %w", err)
+	}
+	tmplBytes, err := embed.ConstitutionTemplate()
+	if err != nil {
+		return fmt.Errorf("setup: load constitution template: %w", err)
+	}
+	rendered, err := constitution.Render(as, string(tmplBytes))
+	if err != nil {
+		return fmt.Errorf("setup: render constitution: %w", err)
+	}
+	if err := os.MkdirAll(aiRoot, 0o750); err != nil {
+		return fmt.Errorf("setup: mkdir airoot: %w", err)
+	}
+	constitutionPath := filepath.Join(aiRoot, "Constitution.md")
+	if err := os.WriteFile(constitutionPath, []byte(rendered), 0o600); err != nil { //nolint:gosec
+		return fmt.Errorf("setup: write Constitution.md: %w", err)
+	}
+	// Generate compact runtime for Copilot/Cursor.
+	if rc, err := constitution.ExtractRuntime(rendered); err == nil {
+		runtimePath := filepath.Join(aiRoot, "Constitution.runtime.md")
+		_ = os.WriteFile(runtimePath, []byte(constitution.FormatRuntime(rc)), 0o600) //nolint:gosec
+	}
+
 	if noHooks {
-		fmt.Println("setup: constitution files written. Skipping hook install, CLAUDE.md, and Copilot symlink (--no-hooks).")
+		fmt.Printf("setup: Constitution.md written (%d bytes). Skipping hook install and tool wiring (--no-hooks).\n", len(rendered))
 		return nil
 	}
 
@@ -273,10 +299,27 @@ func installCopilotSymlink(copilotDir, aiRoot string) error {
 	return os.Symlink(target, linkPath)
 }
 
-// runSetupNonInteractive is a thin wrapper retained for the --non-interactive
-// flag path. It stubs out taxonomy loading and delegates to RunNonInteractive
-// from the internal wizard package.
-func runSetupNonInteractive(profile string) error {
-	notice("setup:", "non-interactive mode; profile:", profile)
-	return stub("setup --non-interactive", "§3.1 + §4")
+// runSetupNonInteractive renders the constitution using default answers from
+// questions.yaml and wires all tool integrations. Uses the same rendering
+// pipeline as the TUI path so the output is always the full template.
+func runSetupNonInteractive(_ string) error {
+	taxData := embed.QuestionsYAML()
+	tax, err := internalwizard.ParseTaxonomy(taxData)
+	if err != nil {
+		return fmt.Errorf("setup: parse taxonomy: %w", err)
+	}
+	// Use wizard defaults — every question has a default value.
+	answers, err := internalwizard.RunNonInteractive(*tax, nil)
+	if err != nil {
+		return fmt.Errorf("setup: non-interactive wizard: %w", err)
+	}
+	aiRoot := paths.AIRoot()
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("setup: resolve HOME: %w", err)
+	}
+	return runSetupPostWizard(aiRoot,
+		filepath.Join(home, ".claude"),
+		filepath.Join(home, ".copilot"),
+		answers, false)
 }
