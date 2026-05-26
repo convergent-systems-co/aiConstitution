@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"text/tabwriter"
 
 	"github.com/convergent-systems-co/aiConstitution/src/internal/paths"
 	"github.com/convergent-systems-co/aiConstitution/src/internal/plugins"
@@ -40,10 +41,9 @@ See SPEC.md §11.`,
 	c.AddCommand(
 		&cobra.Command{
 			Use:   "list",
-			Short: "Show available + installed Claude plugins",
+			Short: "List all installed Claude plugins",
 			RunE: func(cmd *cobra.Command, _ []string) error {
-				notice("plugins list")
-				return stub("plugins list", "§11")
+				return runPluginsList(cmd)
 			},
 		},
 		newPluginsInstallCmd(),
@@ -272,6 +272,70 @@ func runPluginsStatus(cmd *cobra.Command) error {
 		}
 		fmt.Fprintf(cmd.OutOrStdout(), "  %-30s  v%-10s  %s\n", m.Name, m.Version, status)
 	}
+	return nil
+}
+
+// runPluginsList implements `ai plugins list`.
+//
+// Outputs a tabwriter-aligned table with columns NAME, VERSION, STATUS, SOURCE
+// for every installed plugin. STATUS is "enabled" when the plugin appears in
+// plugins.json; "disabled" otherwise. SOURCE comes from the manifest.
+// Prints "(no plugins installed)" and exits 0 when the plugins directory is
+// absent or contains no valid plugin directories.
+func runPluginsList(cmd *cobra.Command) error {
+	pluginsDir := paths.PluginsDir()
+	entries, err := os.ReadDir(pluginsDir)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			fmt.Fprintln(cmd.OutOrStdout(), "(no plugins installed)")
+			return nil
+		}
+		return fmt.Errorf("plugins list: read plugins dir: %w", err)
+	}
+
+	// Filter to directories that contain a manifest.yaml.
+	var installed []string
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		manifestPath := filepath.Join(pluginsDir, e.Name(), "manifest.yaml")
+		if _, err := os.Stat(manifestPath); err == nil {
+			installed = append(installed, e.Name())
+		}
+	}
+
+	if len(installed) == 0 {
+		fmt.Fprintln(cmd.OutOrStdout(), "(no plugins installed)")
+		return nil
+	}
+
+	state, err := loadPluginsState()
+	if err != nil {
+		return err
+	}
+	enabledSet := make(map[string]bool, len(state.Enabled))
+	for _, n := range state.Enabled {
+		enabledSet[n] = true
+	}
+
+	w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
+	fmt.Fprintln(w, "NAME\tVERSION\tSTATUS\tSOURCE")
+	for _, name := range installed {
+		manifestPath := filepath.Join(pluginsDir, name, "manifest.yaml")
+		m, err := plugins.ParseManifest(manifestPath)
+		if err != nil {
+			// Manifest is unreadable; surface the anomaly and continue.
+			fmt.Fprintf(w, "%s\t-\t[invalid manifest: %v]\t-\n", name, err)
+			continue
+		}
+		status := "disabled"
+		if enabledSet[name] {
+			status = "enabled"
+		}
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", m.Name, m.Version, status, m.Source)
+	}
+	w.Flush()
 	return nil
 }
 

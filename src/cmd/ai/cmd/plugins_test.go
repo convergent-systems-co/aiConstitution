@@ -412,3 +412,144 @@ func TestPluginsUpdate_ErrorsWhenNotInstalled(t *testing.T) {
 		t.Fatal("expected error updating uninstalled plugin")
 	}
 }
+
+// TestPluginsList_NoPlugins verifies that `ai plugins list` prints
+// "(no plugins installed)" and exits 0 when no plugins are installed.
+func TestPluginsList_NoPlugins(t *testing.T) {
+	workDir := t.TempDir()
+	t.Setenv("AI_ROOT", workDir)
+	t.Setenv("AICONST_CONFIG_DIR", filepath.Join(workDir, "config"))
+
+	root := cmd.NewRootCmd()
+	root.SetArgs([]string{"plugins", "list"})
+	out := &strings.Builder{}
+	root.SetOut(out)
+
+	if err := root.Execute(); err != nil {
+		t.Fatalf("plugins list returned error: %v", err)
+	}
+
+	output := out.String()
+	if !strings.Contains(output, "no plugins installed") {
+		t.Errorf("expected 'no plugins installed' in output, got: %q", output)
+	}
+}
+
+// TestPluginsList_OneEnabled verifies that `ai plugins list` outputs a
+// tabwriter table with the correct columns when one plugin is installed
+// and enabled. The STATUS column must show "enabled".
+func TestPluginsList_OneEnabled(t *testing.T) {
+	workDir := t.TempDir()
+	pluginsDir := filepath.Join(workDir, "plugins")
+	configDir := filepath.Join(workDir, "config")
+	t.Setenv("AI_ROOT", workDir)
+	t.Setenv("AICONST_CONFIG_DIR", configDir)
+
+	// Install one plugin.
+	pluginDir := filepath.Join(pluginsDir, "alpha-plugin")
+	if err := os.MkdirAll(pluginDir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	manifest := "name: alpha-plugin\nversion: \"1.2.3\"\nsource: \"https://example.com/alpha.tar.gz\"\n"
+	if err := os.WriteFile(filepath.Join(pluginDir, "manifest.yaml"), []byte(manifest), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Mark it enabled.
+	if err := os.MkdirAll(configDir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(configDir, "plugins.json"),
+		[]byte(`{"enabled":["alpha-plugin"]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	root := cmd.NewRootCmd()
+	root.SetArgs([]string{"plugins", "list"})
+	out := &strings.Builder{}
+	root.SetOut(out)
+
+	if err := root.Execute(); err != nil {
+		t.Fatalf("plugins list returned error: %v", err)
+	}
+
+	output := out.String()
+
+	// Headers must be present.
+	if !strings.Contains(output, "NAME") {
+		t.Errorf("expected column header 'NAME' in output, got: %q", output)
+	}
+	if !strings.Contains(output, "VERSION") {
+		t.Errorf("expected column header 'VERSION' in output, got: %q", output)
+	}
+	if !strings.Contains(output, "STATUS") {
+		t.Errorf("expected column header 'STATUS' in output, got: %q", output)
+	}
+	if !strings.Contains(output, "SOURCE") {
+		t.Errorf("expected column header 'SOURCE' in output, got: %q", output)
+	}
+
+	// Plugin data must appear.
+	if !strings.Contains(output, "alpha-plugin") {
+		t.Errorf("expected plugin name 'alpha-plugin' in output, got: %q", output)
+	}
+	if !strings.Contains(output, "1.2.3") {
+		t.Errorf("expected version '1.2.3' in output, got: %q", output)
+	}
+	if !strings.Contains(output, "enabled") {
+		t.Errorf("expected status 'enabled' in output, got: %q", output)
+	}
+	if !strings.Contains(output, "https://example.com/alpha.tar.gz") {
+		t.Errorf("expected source URL in output, got: %q", output)
+	}
+}
+
+// TestPluginsList_OneDisabled verifies that `ai plugins list` shows
+// "disabled" in the STATUS column for a plugin that is installed but
+// not in the enabled list.
+func TestPluginsList_OneDisabled(t *testing.T) {
+	workDir := t.TempDir()
+	pluginsDir := filepath.Join(workDir, "plugins")
+	configDir := filepath.Join(workDir, "config")
+	t.Setenv("AI_ROOT", workDir)
+	t.Setenv("AICONST_CONFIG_DIR", configDir)
+
+	// Install one plugin.
+	pluginDir := filepath.Join(pluginsDir, "beta-plugin")
+	if err := os.MkdirAll(pluginDir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	manifest := "name: beta-plugin\nversion: \"0.9.0\"\nsource: \"\"\n"
+	if err := os.WriteFile(filepath.Join(pluginDir, "manifest.yaml"), []byte(manifest), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// No enabled plugins — empty list.
+	if err := os.MkdirAll(configDir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(configDir, "plugins.json"),
+		[]byte(`{"enabled":[]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	root := cmd.NewRootCmd()
+	root.SetArgs([]string{"plugins", "list"})
+	out := &strings.Builder{}
+	root.SetOut(out)
+
+	if err := root.Execute(); err != nil {
+		t.Fatalf("plugins list returned error: %v", err)
+	}
+
+	output := out.String()
+	if !strings.Contains(output, "beta-plugin") {
+		t.Errorf("expected plugin name 'beta-plugin' in output, got: %q", output)
+	}
+	if !strings.Contains(output, "0.9.0") {
+		t.Errorf("expected version '0.9.0' in output, got: %q", output)
+	}
+	if !strings.Contains(output, "disabled") {
+		t.Errorf("expected status 'disabled' in output, got: %q", output)
+	}
+}
