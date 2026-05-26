@@ -103,7 +103,7 @@ the stub path is printed to stdout.`,
 			}
 
 			// No editor set: print path.
-			fmt.Fprintln(cmd.OutOrStdout(), stubPath)
+			fmt.Fprintln(cmd.OutOrStdout(), stubPath) //nolint:errcheck
 			return nil
 		},
 	}
@@ -278,7 +278,7 @@ bumps the file's minor version, and appends a Changelog entry.`,
 				return fmt.Errorf("amend apply: write Constitution.md: %w", err)
 			}
 
-			fmt.Fprintf(cmd.OutOrStdout(), "Applied: bumped version to %s\n", newVersion)
+			fmt.Fprintf(cmd.OutOrStdout(), "Applied: bumped version to %s\n", newVersion) //nolint:errcheck
 			return nil
 		},
 	}
@@ -538,7 +538,7 @@ func newAmendListCmd() *cobra.Command {
 
 			for _, p := range plans {
 				slug := slugFromPlanFilename(p.filename)
-				fmt.Fprintf(cmd.OutOrStdout(), "%-40s  %s\n", slug, p.firstLine)
+				fmt.Fprintf(cmd.OutOrStdout(), "%-40s  %s\n", slug, p.firstLine) //nolint:errcheck
 			}
 			return nil
 		},
@@ -551,7 +551,7 @@ func readFirstLine(path string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer f.Close()
+	defer f.Close() //nolint:errcheck
 
 	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {
@@ -586,7 +586,7 @@ func newAmendShowCmd() *cobra.Command {
 				return fmt.Errorf("amend show: read plan: %w", err)
 			}
 
-			fmt.Fprint(cmd.OutOrStdout(), string(content))
+			fmt.Fprint(cmd.OutOrStdout(), string(content)) //nolint:errcheck
 			return nil
 		},
 	}
@@ -675,11 +675,11 @@ the release. No actual gh invocation is made in v0.8 (stub/dry-run only).`,
 				version, version, slug)
 
 			if dryRun {
-				fmt.Fprintf(cmd.OutOrStdout(), "Would run: %s\n", releaseCmd)
+				fmt.Fprintf(cmd.OutOrStdout(), "Would run: %s\n", releaseCmd) //nolint:errcheck
 			} else {
 				// v0.8: also stub — print the command only.
-				fmt.Fprintf(cmd.OutOrStdout(), "Would run: %s\n", releaseCmd)
-				fmt.Fprintln(cmd.OutOrStdout(), "(actual gh release create deferred to v0.9)")
+				fmt.Fprintf(cmd.OutOrStdout(), "Would run: %s\n", releaseCmd)          //nolint:errcheck
+				fmt.Fprintln(cmd.OutOrStdout(), "(actual gh release create deferred to v0.9)") //nolint:errcheck
 			}
 			return nil
 		},
