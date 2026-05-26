@@ -51,3 +51,15 @@ linters:
       # defer X.Close() is the idiomatic Go pattern; Close errors in defer are non-actionable.
       - linters: [errcheck]
         text: 'Error return value of.*\.Close.* is not checked'
+      # G104: gosec alias for errcheck on Close() calls — same rationale as above.
+      - linters: [gosec]
+        text: "G104:"
+      # G304: reading files via variable is expected in a CLI install/setup tool.
+      - linters: [gosec]
+        text: "G304:"
+      # G702: CLI tools launch subprocesses with validated user-derived arguments.
+      - linters: [gosec]
+        text: "G702:"
+      # G115: int64→uint32 in CLI metadata is bounded by practical file sizes.
+      - linters: [gosec]
+        text: "G115:"
