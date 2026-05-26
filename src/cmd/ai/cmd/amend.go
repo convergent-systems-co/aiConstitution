@@ -103,7 +103,7 @@ the stub path is printed to stdout.`,
 			}
 
 			// No editor set: print path.
-			fmt.Fprintln(cmd.OutOrStdout(), stubPath)
+			fmt.Fprintln(cmd.OutOrStdout(), stubPath) //nolint:errcheck
 			return nil
 		},
 	}
@@ -278,7 +278,7 @@ bumps the file's minor version, and appends a Changelog entry.`,
 				return fmt.Errorf("amend apply: write Constitution.md: %w", err)
 			}
 
-			fmt.Fprintf(cmd.OutOrStdout(), "Applied: bumped version to %s\n", newVersion)
+			fmt.Fprintf(cmd.OutOrStdout(), "Applied: bumped version to %s\n", newVersion) //nolint:errcheck
 			return nil
 		},
 	}
@@ -387,25 +387,6 @@ func bumpMinor(version string) (string, error) {
 	return fmt.Sprintf("%s.%d", parts[0], minor+1), nil
 }
 
-
-// isHeadingLine reports whether line is a Markdown heading (## or deeper).
-func isHeadingLine(line string) bool {
-	return strings.HasPrefix(line, "## ")
-}
-
-// headingDepthOf returns the heading level (2 for ##, 3 for ###, etc.).
-func headingDepthOf(line string) int {
-	depth := 0
-	for _, ch := range line {
-		if ch == '#' {
-			depth++
-		} else {
-			break
-		}
-	}
-	return depth
-}
-
 // replaceSectionBody finds the section whose heading matches target (case-insensitive
 // normalized) and replaces its body (lines between this heading and next ##)
 // with proposedChange.
@@ -420,21 +401,19 @@ func replaceSectionBody(content, target, proposedChange string) (string, error) 
 	for i := 0; i < len(lines); i++ {
 		line := lines[i]
 
-		// Detect any Markdown heading (##, ###, ####, etc.).
-		if isHeadingLine(line) {
-			headingText := strings.TrimLeft(line, "#")
-			headingText = strings.TrimSpace(headingText)
-			normalHeading := strings.ToLower(headingText)
+		// Detect a ## heading line.
+		if strings.HasPrefix(line, "## ") {
+			headingText := strings.TrimPrefix(line, "## ")
+			normalHeading := strings.ToLower(strings.TrimSpace(headingText))
 
-			if normalHeading == normalTarget || strings.Contains(normalHeading, normalTarget) {
+			if normalHeading == normalTarget {
 				// Enter target section.
 				inTarget = true
 				result = append(result, line)
-				// Skip original body lines until next same-or-higher heading or EOF.
-				headingDepth := headingDepthOf(line)
+				// Skip original body lines until next ## or EOF.
 				for i+1 < len(lines) {
 					next := lines[i+1]
-					if isHeadingLine(next) && headingDepthOf(next) <= headingDepth {
+					if strings.HasPrefix(next, "## ") {
 						break
 					}
 					i++
@@ -528,8 +507,7 @@ func newAmendListCmd() *cobra.Command {
 			entries, err := os.ReadDir(plansDir)
 			if err != nil {
 				if os.IsNotExist(err) {
-					// No plans directory yet.
-					_, _ = fmt.Fprintln(cmd.OutOrStdout(), "(no drafts)")
+					// No plans directory yet — print nothing.
 					return nil
 				}
 				return fmt.Errorf("amend list: %w", err)
@@ -560,7 +538,7 @@ func newAmendListCmd() *cobra.Command {
 
 			for _, p := range plans {
 				slug := slugFromPlanFilename(p.filename)
-				fmt.Fprintf(cmd.OutOrStdout(), "%-40s  %s\n", slug, p.firstLine)
+				fmt.Fprintf(cmd.OutOrStdout(), "%-40s  %s\n", slug, p.firstLine) //nolint:errcheck
 			}
 			return nil
 		},
@@ -573,7 +551,7 @@ func readFirstLine(path string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer f.Close()
+	defer f.Close() //nolint:errcheck
 
 	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {
@@ -608,7 +586,7 @@ func newAmendShowCmd() *cobra.Command {
 				return fmt.Errorf("amend show: read plan: %w", err)
 			}
 
-			fmt.Fprint(cmd.OutOrStdout(), string(content))
+			fmt.Fprint(cmd.OutOrStdout(), string(content)) //nolint:errcheck
 			return nil
 		},
 	}
@@ -697,11 +675,11 @@ the release. No actual gh invocation is made in v0.8 (stub/dry-run only).`,
 				version, version, slug)
 
 			if dryRun {
-				fmt.Fprintf(cmd.OutOrStdout(), "Would run: %s\n", releaseCmd)
+				fmt.Fprintf(cmd.OutOrStdout(), "Would run: %s\n", releaseCmd) //nolint:errcheck
 			} else {
 				// v0.8: also stub — print the command only.
-				fmt.Fprintf(cmd.OutOrStdout(), "Would run: %s\n", releaseCmd)
-				fmt.Fprintln(cmd.OutOrStdout(), "(actual gh release create deferred to v0.9)")
+				fmt.Fprintf(cmd.OutOrStdout(), "Would run: %s\n", releaseCmd)          //nolint:errcheck
+				fmt.Fprintln(cmd.OutOrStdout(), "(actual gh release create deferred to v0.9)") //nolint:errcheck
 			}
 			return nil
 		},

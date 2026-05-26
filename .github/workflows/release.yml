@@ -16,8 +16,7 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-go@v6
         with:
-          go-version: "1.26"
-      - run: go work sync
+          go-version: "1.24"
       - uses: goreleaser/goreleaser-action@v7
         with:
           version: "~> v2"

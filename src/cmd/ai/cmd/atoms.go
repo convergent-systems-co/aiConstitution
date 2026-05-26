@@ -95,13 +95,13 @@ func runAtomsFetch(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("create temp file: %w", err)
 	}
 	tmpName := tmp.Name()
-	defer os.Remove(tmpName)
+	defer os.Remove(tmpName) //nolint:errcheck
 
 	if err := downloadToFile(downloadURL, tmp); err != nil {
-		tmp.Close()
+		tmp.Close() //nolint:errcheck
 		return fmt.Errorf("fetch %q: %w", downloadURL, err)
 	}
-	tmp.Close()
+	tmp.Close() //nolint:errcheck
 
 	// Compute SHA256 of the downloaded archive.
 	downloadedSHA, err := sha256OfFile(tmpName)
@@ -124,7 +124,7 @@ func runAtomsFetch(cmd *cobra.Command, args []string) error {
 	staged := false
 	defer func() {
 		if !staged {
-			os.RemoveAll(stageDir)
+			os.RemoveAll(stageDir) //nolint:errcheck
 		}
 	}()
 
@@ -182,13 +182,13 @@ func runAtomsFetch(cmd *cobra.Command, args []string) error {
 		if cpErr := atomCopyDir(moveFrom, destDir); cpErr != nil {
 			return fmt.Errorf("install atom dir: %w (rename failed: %v)", cpErr, err)
 		}
-		os.RemoveAll(moveFrom)
+		os.RemoveAll(moveFrom) //nolint:errcheck
 	}
 	// When moveFrom is a subdirectory of stageDir, the parent staging dir
 	// remains as an empty directory after the rename. Clean it up explicitly
 	// so we do not leave orphaned .staging-* dirs under atomsRoot.
 	if moveFrom != stageDir {
-		os.RemoveAll(stageDir) // best-effort; errors are non-fatal
+		os.RemoveAll(stageDir) //nolint:errcheck // best-effort; errors are non-fatal
 	}
 	staged = true // moveFrom is gone; stageDir (if different) was just cleaned up.
 
@@ -204,7 +204,7 @@ func runAtomsFetch(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("update atoms index: %w", err)
 	}
 
-	fmt.Fprintf(cmd.OutOrStdout(), "Fetched %s@%s → %s\n", manifest.Name, manifest.Version, destDir)
+	fmt.Fprintf(cmd.OutOrStdout(), "Fetched %s@%s → %s\n", manifest.Name, manifest.Version, destDir) //nolint:errcheck
 	return nil
 }
 
@@ -228,15 +228,15 @@ func runAtomsList(cmd *cobra.Command, _ []string) error {
 
 	out := cmd.OutOrStdout()
 	if len(entries) == 0 {
-		fmt.Fprintln(out, "(no atoms installed)")
+		fmt.Fprintln(out, "(no atoms installed)") //nolint:errcheck
 		return nil
 	}
 
 	// Aligned table via tabwriter.
 	tw := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "NAME\tVERSION\tUPSTREAM\tPATH")
+	fmt.Fprintln(tw, "NAME\tVERSION\tUPSTREAM\tPATH") //nolint:errcheck
 	for _, e := range entries {
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", e.Name, e.Version, e.Upstream, e.Path)
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", e.Name, e.Version, e.Upstream, e.Path) //nolint:errcheck
 	}
 	return tw.Flush()
 }
@@ -307,7 +307,7 @@ func runAtomsFork(cmd *cobra.Command, name, asName string) error {
 		return fmt.Errorf("update atoms index: %w", err)
 	}
 
-	fmt.Fprintf(cmd.OutOrStdout(),
+	fmt.Fprintf(cmd.OutOrStdout(), //nolint:errcheck
 		"Forked %s → %s. Edit %s and run ai atoms publish.\n",
 		name, asName, dstDir)
 	return nil
@@ -392,12 +392,12 @@ func runAtomsPublish(cmd *cobra.Command, name, version string, dryRun bool) erro
 
 	out := cmd.OutOrStdout()
 	if dryRun {
-		fmt.Fprintf(out, "Would publish: %s@%s (%d files, SHA256: %s)\n", name, version, fileCount, combinedSHA)
+		fmt.Fprintf(out, "Would publish: %s@%s (%d files, SHA256: %s)\n", name, version, fileCount, combinedSHA) //nolint:errcheck
 		return nil
 	}
 
 	// Full publish is not yet implemented — inform the user.
-	fmt.Fprintln(out, "Publishing not yet supported. Use --dry-run to preview.")
+	fmt.Fprintln(out, "Publishing not yet supported. Use --dry-run to preview.") //nolint:errcheck
 	return nil
 }
 
@@ -511,10 +511,10 @@ func atomExtractTarGz(srcPath, destDir string) error {
 				return fmt.Errorf("create %q: %w", target, err)
 			}
 			if _, err := io.Copy(out, tr); err != nil {
-				out.Close()
+				out.Close() //nolint:errcheck
 				return fmt.Errorf("write %q: %w", target, err)
 			}
-			out.Close()
+			out.Close() //nolint:errcheck
 		}
 	}
 	return nil
