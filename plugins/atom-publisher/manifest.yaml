@@ -1,0 +1,5 @@
+name: atom-publisher
+version: 1.0.0
+description: Guided workflow for drafting, verifying, and publishing governance atoms to their respective registries.
+skills:
+  - atom-publisher
