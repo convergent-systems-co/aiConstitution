@@ -64,6 +64,38 @@ func TestLoadEnvVarOverride(t *testing.T) {
 	}
 }
 
+func TestDefaultPersonasIncludesCommon(t *testing.T) {
+	s := config.Defaults()
+	found := false
+	for _, p := range s.Personas.Default {
+		if p == "common" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("Defaults().Personas.Default = %v, want to include \"common\"", s.Personas.Default)
+	}
+}
+
+func TestPersonasTOMLRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("AICONST_CONFIG_DIR", dir)
+
+	s := config.Defaults()
+	s.Personas.Default = []string{"common", "code"}
+	if err := config.Save(s); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+
+	loaded, err := config.Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if len(loaded.Personas.Default) != 2 || loaded.Personas.Default[0] != "common" {
+		t.Errorf("Loaded personas = %v, want [common code]", loaded.Personas.Default)
+	}
+}
+
 func TestSaveRoundTrips(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("AICONST_CONFIG_DIR", tmp)

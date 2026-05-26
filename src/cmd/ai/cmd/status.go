@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/convergent-systems-co/aiConstitution/src/internal/paths"
 	"github.com/spf13/cobra"
 )
 
@@ -145,7 +146,48 @@ func runStatus(cmd *cobra.Command) error {
 		}
 	}
 
+	// --- Active personas ---
+	fmt.Fprintln(out)
+	fmt.Fprintln(out, "Active personas (CLAUDE.md block):")
+	claudeMD := paths.ClaudeMD()
+	active := readActivePersonas(claudeMD)
+	if len(active) == 0 {
+		fmt.Fprintln(out, "  (no personas block — run `ai compress --wire` or `ai mode`)")
+	} else {
+		for _, p := range active {
+			fmt.Fprintf(out, "  %s\n", p)
+		}
+	}
+
 	return nil
+}
+
+// readActivePersonas parses the <!-- ai:personas --> block in CLAUDE.md.
+func readActivePersonas(claudeMDPath string) []string {
+	data, err := os.ReadFile(claudeMDPath) //nolint:gosec
+	if err != nil {
+		return nil
+	}
+	content := string(data)
+	start := strings.Index(content, "<!-- ai:personas")
+	end := strings.Index(content, "<!-- /ai:personas -->")
+	if start == -1 || end == -1 || end <= start {
+		return nil
+	}
+	block := content[start:end]
+	var slugs []string
+	for _, line := range strings.Split(block, "\n") {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, "@") {
+			continue
+		}
+		base := filepath.Base(line[1:])
+		if !strings.HasSuffix(base, ".md") {
+			continue
+		}
+		slugs = append(slugs, strings.ToLower(strings.TrimSuffix(base, ".md")))
+	}
+	return slugs
 }
 
 // gitBranch returns the current branch name for the given repo root.

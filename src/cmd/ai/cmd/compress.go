@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/convergent-systems-co/aiConstitution/src/internal/compress"
+	"github.com/convergent-systems-co/aiConstitution/src/internal/constitution"
 	"github.com/convergent-systems-co/aiConstitution/src/internal/paths"
 	"github.com/spf13/cobra"
 )
@@ -13,38 +15,134 @@ import (
 func newCompressCmd() *cobra.Command {
 	var wire bool
 	var output string
+	var personaFlag string
+	var checkFlag bool
+	var personasFlag bool
 
 	c := &cobra.Command{
 		Use:   "compress",
-		Short: "Generate a ~5KB operative-rules constitution for AI context loading",
-		Long: `compress generates Constitution.compact.md: a canonical terse form
-that contains every operative rule but strips all rationale prose.
+		Short: "Generate compact constitution or per-persona YAML derivatives",
+		Long: `compress has two modes:
 
-The full Constitution.md (~38KB) is the human document — readable,
-amendable, with rationale explaining every rule. The compact version
-(~5KB) is what the AI loads per session: rules only, no explanations.
+Default: generates Constitution.compact.md — a canonical ~5KB terse form
+containing every operative rule with rationale prose stripped. Use --wire
+to update ~/.claude/CLAUDE.md to load the compact version.
 
-Use --wire to update ~/.claude/CLAUDE.md to load the compact version.
-The full document is always the source of truth for amendments.`,
+With --personas: extracts ## N. <Persona> Rules sections from Constitution.md
+and emits a YAML derivative (<Persona>.md) and compact prose fallback
+(<Persona>.compact.md) per section. Use --check to detect stale derivatives.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			if personasFlag || personaFlag != "" || checkFlag {
+				return runCompressPersonas(cmd, personaFlag, checkFlag)
+			}
 			return runCompress(cmd, wire, output)
 		},
 	}
 	c.Flags().BoolVar(&wire, "wire", false, "update ~/.claude/CLAUDE.md to load compact version")
 	c.Flags().StringVar(&output, "output", "", "output path (default: <AIRoot>/Constitution.compact.md)")
+	c.Flags().BoolVar(&personasFlag, "personas", false, "extract per-persona YAML + compact.md derivatives")
+	c.Flags().StringVar(&personaFlag, "persona", "", "regenerate only this persona slug (e.g., code)")
+	c.Flags().BoolVar(&checkFlag, "check", false, "exit non-zero if any persona derivative is stale (no writes)")
 	return c
+}
+
+// runCompressPersonas handles the --personas / --persona / --check modes.
+func runCompressPersonas(cmd *cobra.Command, personaSlug string, check bool) error {
+	root := paths.AIRoot()
+	constPath := filepath.Join(root, "Constitution.md")
+
+	data, err := os.ReadFile(constPath) //nolint:gosec
+	if err != nil {
+		return fmt.Errorf("compress: read Constitution.md from %s: %w", root, err)
+	}
+
+	sections := constitution.ParseSections(string(data))
+	if len(sections) == 0 {
+		return fmt.Errorf("compress: no ## N. <Persona> Rules sections found in Constitution.md")
+	}
+
+	if personaSlug != "" {
+		var filtered []constitution.Section
+		for _, s := range sections {
+			if s.Slug == personaSlug {
+				filtered = append(filtered, s)
+			}
+		}
+		if len(filtered) == 0 {
+			return fmt.Errorf("compress: persona %q not found in Constitution.md", personaSlug)
+		}
+		sections = filtered
+	}
+
+	version := extractConstitutionVersion(string(data))
+	out := cmd.OutOrStdout()
+	stale := 0
+
+	for _, s := range sections {
+		ds, err := compress.Extract(s, version)
+		if err != nil {
+			return fmt.Errorf("compress: extract %s: %w", s.Name, err)
+		}
+
+		yamlPath := filepath.Join(root, s.FileName)
+		compactPath := filepath.Join(root, s.Slug+".compact.md")
+
+		if check {
+			if isStale(yamlPath, ds.Hash) {
+				_, _ = fmt.Fprintf(out, "  [stale] %s\n", s.FileName)
+				stale++
+			} else {
+				_, _ = fmt.Fprintf(out, "  [ok]    %s\n", s.FileName)
+			}
+			continue
+		}
+
+		if err := os.WriteFile(yamlPath, ds.YAML, 0o644); err != nil { //nolint:gosec
+			return fmt.Errorf("compress: write %s: %w", yamlPath, err)
+		}
+		if err := os.WriteFile(compactPath, ds.Compact, 0o644); err != nil { //nolint:gosec
+			return fmt.Errorf("compress: write %s: %w", compactPath, err)
+		}
+		_, _ = fmt.Fprintf(out, "  wrote %s + %s\n", s.FileName, filepath.Base(compactPath))
+	}
+
+	if stale > 0 {
+		return fmt.Errorf("compress: %d derivative(s) are stale — run `ai compress --personas` to regenerate", stale)
+	}
+	return nil
+}
+
+// extractConstitutionVersion pulls the version string from a Constitution.md header line.
+func extractConstitutionVersion(content string) string {
+	for _, line := range strings.Split(content, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "**Version:**") {
+			v := strings.TrimPrefix(trimmed, "**Version:**")
+			v = strings.Trim(strings.TrimSpace(v), "*")
+			return strings.TrimSpace(v)
+		}
+	}
+	return "unknown"
+}
+
+// isStale returns true if the derivative file is missing or does not
+// contain the expected source hash in its header comment.
+func isStale(path, wantHash string) bool {
+	data, err := os.ReadFile(path) //nolint:gosec
+	if err != nil {
+		return true
+	}
+	return !strings.Contains(string(data), wantHash)
 }
 
 func runCompress(cmd *cobra.Command, wire bool, output string) error {
 	aiRoot := paths.AIRoot()
 
-	// Read personal values from the full constitution.
 	values, err := extractPersonalValues(aiRoot)
 	if err != nil {
 		return fmt.Errorf("compress: read constitution: %w", err)
 	}
 
-	// Render the canonical compact template with personal values.
 	compact := renderCompactConstitution(values)
 
 	dest := output
@@ -75,7 +173,6 @@ func runCompress(cmd *cobra.Command, wire bool, output string) error {
 	return nil
 }
 
-// personalValues holds the slots extracted from Constitution.md.
 type personalValues struct {
 	Principal         string
 	Tools             string
@@ -88,8 +185,6 @@ type personalValues struct {
 	ProvenanceNote    string
 }
 
-// extractPersonalValues reads the personal slots from the generated
-// Constitution.md header. Falls back to safe defaults if not found.
 func extractPersonalValues(aiRoot string) (personalValues, error) {
 	v := personalValues{
 		Principal:         "the principal",
@@ -105,31 +200,25 @@ func extractPersonalValues(aiRoot string) (personalValues, error) {
 
 	data, err := os.ReadFile(filepath.Join(aiRoot, "Constitution.md")) //nolint:gosec
 	if err != nil {
-		return v, nil // use defaults
+		return v, nil
 	}
 	content := string(data)
 
-	// Extract **Principal:** line.
 	if val := extractHeaderField(content, "**Principal:**"); val != "" {
 		v.Principal = val
 	}
-	// Extract **Tools:** line.
 	if val := extractHeaderField(content, "**Tools:**"); val != "" {
 		v.Tools = strings.TrimRight(val, ", ")
 	}
-	// Extract **Context:** line.
 	if val := extractHeaderField(content, "**Context:**"); val != "" {
 		v.WorkContext = val
 	}
-	// Extract cost ceiling.
 	if val := extractHeaderField(content, "**Cost ceiling:**"); val != "" {
 		v.CostCeiling = strings.Split(val, " ")[0]
 	}
-	// Extract blast radius.
 	if val := extractHeaderField(content, "**File blast radius:**"); val != "" {
 		v.BlastRadius = strings.Split(val, " ")[0]
 	}
-	// Extract protected branches.
 	if val := extractHeaderField(content, "**Protected branches:**"); val != "" {
 		v.ProtectedBranches = strings.TrimRight(val, ", ")
 	}
@@ -147,8 +236,6 @@ func extractHeaderField(content, field string) string {
 	return ""
 }
 
-// renderCompactConstitution produces the canonical ~5KB terse constitution.
-// Every operative rule is present; rationale and examples are stripped.
 func renderCompactConstitution(v personalValues) string {
 	return fmt.Sprintf(`# AI Constitution (Compact) — %s
 
@@ -238,8 +325,6 @@ Non-overridable: no fabrication, no secrets in artifacts, destructive gates, inj
 		v.PushbackStyle, v.ResponseLength, v.ProvenanceNote)
 }
 
-// rewireClaudeMDToCompact updates ~/.claude/CLAUDE.md to load
-// Constitution.compact.md instead of Constitution.md.
 func rewireClaudeMDToCompact(home, aiRoot string) error {
 	claudeMD := filepath.Join(home, ".claude", "CLAUDE.md")
 	data, err := os.ReadFile(claudeMD) //nolint:gosec

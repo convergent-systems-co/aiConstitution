@@ -71,3 +71,50 @@ func TestFileStatusV2_DetectsLegacyLayout(t *testing.T) {
 		t.Error("v2 should be false when Common.md is present (legacy layout)")
 	}
 }
+
+func TestParseSectionsExtractsPersonaRules(t *testing.T) {
+	content := `# AI Constitution
+
+## 0. Governance Rules
+Some meta text.
+
+## 1. Common Rules
+**P1. Honesty.** MUST NOT fabricate.
+
+**P2. Cost ceiling.** Ask before exceeding $5.
+
+## 2. Code Rules
+**2.1 Function length.** Functions MUST be ≤30 lines.
+`
+	sections := constitution.ParseSections(content)
+	if len(sections) != 2 {
+		t.Fatalf("ParseSections: got %d sections, want 2 (Governance skipped)", len(sections))
+	}
+	if sections[0].Number != 1 || sections[0].Name != "Common" || sections[0].Slug != "common" || sections[0].FileName != "Common.md" {
+		t.Errorf("sections[0] = %+v, want Number=1 Name=Common Slug=common FileName=Common.md", sections[0])
+	}
+	if sections[1].Number != 2 || sections[1].Name != "Code" || sections[1].Slug != "code" || sections[1].FileName != "Code.md" {
+		t.Errorf("sections[1] = %+v", sections[1])
+	}
+}
+
+func TestParseSectionsBodyContent(t *testing.T) {
+	content := `## 1. Common Rules
+**P1. Honesty.** MUST NOT fabricate.
+## 2. Code Rules
+**2.1 Length.** MUST be ≤30 lines.
+`
+	sections := constitution.ParseSections(content)
+	if !strings.Contains(sections[0].Body, "Honesty") {
+		t.Errorf("sections[0].Body missing expected content, got: %q", sections[0].Body)
+	}
+	if !strings.Contains(sections[1].Body, "Length") {
+		t.Errorf("sections[1].Body missing expected content, got: %q", sections[1].Body)
+	}
+}
+
+func TestParseSectionsEmptyReturnsNil(t *testing.T) {
+	if got := constitution.ParseSections(""); len(got) != 0 {
+		t.Errorf("ParseSections(\"\") = %v, want empty", got)
+	}
+}

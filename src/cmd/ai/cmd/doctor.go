@@ -5,11 +5,13 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
-	"strings"
 	"os/exec"
+	"path/filepath"
 	"runtime"
+	"strings"
 
+	"github.com/convergent-systems-co/aiConstitution/src/internal/constitution"
+	"github.com/convergent-systems-co/aiConstitution/src/internal/paths"
 	"github.com/spf13/cobra"
 )
 
@@ -67,8 +69,40 @@ func runDoctor(w io.Writer, fix bool, resetHead string) error {
 	_ = resetHead
 
 	checkTerminalNotifier(w)
+	checkPersonasBlock(w)
+	checkDerivativeFiles(w)
 
 	return nil
+}
+
+// checkPersonasBlock verifies the <!-- ai:personas --> block exists in CLAUDE.md.
+func checkPersonasBlock(w io.Writer) {
+	claudeMD := paths.ClaudeMD()
+	data, err := os.ReadFile(claudeMD) //nolint:gosec
+	if err != nil || !strings.Contains(string(data), "<!-- ai:personas") {
+		fmt.Fprintln(w, "[⚠] CLAUDE.md personas block missing — run `ai compress --wire` or `ai mode` to create it")
+		return
+	}
+	fmt.Fprintln(w, "[✓] CLAUDE.md personas block")
+}
+
+// checkDerivativeFiles verifies that YAML derivatives exist for all
+// ## N. <Persona> Rules sections in Constitution.md.
+func checkDerivativeFiles(w io.Writer) {
+	root := paths.AIRoot()
+	constPath := filepath.Join(root, "Constitution.md")
+	data, err := os.ReadFile(constPath) //nolint:gosec
+	if err != nil {
+		return
+	}
+	for _, s := range constitution.ParseSections(string(data)) {
+		yamlPath := filepath.Join(root, s.FileName)
+		if _, statErr := os.Stat(yamlPath); statErr != nil {
+			fmt.Fprintf(w, "[⚠] %s missing — run `ai compress --personas`\n", s.FileName)
+		} else {
+			fmt.Fprintf(w, "[✓] %s present\n", s.FileName)
+		}
+	}
 }
 
 // checkTerminalNotifier verifies that terminal-notifier is on PATH.

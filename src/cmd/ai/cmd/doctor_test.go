@@ -27,6 +27,18 @@ func TestDoctorTerminalNotifierFound(t *testing.T) {
 	origPath := os.Getenv("PATH")
 	t.Setenv("PATH", tmpDir+string(os.PathListSeparator)+origPath)
 
+	// Set up HOME with a CLAUDE.md personas block so doctor check 2 passes.
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+	claudeDir := filepath.Join(homeDir, ".claude")
+	if err := os.MkdirAll(claudeDir, 0o755); err != nil {
+		t.Fatalf("setup claude dir: %v", err)
+	}
+	block := "<!-- ai:personas — managed by ai cli, do not edit manually -->\n<!-- /ai:personas -->\n"
+	if err := os.WriteFile(filepath.Join(claudeDir, "CLAUDE.md"), []byte(block), 0o600); err != nil {
+		t.Fatalf("setup CLAUDE.md: %v", err)
+	}
+
 	var out bytes.Buffer
 	if err := runDoctor(&out, false, ""); err != nil {
 		t.Fatalf("runDoctor returned error: %v", err)
@@ -85,5 +97,42 @@ func TestDoctorTerminalNotifierSkippedOnNonDarwin(t *testing.T) {
 	// On non-darwin the check should not appear at all.
 	if strings.Contains(got, "terminal-notifier") {
 		t.Errorf("terminal-notifier check appeared on non-darwin platform; got:\n%s", got)
+	}
+}
+
+func TestDoctorPersonasBlockMissing(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("HOME", dir)
+	claudeDir := filepath.Join(dir, ".claude")
+	if err := os.MkdirAll(claudeDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(claudeDir, "CLAUDE.md"), []byte("# Instructions\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	var out bytes.Buffer
+	_ = runDoctor(&out, false, "")
+	if !strings.Contains(out.String(), "personas block missing") {
+		t.Errorf("expected personas block warning, got:\n%s", out.String())
+	}
+}
+
+func TestDoctorPersonasBlockPresent(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("HOME", dir)
+	claudeDir := filepath.Join(dir, ".claude")
+	if err := os.MkdirAll(claudeDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	content := "<!-- ai:personas — managed by ai cli, do not edit manually -->\n<!-- /ai:personas -->\n"
+	if err := os.WriteFile(filepath.Join(claudeDir, "CLAUDE.md"), []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	var out bytes.Buffer
+	_ = runDoctor(&out, false, "")
+	if !strings.Contains(out.String(), "[✓] CLAUDE.md personas block") {
+		t.Errorf("expected personas block OK, got:\n%s", out.String())
 	}
 }

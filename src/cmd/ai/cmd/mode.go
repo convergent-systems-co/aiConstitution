@@ -7,7 +7,9 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/convergent-systems-co/aiConstitution/src/internal/config"
 	"github.com/convergent-systems-co/aiConstitution/src/internal/paths"
+	"github.com/convergent-systems-co/aiConstitution/src/internal/persona"
 	"github.com/spf13/cobra"
 )
 
@@ -44,8 +46,29 @@ See SPEC.md §3.7 + §7.`,
 			if len(args) == 0 {
 				return cmd.Help()
 			}
-			notice("mode:", "would resolve and activate", args[0])
-			return stub("mode "+args[0], "§3.7 + §7.8.5")
+			slug := args[0]
+
+			cfg, err := config.Load()
+			if err != nil {
+				return fmt.Errorf("mode: load settings: %w", err)
+			}
+
+			// Add the requested persona to the active set (additive).
+			active := cfg.Personas.Default
+			for _, p := range active {
+				if p == slug {
+					_, _ = fmt.Fprintf(cmd.OutOrStdout(), "persona %q already active\n", slug)
+					return nil
+				}
+			}
+			active = append(active, slug)
+
+			claudeMD := paths.ClaudeMD()
+			if err := persona.RewriteBlock(claudeMD, active, paths.AIRoot()); err != nil {
+				return fmt.Errorf("mode: rewrite CLAUDE.md: %w", err)
+			}
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "activated persona %q — CLAUDE.md updated\nActive: %v\n", slug, active)
+			return nil
 		},
 	}
 
@@ -72,10 +95,18 @@ See SPEC.md §3.7 + §7.`,
 	// clear
 	c.AddCommand(&cobra.Command{
 		Use:   "clear",
-		Short: "Deactivate the current mode (return to four-file only)",
+		Short: "Deactivate the current mode (return to defaults)",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			notice("mode clear:", "would delete ~/.config/aiConstitution/mode.json")
-			return stub("mode clear", "§7.4")
+			cfg, err := config.Load()
+			if err != nil {
+				return fmt.Errorf("mode clear: load settings: %w", err)
+			}
+			claudeMD := paths.ClaudeMD()
+			if err := persona.RewriteBlock(claudeMD, cfg.Personas.Default, paths.AIRoot()); err != nil {
+				return fmt.Errorf("mode clear: rewrite CLAUDE.md: %w", err)
+			}
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "cleared — reverted to defaults: %v\n", cfg.Personas.Default)
+			return nil
 		},
 	})
 
