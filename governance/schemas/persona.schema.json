@@ -1,0 +1,42 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://schema-atoms.com/json-schema/persona-config/1.0.0-draft/schema.json",
+  "title": "Persona Configuration",
+  "description": "JSON Schema for persona atom configuration. Defines reviewer/agentic persona structure. Implements the §17.2 target schema: 'domains' is an array, replacing the legacy single-string 'domain' field.",
+  "type": "object",
+  "required": ["name", "domains", "role", "version"],
+  "additionalProperties": true,
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "Persona slug name."
+    },
+    "version": {
+      "type": "string",
+      "description": "SemVer version string.",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+"
+    },
+    "role": {
+      "type": "string",
+      "description": "Human-readable role description."
+    },
+    "domains": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": ["security", "engineering", "operations", "architecture",
+                 "data", "documentation", "finops"]
+      },
+      "minItems": 1,
+      "description": "Functional domains this persona covers. Replaces the legacy single-string 'domain' field per §17.2. Current single-domain reviewers use an array of length 1."
+    },
+    "system_prompt": {
+      "type": "string",
+      "description": "Optional system-level instruction override."
+    },
+    "model_preference": {
+      "type": "string",
+      "description": "Optional model hint (e.g. claude-sonnet-4-6)."
+    }
+  }
+}
