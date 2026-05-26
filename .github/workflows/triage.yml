@@ -20,3 +20,20 @@ jobs:
       agent_mode: copilot-then-rest
       rubric-ref: v1
       confidence-threshold: "0.6"
+
+  post-label:
+    needs: triage
+    runs-on: ubuntu-latest
+    if: github.event_name == 'issues'
+    steps:
+      - name: Ensure status/triage label exists
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE: ${{ github.event.issue.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          # Apply status/triage if not already present
+          labels=$(gh api "repos/$REPO/issues/$ISSUE" --jq '[.labels[].name] | @json')
+          if ! echo "$labels" | jq -e 'contains(["status/triage"])' > /dev/null; then
+            gh issue edit "$ISSUE" --repo "$REPO" --add-label "status/triage"
+          fi
