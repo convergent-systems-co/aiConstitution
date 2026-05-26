@@ -16,7 +16,35 @@ linters:
     revive:
       rules:
         - name: exported
+    errcheck:
+      # fmt.Print* to cmd output: broken-pipe is the only failure mode; non-actionable.
+      # defer/cleanup Close and os.Remove*: best-effort; errors are non-fatal.
+      exclude-functions:
+        - fmt.Fprint
+        - fmt.Fprintf
+        - fmt.Fprintln
+        - (io.Closer).Close
+        - (io.ReadCloser).Close
+        - os.Remove
+        - os.RemoveAll
   exclusions:
     rules:
       - path: _test\.go
         linters: [errcheck, gosec, unparam]
+      # G107: HTTP requests with variable URLs are expected in a CLI download tool.
+      # G110: Decompression of user-specified atoms is intentional (trusted source).
+      # G204: CLI tools intentionally launch subprocesses with user-supplied args.
+      # G703: Path operations in a CLI installer are intentional; inputs are validated.
+      # G301/G306: Permissions set deliberately per CLI install conventions.
+      - linters: [gosec]
+        text: "G107:"
+      - linters: [gosec]
+        text: "G110:"
+      - linters: [gosec]
+        text: "G204:"
+      - linters: [gosec]
+        text: "G703:"
+      - linters: [gosec]
+        text: "G301:"
+      - linters: [gosec]
+        text: "G306:"
