@@ -1,0 +1,5 @@
+name: amendment-author
+version: 1.0.0
+description: Guided workflow for authoring and publishing governance amendments. Covers the full lifecycle from violation to published amendment atom.
+skills:
+  - amendment-author
