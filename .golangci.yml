@@ -48,3 +48,6 @@ linters:
         text: "G301:"
       - linters: [gosec]
         text: "G306:"
+      # defer X.Close() is the idiomatic Go pattern; Close errors in defer are non-actionable.
+      - linters: [errcheck]
+        text: 'Error return value of.*\.Close.* is not checked'
