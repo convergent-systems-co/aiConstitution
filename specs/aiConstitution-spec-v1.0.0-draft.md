@@ -893,6 +893,19 @@ Plugin vs CLI vs persona vs skill:
 | Persona | Session-long behavioral shaping | `ai mode tech-lead` |
 | Plugin | Multi-step guided workflow | `amendment-author` |
 
+#### Plugin availability by tool
+
+| Plugin | Claude Code | GitHub Copilot CLI | Cursor | Notes |
+|---|---|---|---|---|
+| `superpowers` | ✓ | TBD — no native plugin system | TBD | Core subagent-driven-development patterns |
+| `amendment-author` | ✓ | TBD | TBD | Guided `ai amend` flow |
+| `hook-author` | ✓ | TBD | TBD | Guided `ai hooks propose` flow |
+| `atom-publisher` | ✓ | TBD | TBD | Guided atom publication |
+| `review-panel` | ✓ | TBD | TBD | Orchestrated panel review |
+| `memory-curator` | ✓ | TBD | TBD | Guided `ai review` decision tree |
+
+Plugin questions in the setup wizard are **tool-gated**: Q36b/Q36c only appear when Claude Code is selected at Q36. Users who select Copilot CLI without Claude Code see a note (Q36b-copilot) explaining that Copilot parity is planned. Users who select both tools see both the Claude plugin offer and the Copilot note.
+
 ### §11.2 The five plugin candidates
 
 | Plugin | Workflow | Produces |
