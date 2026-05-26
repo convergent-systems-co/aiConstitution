@@ -1,0 +1,492 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://schema-atoms.com/json-schema/settings-config/1.0.0-draft/schema.json",
+  "title": "AI Constitution Settings",
+  "description": "JSON Schema for ~/.config/aiConstitution/settings.toml. Generated from settings.toml.example. Invalid values are rejected with the specific failing constraint.",
+  "type": "object",
+  "required": ["schemaVersion"],
+  "additionalProperties": true,
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "description": "Version of this settings schema. Matches the schemaVersion field in settings.toml. Used by 'ai update --migrate' to detect format changes."
+    },
+    "upstream": {
+      "type": "object",
+      "description": "Controls upstream contribution behavior — sharing hooks, skills, and findings back to convergent-systems-co/ai.",
+      "additionalProperties": true,
+      "properties": {
+        "shareNewHooks": {
+          "type": "boolean",
+          "description": "Share AI-authored hooks back to convergent-systems-co/ai as issues. true = file automatically without per-event prompt (pre-submission review window still shows unless skipReviewWindow=true). false = ask each time."
+        },
+        "shareNewSkills": {
+          "type": "boolean",
+          "description": "Share AI-authored skills back to the public repo. Conservative default: false. Skills can carry project-specific context that users may not want public."
+        },
+        "shareMajorFindings": {
+          "type": "boolean",
+          "description": "Auto-file major findings as 'finding' issues upstream. A 'major finding' is a violation tagged severity=major, a pattern observed >=3 times across sessions, or anything tagged with 'ai issue file --major'."
+        },
+        "skipReviewWindow": {
+          "type": "boolean",
+          "description": "Skip the per-event review window before an upstream issue is filed. Independent of shareNewHooks/shareMajorFindings — an extra opt-in layer for users who want fully automated submission."
+        },
+        "upstreamRepo": {
+          "type": "string",
+          "description": "Where upstream issues are filed. Format: '<owner>/<repo>'."
+        }
+      }
+    },
+    "review": {
+      "type": "object",
+      "description": "Memory review cadence settings. Controls how often 'ai status' and 'ai' startup nag for a memory review. Per spec §6.5.",
+      "additionalProperties": true,
+      "properties": {
+        "cadenceDays": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "How often 'ai status' and 'ai' startup nag for a memory review. 0 disables the nag entirely; the codification loop still works on demand."
+        },
+        "includeMemory": {
+          "type": "boolean",
+          "description": "Whether 'ai review --check' includes memory review at this cadence."
+        },
+        "includeAuditOverrides": {
+          "type": "boolean",
+          "description": "Whether 'ai review --check' includes audit override review at this cadence."
+        },
+        "includeAuditViolations": {
+          "type": "boolean",
+          "description": "Whether 'ai review --check' includes audit violation review at this cadence."
+        }
+      }
+    },
+    "update": {
+      "type": "object",
+      "description": "Update reconciliation settings. Controls migration behavior on binary version bumps. Per spec §8.",
+      "additionalProperties": true,
+      "properties": {
+        "autoMigratePrompt": {
+          "type": "boolean",
+          "description": "On first 'ai' invocation after a binary version bump (detected via governance/last-seen-version), enter the migration prompt."
+        },
+        "autoMigrateApprove": {
+          "type": "boolean",
+          "description": "Skip per-item prompts during migration; apply all changes. Strongly discouraged — the migration prompt is designed to be walked through."
+        }
+      }
+    },
+    "telemetry": {
+      "type": "object",
+      "description": "Telemetry settings. Opt-in only. No other telemetry exists beyond the installPing. Adding any other key to this section is a defect.",
+      "additionalProperties": true,
+      "properties": {
+        "installPing": {
+          "type": "boolean",
+          "description": "Anonymous install ping (country code, OS, install method). Opt-in. No other telemetry exists."
+        }
+      }
+    },
+    "secret_scanning": {
+      "type": "object",
+      "description": "Pre-commit secret scanning configuration. Per spec §10.3.",
+      "additionalProperties": true,
+      "properties": {
+        "installScope": {
+          "type": "string",
+          "enum": ["ai-only", "current-repo", "all-repos"],
+          "description": "Where to install the pre-commit secret hook. 'ai-only' — protect only the ~/.ai/ repo itself. 'current-repo' — install per-request via 'ai hooks install secret-precommit --repo=<path>'. 'all-repos' — wires into bin/clone so every fresh clone gets the hook."
+        },
+        "allowNoVerifyBypass": {
+          "type": "boolean",
+          "description": "Allow 'git commit --no-verify' to bypass the pre-commit scan. false (default) installs a ~/.ai/bin/git wrapper that strips --no-verify before exec'ing the real git. Per spec §10.3."
+        },
+        "ciScanner": {
+          "type": "string",
+          "enum": ["none", "gitleaks"],
+          "description": "Whether to also wire a server-side scanner in CI as defense-in-depth. 'none' = the local pre-commit is authoritative (canonical recommendation per spec §10.3); 'gitleaks' for users who want the CI net. Trufflehog is deliberately not an option — see spec §10.4."
+        }
+      }
+    },
+    "command_wrappers": {
+      "type": "object",
+      "description": "Command wrapper facade configuration. Per spec §10.5.",
+      "additionalProperties": true,
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Master switch. false removes the wrappers from ~/.ai/bin/; the underlying tools are reached via standard PATH."
+        },
+        "allowDisable": {
+          "type": "boolean",
+          "description": "Allow 'ai settings set command_wrappers.commands.<cmd>=disabled' at runtime. false locks wrappers on once enabled; only 'ai update --migrate' can disable."
+        },
+        "commands": {
+          "type": "object",
+          "description": "Per-command toggles. 'enabled' wires the wrapper; 'disabled' removes it.",
+          "additionalProperties": true,
+          "properties": {
+            "git": {
+              "type": "string",
+              "enum": ["enabled", "disabled"],
+              "description": "Whether to install the git command wrapper."
+            },
+            "gh": {
+              "type": "string",
+              "enum": ["enabled", "disabled"],
+              "description": "Whether to install the gh command wrapper."
+            },
+            "terraform": {
+              "type": "string",
+              "enum": ["enabled", "disabled"],
+              "description": "Whether to install the terraform command wrapper. Opt-in; many environments don't have terraform."
+            },
+            "kubectl": {
+              "type": "string",
+              "enum": ["enabled", "disabled"],
+              "description": "Whether to install the kubectl command wrapper. Opt-in."
+            }
+          }
+        }
+      }
+    },
+    "atoms": {
+      "type": "object",
+      "description": "Atoms registry configuration. Per spec §7.9 + §7.10 + §7.11.",
+      "additionalProperties": true,
+      "properties": {
+        "personaRegistry": {
+          "type": "string",
+          "format": "uri",
+          "description": "Where to resolve persona atoms. Both /agentic/ and /reviewer/ resolve under this base URL. Override for private mirrors that serve the same API."
+        },
+        "profileRegistry": {
+          "type": "string",
+          "format": "uri",
+          "description": "Where to resolve profile atoms. Override for private mirrors."
+        },
+        "skillRegistry": {
+          "type": "string",
+          "format": "uri",
+          "description": "Where to resolve skill atoms. NEW v0.6."
+        },
+        "brandRegistry": {
+          "type": "string",
+          "format": "uri",
+          "description": "Where to resolve brand atoms. Override for private mirrors."
+        },
+        "actionRegistry": {
+          "type": "string",
+          "format": "uri",
+          "description": "Where to resolve action atoms (atomic CI actions — composite/JS/Docker). NEW v0.10."
+        },
+        "workflowRegistry": {
+          "type": "string",
+          "format": "uri",
+          "description": "Where to resolve workflow atoms (reusable GitHub Actions workflows). v0.9; refocused v0.10."
+        },
+        "pipelineRegistry": {
+          "type": "string",
+          "format": "uri",
+          "description": "Where to resolve pipeline atoms (pipelines of workflows). NEW v0.10."
+        },
+        "install": {
+          "type": "string",
+          "enum": ["pick-per-layer", "recommended", "skip"],
+          "description": "Default install behavior for the GitHub Actions trinity (action/workflow/pipeline) at setup time. Q36d in the wizard sets this."
+        },
+        "verifyContentHash": {
+          "type": "boolean",
+          "description": "Verify SHA-256 content hash on every cache load. action/workflow/pipeline atoms are verified by GitHub Actions at uses-time; this applies only when an atom is read for the catalog browser or install command."
+        },
+        "cache": {
+          "type": "object",
+          "description": "Per-kind cache TTL configuration. NEW v0.7, per spec §7.9.5. Cached content for a pinned version is never invalidated. TTLs govern version freshness checks and GC of unused versions.",
+          "additionalProperties": true,
+          "properties": {
+            "gcRespectReferences": {
+              "type": "boolean",
+              "description": "Never GC a version that's actively referenced by any profile, skill manifest, panel composition, or active mode.json — regardless of gcUnusedDays age."
+            },
+            "agentic": {
+              "type": "object",
+              "description": "Cache TTLs for agentic persona atoms.",
+              "additionalProperties": true,
+              "properties": {
+                "freshnessCheckDays": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "How often the binary checks the registry for newer versions of agentic persona atoms."
+                },
+                "gcUnusedDays": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "When unused/unreferenced agentic persona atom versions get GC'd."
+                }
+              }
+            },
+            "reviewer": {
+              "type": "object",
+              "description": "Cache TTLs for reviewer persona atoms.",
+              "additionalProperties": true,
+              "properties": {
+                "freshnessCheckDays": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "How often the binary checks the registry for newer versions of reviewer persona atoms."
+                },
+                "gcUnusedDays": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "When unused/unreferenced reviewer persona atom versions get GC'd."
+                }
+              }
+            },
+            "profile": {
+              "type": "object",
+              "description": "Cache TTLs for profile atoms.",
+              "additionalProperties": true,
+              "properties": {
+                "freshnessCheckDays": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "How often the binary checks the registry for newer versions of profile atoms."
+                },
+                "gcUnusedDays": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "When unused/unreferenced profile atom versions get GC'd."
+                }
+              }
+            },
+            "skill": {
+              "type": "object",
+              "description": "Cache TTLs for skill atoms.",
+              "additionalProperties": true,
+              "properties": {
+                "freshnessCheckDays": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "How often the binary checks the registry for newer versions of skill atoms."
+                },
+                "gcUnusedDays": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "When unused/unreferenced skill atom versions get GC'd."
+                }
+              }
+            },
+            "brand": {
+              "type": "object",
+              "description": "Cache TTLs for brand atoms.",
+              "additionalProperties": true,
+              "properties": {
+                "freshnessCheckDays": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "How often the binary checks the registry for newer versions of brand atoms."
+                },
+                "gcUnusedDays": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "When unused/unreferenced brand atom versions get GC'd."
+                }
+              }
+            },
+            "action": {
+              "type": "object",
+              "description": "Cache TTLs for action atoms. Cache governs catalog browsing and the 'ai action install' stub generator; actual content is fetched by GitHub Actions at uses-time.",
+              "additionalProperties": true,
+              "properties": {
+                "freshnessCheckDays": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "How often the binary checks the registry for newer versions of action atoms."
+                },
+                "gcUnusedDays": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "When unused/unreferenced action atom versions get GC'd."
+                }
+              }
+            },
+            "workflow": {
+              "type": "object",
+              "description": "Cache TTLs for workflow atoms. Cache governs catalog browsing and the 'ai workflow install' stub generator.",
+              "additionalProperties": true,
+              "properties": {
+                "freshnessCheckDays": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "How often the binary checks the registry for newer versions of workflow atoms."
+                },
+                "gcUnusedDays": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "When unused/unreferenced workflow atom versions get GC'd."
+                }
+              }
+            },
+            "pipeline": {
+              "type": "object",
+              "description": "Cache TTLs for pipeline atoms. Cache governs catalog browsing and the 'ai pipeline install' stub generator.",
+              "additionalProperties": true,
+              "properties": {
+                "freshnessCheckDays": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "How often the binary checks the registry for newer versions of pipeline atoms."
+                },
+                "gcUnusedDays": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "When unused/unreferenced pipeline atom versions get GC'd."
+                }
+              }
+            }
+          }
+        },
+        "gh": {
+          "type": "object",
+          "description": "GitHub Actions atom pinning requirements.",
+          "additionalProperties": true,
+          "properties": {
+            "requirePinning": {
+              "type": "boolean",
+              "description": "Require pinning every 'uses: convergent-systems-co/<registry>/...' to a specific version (tag or SHA), never '@main'. 'ai doctor' surfaces violations. Per spec §7.11.3 mandatory pinning is the immutability invariant."
+            }
+          }
+        }
+      }
+    },
+    "plugins": {
+      "type": "object",
+      "description": "Claude plugin configuration. Per spec §11. Plugins offered during wizard Q36b/c.",
+      "additionalProperties": true,
+      "properties": {
+        "enabled": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "List of enabled plugin names (e.g. 'superpowers'). Plugins listed here are eligible for 'ai plugins enable'."
+        },
+        "plannerPersonaFallback": {
+          "type": "boolean",
+          "description": "Fall back to planner personas when plugins aren't installed (F12 elaboration). When true, declining a plugin during setup activates the matching agentic persona that provides degraded-but-functional guidance for the same workflow."
+        }
+      }
+    },
+    "action": {
+      "type": "object",
+      "description": "Action atom configuration. Atoms installed from action-atoms.com ('steps[].uses:' consumers). Per spec §7.11.",
+      "additionalProperties": true,
+      "properties": {
+        "enabled": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "List of enabled action atom names (e.g. 'secret-scan-patterns', 'setup-cs-tofu', 'cs-page-deployment')."
+        }
+      }
+    },
+    "workflow": {
+      "type": "object",
+      "description": "Workflow atom configuration. 'ai workflow install' writes .github/workflows/<name>.yml that 'uses:' the named atom. Per spec §7.11.",
+      "additionalProperties": true,
+      "properties": {
+        "enabled": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "List of enabled workflow atom names (e.g. 'astro-build', 'ci-go-workspace'). The wizard (Q36f) populates this; 'ai update --migrate' re-evaluates on each upgrade."
+        }
+      }
+    },
+    "pipeline": {
+      "type": "object",
+      "description": "Pipeline atom configuration. Atoms installed from pipeline-atoms.com (top-level workflow composers). Q36g populates this. Per spec §7.11.",
+      "additionalProperties": true,
+      "properties": {
+        "enabled": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "List of enabled pipeline atom names (e.g. 'release-train')."
+        }
+      }
+    },
+    "drafts": {
+      "type": "object",
+      "description": "Draft publish nudge configuration.",
+      "additionalProperties": true,
+      "properties": {
+        "publishNudgeAfterDays": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of days after which 'ai status' will nudge to publish an unpublished draft."
+        },
+        "suppressNudge": {
+          "type": "boolean",
+          "description": "Suppress the publish nudge entirely."
+        }
+      }
+    },
+    "focus": {
+      "type": "object",
+      "description": "Mode and persona focus configuration. Controls which persona/profile is loaded on session start.",
+      "additionalProperties": true,
+      "properties": {
+        "defaultMode": {
+          "type": "string",
+          "description": "Mode loaded on session start. Format: '<name>' resolves via priority order (drafts → atom registries). Use '<name>@<version>' to pin a specific atom version. 'none' means the four-file constitution only. Examples: 'polliard-coder@0.5.0' (pinned), 'polliard-coder' (latest, not recommended for stability), 'none' (no persona)."
+        },
+        "preferStableVersions": {
+          "type": "boolean",
+          "description": "When resolving an unversioned name, prefer the most recent stable version over any newer pre-release. Recommended."
+        }
+      }
+    },
+    "wizard": {
+      "type": "object",
+      "description": "Wizard versioning configuration.",
+      "additionalProperties": true,
+      "properties": {
+        "lastSeenWizardVersion": {
+          "type": "string",
+          "description": "Version of governance/wizard/questions.yaml the user's answers.yaml was generated against. 'ai update --migrate' reads this to detect new questions added since the last setup."
+        }
+      }
+    },
+    "sync": {
+      "type": "object",
+      "description": "Sync configuration. Per spec §12.4.",
+      "additionalProperties": true,
+      "properties": {
+        "includeSettingsFile": {
+          "type": "boolean",
+          "description": "Include this settings file in 'ai sync push'. Per spec §12.4 the schema explicitly excludes secrets; nothing in settings.toml is sensitive by design. Default true; set false for per-machine settings."
+        }
+      }
+    },
+    "paths": {
+      "type": "object",
+      "description": "Advanced path overrides. Empty string means use the compiled-in default.",
+      "additionalProperties": true,
+      "properties": {
+        "aiRoot": {
+          "type": "string",
+          "description": "Override for the ~/.ai root directory. Empty string = use default ($HOME/.ai)."
+        },
+        "configDir": {
+          "type": "string",
+          "description": "Override for the config directory. Empty string = use default (per os.UserConfigDir() + /aiConstitution)."
+        }
+      }
+    }
+  }
+}
