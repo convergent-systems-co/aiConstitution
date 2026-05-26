@@ -1,3 +1,9 @@
+> **Deprecated.** This file has been superseded by the authoritative specification.
+> See [`specs/aiConstitution-spec-v1.0.0-draft.md`](specs/aiConstitution-spec-v1.0.0-draft.md) for the canonical product spec.
+> `GOALS.md` is retained for historical reference and will be removed in a future release.
+
+---
+
 # GOALS.md
 
 ## Project Name
