@@ -810,6 +810,7 @@ phases:
           Skip if you'd rather decide later — `ai plugins enable <name>`
           works any time.
         time: "~15s"
+        applies_when: "'claude-code' in Q36"
         options:
           - { label: "Yes — pick from list", value: "pick" }
           - { label: "Skip — enable manually later", value: "skip" }
@@ -843,6 +844,20 @@ phases:
         allow_defer: true
         persists_to: ~/.config/aiConstitution/settings.toml
         persists_to_section: "[plugins] enabled"
+
+      - qid: Q36b-copilot
+        prompt: "About Copilot plugins — a note"
+        framing: >-
+          GitHub Copilot CLI does not have a native plugin system equivalent
+          to Claude Code plugins. The `ai` system is Claude-plugin-aware;
+          Copilot parity is planned for a future release. No action required.
+        time: "~5s"
+        applies_when: "'copilot-cli' in Q36 and 'claude-code' not in Q36"
+        options:
+          - { label: "Understood — continue", value: "ack" }
+        allow_free_text: false
+        allow_chat: false
+        allow_defer: false
 
       - qid: Q36d
         prompt: "Install GitHub Actions atoms from the action/workflow/pipeline registries now?"
