@@ -20,3 +20,146 @@ jobs:
       agent_mode: copilot-then-rest
       rubric-ref: v1
       confidence-threshold: "0.6"
+
+  post-label:
+    needs: triage
+    runs-on: ubuntu-latest
+    if: github.event_name == 'issues'
+    steps:
+      - name: Ensure status/triage label exists
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE: ${{ github.event.issue.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          # Apply status/triage if not already present
+          labels=$(gh api "repos/$REPO/issues/$ISSUE" --jq '[.labels[].name] | @json')
+          if ! echo "$labels" | jq -e 'contains(["status/triage"])' > /dev/null; then
+            gh issue edit "$ISSUE" --repo "$REPO" --add-label "status/triage"
+          fi
+
+  propose-decomposition:
+    needs: triage
+    runs-on: ubuntu-latest
+    if: github.event_name == 'issues'
+    steps:
+      - name: Check labels and post proposal if epic or feature
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE: ${{ github.event.issue.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          # Idempotency: skip if proposal marker already present
+          existing=$(gh api "repos/$REPO/issues/$ISSUE/comments" \
+            --jq '[.[] | select(.body | contains("<!-- triage:proposal-v1 -->"))] | length')
+          if [ "$existing" -gt 0 ]; then
+            echo "Proposal already posted — skipping (idempotent)"
+            exit 0
+          fi
+
+          # Check if issue has kind/epic or kind/feature
+          labels=$(gh api "repos/$REPO/issues/$ISSUE" --jq '[.labels[].name] | @json')
+          kind=""
+          if echo "$labels" | jq -e 'contains(["kind/epic"])' > /dev/null; then
+            kind="epic"
+            child_kind="feature"
+          elif echo "$labels" | jq -e 'contains(["kind/feature"])' > /dev/null; then
+            kind="feature"
+            child_kind="story"
+          else
+            echo "Not an epic or feature — no proposal needed"
+            exit 0
+          fi
+
+          # Capitalise child_kind for placeholder titles (bash 4+; ubuntu-latest ships bash 5)
+          child_kind_cap="${child_kind^}"
+
+          # Build proposal body via printf to keep marker at column 0
+          body_file=$(mktemp)
+          printf '%s\n' \
+            "<!-- triage:proposal-v1 -->" \
+            "## Decomposition proposal" \
+            "" \
+            "The triage agent classified **#${ISSUE}** as \`kind/${kind}\`." \
+            "" \
+            "Proposed child ${child_kind}s (edit as needed, then reply \`/triage approve-decomposition\`):" \
+            "" \
+            '```json' \
+            "{" \
+            "  \"parent\": ${ISSUE}," \
+            "  \"parent_kind\": \"${kind}\"," \
+            "  \"child_kind\": \"${child_kind}\"," \
+            "  \"children\": [" \
+            "    {\"title\": \"[${child_kind_cap}] <title 1>\", \"description\": \"<one-line description>\"}," \
+            "    {\"title\": \"[${child_kind_cap}] <title 2>\", \"description\": \"<one-line description>\"}" \
+            "  ]" \
+            "}" \
+            '```' \
+            "" \
+            "Reply \`/triage approve-decomposition\` to create these as sub-issues, or edit the JSON above first." \
+            > "$body_file"
+
+          gh issue comment "$ISSUE" --repo "$REPO" --body-file "$body_file"
+          rm -f "$body_file"
+
+  approve-decomposition:
+    runs-on: ubuntu-latest
+    if: >
+      github.event_name == 'issue_comment' &&
+      contains(github.event.comment.body, '/triage approve-decomposition')
+    steps:
+      - name: Create child issues from proposal comment
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE: ${{ github.event.issue.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          # Idempotency: skip if sub-issues already created
+          existing=$(gh api "repos/$REPO/issues/$ISSUE/comments" \
+            --jq '[.[] | select(.body | contains("<!-- triage:decomposed-v1 -->"))] | length')
+          if [ "$existing" -gt 0 ]; then
+            echo "Already decomposed — skipping (idempotent)"
+            exit 0
+          fi
+
+          # Find the most recent proposal comment
+          proposal=$(gh api "repos/$REPO/issues/$ISSUE/comments" \
+            --jq '[.[] | select(.body | contains("<!-- triage:proposal-v1 -->"))] | last // empty')
+          if [ -z "$proposal" ]; then
+            echo "No proposal comment found on #$ISSUE"
+            exit 1
+          fi
+
+          # Extract the JSON block from the proposal (between ```json and ```)
+          # sed: print lines between the fences, grep: drop the fence lines themselves
+          json=$(echo "$proposal" | jq -r '.body' | \
+            sed -n '/^```json$/,/^```$/p' | grep -v '^```')
+          # Validate the extracted block is parseable JSON
+          if ! echo "$json" | jq . > /dev/null 2>&1; then
+            echo "Could not parse JSON from proposal comment"
+            exit 1
+          fi
+
+          child_kind=$(echo "$json" | jq -r '.child_kind')
+          children=$(echo "$json" | jq -c '.children[]')
+
+          created=""
+          while IFS= read -r child; do
+            title=$(echo "$child" | jq -r '.title')
+            desc=$(echo "$child" | jq -r '.description')
+            issue_body=$(printf 'Parent: #%s\n\n%s' "$ISSUE" "$desc")
+            new_issue=$(gh issue create \
+              --repo "$REPO" \
+              --title "$title" \
+              --label "kind/$child_kind,status/triage" \
+              --body "$issue_body" \
+              --json number --jq '.number')
+            # Register parent-child relationship (silent no-op if API not enabled in org)
+            gh api "repos/$REPO/issues/$ISSUE/sub_issues" \
+              -X POST -F sub_issue_id="$new_issue" --silent 2>/dev/null || true
+            created="$created #$new_issue"
+          done <<< "$children"
+
+          # Post completion marker — at column 0 for reliable contains() matching
+          completion_body=$(printf '<!-- triage:decomposed-v1 -->\nSub-issues created:%s\n\nRun `ai doctor` to verify the hierarchy.' "$created")
+          gh issue comment "$ISSUE" --repo "$REPO" --body "$completion_body"
