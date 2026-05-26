@@ -146,15 +146,16 @@ instruction instead.
 With --address <addr>:
   Runs ` + "`" + `op account add --address <addr>` + "`" + ` to add a new account.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			if err := requireOpBinary(); err != nil {
-				return err
-			}
-
 			if address == "" {
 				// Cannot eval in the parent shell from a subprocess.
-				fmt.Fprintln(cmd.OutOrStdout(), "Run the following in your shell to sign in:")
-				fmt.Fprintln(cmd.OutOrStdout(), "  eval $(op signin)")
+				// No op binary needed — just printing the instruction.
+				fmt.Fprintln(cmd.OutOrStdout(), "Run the following in your shell to sign in:") //nolint:errcheck
+				fmt.Fprintln(cmd.OutOrStdout(), "  eval $(op signin)")                        //nolint:errcheck
 				return nil
+			}
+
+			if err := requireOpBinary(); err != nil {
+				return err
 			}
 
 			// gosec G204: address comes from cobra flag parsing.
@@ -202,17 +203,8 @@ func newOpWhoamiCmd() *cobra.Command {
 			c := exec.Command("op", "whoami", "--format", "json") //nolint:gosec
 			c.Stdin = os.Stdin
 			c.Stdout = cmd.OutOrStdout()
-			var errBuf strings.Builder
-			c.Stderr = &errBuf
-			if err := c.Run(); err != nil {
-				msg := errBuf.String()
-				if strings.Contains(msg, "not signed in") || strings.Contains(msg, "account is not") || strings.Contains(msg, "no account found") {
-					return fmt.Errorf("not signed in to 1Password — run: ai op signin")
-				}
-				_, _ = fmt.Fprint(cmd.ErrOrStderr(), msg)
-				return err
-			}
-			return nil
+			c.Stderr = cmd.ErrOrStderr()
+			return c.Run()
 		},
 	}
 }

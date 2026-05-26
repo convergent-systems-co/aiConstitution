@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -30,16 +31,21 @@ func prependPATH(t *testing.T, dir string) {
 	os.Setenv("PATH", dir+string(os.PathListSeparator)+orig) //nolint:errcheck
 }
 
-// fakePbcopy installs a fake pbcopy that writes stdin to a file and
-// returns the path of that file.
-func fakePbcopy(t *testing.T) (dir string, outputFile string) {
+// fakeClipboard installs a fake clipboard command that writes stdin to a file.
+// On macOS it creates "pbcopy"; on Linux it creates "wl-copy" (matching the
+// wl-copy preference in clipboardCmd). Returns the dir and the output file.
+func fakeClipboard(t *testing.T) (dir string, outputFile string) {
 	t.Helper()
 	dir = t.TempDir()
 	outputFile = filepath.Join(dir, "clipboard.txt")
-	script := filepath.Join(dir, "pbcopy")
+	name := "pbcopy"
+	if runtime.GOOS == "linux" {
+		name = "wl-copy"
+	}
+	script := filepath.Join(dir, name)
 	body := "#!/usr/bin/env bash\ncat > " + outputFile + "\n"
 	if err := os.WriteFile(script, []byte(body), 0o755); err != nil { //nolint:gosec
-		t.Fatalf("fakePbcopy: %v", err)
+		t.Fatalf("fakeClipboard: %v", err)
 	}
 	return dir, outputFile
 }
@@ -163,7 +169,7 @@ func TestOpEnv_OpNotOnPATH(t *testing.T) {
 // --- op clip tests ---
 
 // TestOpClip_CopiesSecretToClipboard verifies that `ai op clip op://vault/item/field`
-// pipes the secret to pbcopy (mocked) and prints "Secret copied to clipboard."
+// pipes the secret to the OS clipboard command (mocked) and prints "Secret copied to clipboard."
 func TestOpClip_CopiesSecretToClipboard(t *testing.T) {
 	// Fake op that returns a secret value when `op read` is called.
 	fakeOpDir := fakeOpScript(t, `
@@ -172,11 +178,11 @@ case "$1" in
   *) exit 1;;
 esac
 `)
-	pbcopyDir, clipboardFile := fakePbcopy(t)
-	// Combine dirs into PATH: fake op first, then fake pbcopy.
+	clipDir, clipboardFile := fakeClipboard(t)
+	// Combine dirs into PATH: fake op first, then fake clipboard command.
 	orig := os.Getenv("PATH")
 	t.Cleanup(func() { os.Setenv("PATH", orig) }) //nolint:errcheck
-	os.Setenv("PATH", fakeOpDir+string(os.PathListSeparator)+pbcopyDir+string(os.PathListSeparator)+orig) //nolint:errcheck
+	os.Setenv("PATH", fakeOpDir+string(os.PathListSeparator)+clipDir+string(os.PathListSeparator)+orig) //nolint:errcheck
 
 	buf := &bytes.Buffer{}
 	errBuf := &bytes.Buffer{}
