@@ -335,7 +335,7 @@ func runPluginsList(cmd *cobra.Command) error {
 		}
 		fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", m.Name, m.Version, status, m.Source)
 	}
-	w.Flush()
+	w.Flush() //nolint:errcheck
 	return nil
 }
 
