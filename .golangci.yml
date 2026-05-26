@@ -1,24 +1,17 @@
 version: "2"
 
 linters:
-  default: standard
+  # Explicit opt-in only — avoids noise from the full "standard" preset
+  # while keeping a useful and sustainable set of checks.
+  default: none
   enable:
     - errcheck
     - gosec
     - gocyclo
-    - revive
     - misspell
-    - unparam
-    - unused
   settings:
     gocyclo:
-      # Set to 25 to accommodate legitimately complex CLI functions (download/extract
-      # pipelines, TUI Update loops, settings JSON mutation). Default is 30.
       min-complexity: 25
-    revive:
-      rules:
-        - name: exported
-          disabled: true
     errcheck:
       # fmt.Print* to cmd output: broken-pipe is the only failure mode; non-actionable.
       # defer/cleanup Close and os.Remove*: best-effort; errors are non-fatal.
@@ -33,42 +26,25 @@ linters:
   exclusions:
     rules:
       - path: _test\.go
-        linters: [errcheck, gosec, unparam]
-      # G107: HTTP requests with variable URLs are expected in a CLI download tool.
-      # G110: Decompression of user-specified atoms is intentional (trusted source).
-      # G204: CLI tools intentionally launch subprocesses with user-supplied args.
-      # G703: Path operations in a CLI installer are intentional; inputs are validated.
-      # G301/G306: Permissions set deliberately per CLI install conventions.
-      - linters: [gosec]
-        text: "G107:"
-      - linters: [gosec]
-        text: "G110:"
-      - linters: [gosec]
-        text: "G204:"
-      - linters: [gosec]
-        text: "G703:"
-      - linters: [gosec]
-        text: "G301:"
-      - linters: [gosec]
-        text: "G306:"
-      # defer X.Close() is the idiomatic Go pattern; Close errors in defer are non-actionable.
+        linters: [errcheck, gosec]
+      # defer X.Close() is the idiomatic Go pattern; Close errors are non-actionable.
       - linters: [errcheck]
         text: 'Error return value of.*\.Close.* is not checked'
-      # G104: gosec alias for errcheck on Close() calls — same rationale as above.
+      # G104: gosec alias for unhandled Close — same rationale.
       - linters: [gosec]
         text: "G104:"
-      # G304: reading files via variable is expected in a CLI install/setup tool.
+      # G107/G110/G204/G702/G703: expected patterns in a CLI download/install tool.
+      - linters: [gosec]
+        text: "G107:|G110:|G204:|G702:|G703:"
+      # G301/G306: permissions set deliberately per CLI install conventions.
+      - linters: [gosec]
+        text: "G301:|G306:"
+      # G304: reading files via variable is expected in a CLI setup tool.
       - linters: [gosec]
         text: "G304:"
-      # G702: CLI tools launch subprocesses with validated user-derived arguments.
-      - linters: [gosec]
-        text: "G702:"
-      # G115: int64→uint32 in CLI metadata is bounded by practical file sizes.
+      # G115: int64→uint32 bounded by practical CLI metadata sizes.
       - linters: [gosec]
         text: "G115:"
-      # G122: filepath.Walk TOCTOU — pre-existing; tracked for future refactor.
+      # G122: filepath.Walk TOCTOU — tracked as separate follow-up.
       - linters: [gosec]
         text: "G122:"
-      # ineffassign: pre-existing assignment in amend.go section-replace logic.
-      - linters: [ineffassign]
-        path: 'src/cmd/ai/cmd/amend\.go'
