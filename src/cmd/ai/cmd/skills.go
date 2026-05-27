@@ -12,6 +12,7 @@ import (
 	"strings"
 	"text/tabwriter"
 
+	cbterm "github.com/charmbracelet/x/term"
 	"github.com/spf13/cobra"
 )
 
@@ -26,12 +27,13 @@ var SkillAtomsBaseURL = "https://api.github.com/repos/convergent-systems-co/skil
 // skillAtom is the JSON schema returned by the skill-atoms GitHub API endpoint.
 // Only the fields relevant for install/upgrade/listing are decoded.
 type skillAtom struct {
-	ID                   string `json:"id"`
-	Version              string `json:"version"`
-	Name                 string `json:"name"`
-	Description          string `json:"description"`
-	SystemPromptFragment string `json:"system_prompt_fragment"`
-	Lifecycle            string `json:"lifecycle"`
+	ID                   string   `json:"id"`
+	Version              string   `json:"version"`
+	Name                 string   `json:"name"`
+	Description          string   `json:"description"`
+	SystemPromptFragment string   `json:"system_prompt_fragment"`
+	Lifecycle            string   `json:"lifecycle"`
+	DependsOn            []string `json:"depends_on,omitempty"`
 }
 
 // skillAtomDirEntry is a single entry in the GitHub Contents API directory
@@ -122,7 +124,7 @@ func runSkillsAvailable(cmd *cobra.Command, _ []string) error {
 	}
 
 	// Hydrate each entry into a full atom.
-	type row struct{ name, version, description string }
+	type row struct{ slug, name, version, description string }
 	var rows []row
 	for _, e := range entries {
 		atom, fetchErr := fetchSkillAtomFromURL(e.DownloadURL)
@@ -135,11 +137,12 @@ func runSkillsAvailable(cmd *cobra.Command, _ []string) error {
 		if lc == "deprecated" || lc == "retired" {
 			continue
 		}
+		slug := strings.TrimSuffix(e.Name, ".json")
 		name := atom.Name
 		if name == "" {
-			name = strings.TrimSuffix(e.Name, ".json")
+			name = slug
 		}
-		rows = append(rows, row{name, atom.Version, atom.Description})
+		rows = append(rows, row{slug, name, atom.Version, atom.Description})
 	}
 
 	if len(rows) == 0 {
@@ -148,9 +151,9 @@ func runSkillsAvailable(cmd *cobra.Command, _ []string) error {
 	}
 
 	w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "NAME\tVERSION\tDESCRIPTION")
+	fmt.Fprintln(w, "SLUG\tNAME\tVERSION\tDESCRIPTION")
 	for _, r := range rows {
-		fmt.Fprintf(w, "%s\t%s\t%s\n", r.name, r.version, r.description)
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", r.slug, r.name, r.version, r.description)
 	}
 	return w.Flush()
 }
@@ -292,6 +295,34 @@ func runSkillsInstall(cmd *cobra.Command, slug string) error {
 	}
 
 	fmt.Fprintf(cmd.OutOrStdout(), "Installed %s v%s\n", slug, atom.Version)
+
+	// If the skill declares dependencies, offer to install them.
+	if len(atom.DependsOn) > 0 {
+		fmt.Fprintf(cmd.OutOrStdout(), "\nThis skill depends on: %s\n", strings.Join(atom.DependsOn, ", "))
+		if cbterm.IsTerminal(os.Stdout.Fd()) {
+			fmt.Fprint(cmd.OutOrStdout(), "Install dependencies too? [Y/n]: ")
+			var answer string
+			fmt.Scanln(&answer) //nolint:errcheck // best-effort readline; empty = yes
+			answer = strings.TrimSpace(strings.ToLower(answer))
+			if answer == "" || answer == "y" || answer == "yes" {
+				for _, dep := range atom.DependsOn {
+					fmt.Fprintf(cmd.OutOrStdout(), "Installing %s...\n", dep)
+					if depErr := runSkillsInstall(cmd, dep); depErr != nil {
+						fmt.Fprintf(cmd.ErrOrStderr(), "warning: failed to install %s: %v\n", dep, depErr)
+					}
+				}
+			}
+		} else {
+			// Non-interactive: install deps automatically without prompting.
+			for _, dep := range atom.DependsOn {
+				fmt.Fprintf(cmd.OutOrStdout(), "Installing %s...\n", dep)
+				if depErr := runSkillsInstall(cmd, dep); depErr != nil {
+					fmt.Fprintf(cmd.ErrOrStderr(), "warning: failed to install %s: %v\n", dep, depErr)
+				}
+			}
+		}
+	}
+
 	return nil
 }
 
