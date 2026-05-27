@@ -631,6 +631,26 @@ prompt_ref      = "prompt-atoms/skill-prompt/commit@1.0.0"
 asset           = "SKILL.md"
 ```
 
+**Skill atom slug:** The installable name used in `ai skills install <slug>` is
+derived from the atom's `id` field (`skill/<slug>`) — it is the filename stem of
+the atom JSON in the registry (`<slug>.json`). `ai skills available` always shows
+the slug as the first column (`SLUG`) so the install argument is unambiguous.
+
+**Skill bundles (`depends_on`):** A skill atom may declare a `depends_on` list of
+other skill slugs it requires:
+
+```json
+{
+  "id": "skill/make",
+  "depends_on": ["make-commit", "make-review"]
+}
+```
+
+When `ai skills install <slug>` fetches an atom with `depends_on`, it lists the
+dependencies and prompts the user to install them (interactive mode) or installs
+them automatically (non-interactive / CI mode). Dependency install errors are
+non-fatal warnings — the primary skill is already installed.
+
 ---
 
 ## §7 — The prompt layer
