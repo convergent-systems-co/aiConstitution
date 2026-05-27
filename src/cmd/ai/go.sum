@@ -14,8 +14,8 @@ github.com/charmbracelet/x/cellbuf v0.0.13-0.20250311204145-2c3ea96c31dd h1:vy0G
 github.com/charmbracelet/x/cellbuf v0.0.13-0.20250311204145-2c3ea96c31dd/go.mod h1:xe0nKWGd3eJgtqZRaN9RjMtK7xUYchjzPr7q6kcvCCs=
 github.com/charmbracelet/x/term v0.2.1 h1:AQeHeLZ1OqSXhrAWpYUtZyX1T3zVxfpZuEQMIQaGIAQ=
 github.com/charmbracelet/x/term v0.2.1/go.mod h1:oQ4enTYFV7QN4m0i9mzHrViD7TQKvNEEkHUMCmsxdUg=
-github.com/convergent-systems-co/aiConstitution/src/internal v0.0.0-20260524012525-6d82c32e66e0 h1:zFNCormsnozeb0rQJGEUKNVjI2YYr+Iz+cK3OmwR5V4=
-github.com/convergent-systems-co/aiConstitution/src/internal v0.0.0-20260524012525-6d82c32e66e0/go.mod h1:SH7phLzrR0nIlCFiM2U2panJRrtqagyhw1atJY/dALc=
+github.com/convergent-systems-co/aiConstitution/src/internal v0.0.0-20260527145119-3c8a82d79014 h1:swpmXkIBRf3/QPmdfSUt2MmWqBnb7dCGMaMfhGq9c1U=
+github.com/convergent-systems-co/aiConstitution/src/internal v0.0.0-20260527145119-3c8a82d79014/go.mod h1:xNlf/IxqQbUMOsbbWBnWAHbBQ13DWwiDDwtFi2i3O7s=
 github.com/cpuguy83/go-md2man/v2 v2.0.6/go.mod h1:oOW0eioCTA6cOiMLiUPZOpcVxMig6NIQQ7OS05n1F4g=
 github.com/erikgeiser/coninput v0.0.0-20211004153227-1c3628e74d0f h1:Y/CXytFA4m6baUTXGLOoWe4PQhGxaX0KpnayAqC48p4=
 github.com/erikgeiser/coninput v0.0.0-20211004153227-1c3628e74d0f/go.mod h1:vw97MGsxSvLiUE2X8qFplwetxpGLQrlU1Q9AUEIzCaM=

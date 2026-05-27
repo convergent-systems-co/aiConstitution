@@ -3,13 +3,13 @@ module github.com/convergent-systems-co/aiConstitution/src/cmd/ai
 go 1.26.0
 
 require (
+	github.com/BurntSushi/toml v1.4.0
 	github.com/charmbracelet/bubbletea v1.3.10
-	github.com/convergent-systems-co/aiConstitution/src/internal v0.0.0-20260524012525-6d82c32e66e0
+	github.com/convergent-systems-co/aiConstitution/src/internal v0.0.0-20260527145119-3c8a82d79014
 	github.com/spf13/cobra v1.10.2
 )
 
 require (
-	github.com/BurntSushi/toml v1.4.0 // indirect
 	github.com/aymanbagabas/go-osc52/v2 v2.0.1 // indirect
 	github.com/charmbracelet/colorprofile v0.2.3-0.20250311203215-f60798e515dc // indirect
 	github.com/charmbracelet/lipgloss v1.1.0 // indirect
