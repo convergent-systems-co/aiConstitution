@@ -2,7 +2,10 @@ package cmd
 
 import (
 	"bufio"
+	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -10,6 +13,263 @@ import (
 
 	"github.com/spf13/cobra"
 )
+
+// SkillAtomsBaseURL is the base URL for fetching skill atoms from the GitHub
+// API. Tests may override this to point at an httptest server.
+//
+// The full URL for a slug is:
+//
+//	<SkillAtomsBaseURL>/skills/skill/<slug>.json
+var SkillAtomsBaseURL = "https://api.github.com/repos/convergent-systems-co/skill-atoms/contents"
+
+// skillAtom is the JSON schema returned by the skill-atoms GitHub API endpoint.
+// Only the fields relevant for install/upgrade are decoded.
+type skillAtom struct {
+	ID                  string `json:"id"`
+	Version             string `json:"version"`
+	Name                string `json:"name"`
+	Description         string `json:"description"`
+	SystemPromptFragment string `json:"system_prompt_fragment"`
+}
+
+// fetchSkillAtomJSON fetches the skill atom JSON for slug from the configured
+// SkillAtomsBaseURL. Returns a clear error on 404 (skill not found) and other
+// non-200 responses.
+func fetchSkillAtomJSON(slug string) (*skillAtom, error) {
+	url := SkillAtomsBaseURL + "/skills/skill/" + slug + ".json"
+	req, err := http.NewRequest(http.MethodGet, url, nil) //nolint:noctx // CLI tool
+	if err != nil {
+		return nil, fmt.Errorf("skills: build request for %q: %w", slug, err)
+	}
+	req.Header.Set("Accept", "application/vnd.github.raw+json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("skills: fetch %q: %w", slug, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, fmt.Errorf("skills: skill %q not found in registry (HTTP 404)", slug)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("skills: fetch %q: HTTP %d", slug, resp.StatusCode)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("skills: read response for %q: %w", slug, err)
+	}
+
+	var atom skillAtom
+	if err := json.Unmarshal(body, &atom); err != nil {
+		return nil, fmt.Errorf("skills: parse atom JSON for %q: %w", slug, err)
+	}
+	return &atom, nil
+}
+
+// claudeSkillsDir returns the canonical ~/.claude/skills/ path.
+// Override priority: $CLAUDE_SKILLS_DIR env var, then $HOME/.claude/skills/.
+// Returns "" if the directory does not exist (symlinks are only created when
+// the consumer directory is present).
+func claudeSkillsDir() string {
+	if env := os.Getenv("CLAUDE_SKILLS_DIR"); env != "" {
+		if _, err := os.Stat(env); err == nil {
+			return env
+		}
+		return env // return it even if missing — callers check existence
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(home, ".claude", "skills")
+}
+
+// writeSkillMD writes a SKILL.md file for the given atom at destPath,
+// creating parent directories as needed.
+func writeSkillMD(destPath string, atom *skillAtom) error {
+	if err := os.MkdirAll(filepath.Dir(destPath), 0o750); err != nil {
+		return fmt.Errorf("skills: create skill dir: %w", err)
+	}
+
+	slug := atom.Name
+	if slug == "" {
+		// Derive from id "skill/<slug>"
+		slug = strings.TrimPrefix(atom.ID, "skill/")
+	}
+
+	content := fmt.Sprintf(`---
+name: %s
+description: %s
+version: %s
+user-invocable: true
+allowed-tools:
+  - Bash
+  - Read
+---
+# %s
+
+%s
+`, slug, atom.Description, atom.Version, atom.Name, atom.SystemPromptFragment)
+
+	return os.WriteFile(destPath, []byte(content), 0o644) //nolint:gosec // 0644 is intentional for skill files
+}
+
+// ensureSymlink creates or replaces a symlink at linkPath → target.
+// If linkPath already exists (as a symlink or file), it is removed first.
+func ensureSymlink(target, linkPath string) error {
+	if _, err := os.Lstat(linkPath); err == nil {
+		if removeErr := os.Remove(linkPath); removeErr != nil {
+			return fmt.Errorf("skills: remove existing symlink %s: %w", linkPath, removeErr)
+		}
+	}
+	return os.Symlink(target, linkPath)
+}
+
+// runSkillsInstall is the implementation of `ai skills install <name>[@version]`.
+// It fetches the atom JSON, writes SKILL.md, and optionally creates a Claude symlink.
+func runSkillsInstall(cmd *cobra.Command, slug string) error {
+	// Strip any @version suffix — v1 always fetches latest.
+	slug, _, _ = strings.Cut(slug, "@")
+
+	atom, err := fetchSkillAtomJSON(slug)
+	if err != nil {
+		return err
+	}
+
+	skillsDir := skillsManifestDir()
+	destDir := filepath.Join(skillsDir, slug)
+	destMD := filepath.Join(destDir, "SKILL.md")
+
+	if err := writeSkillMD(destMD, atom); err != nil {
+		return err
+	}
+
+	// Optional: symlink ~/.claude/skills/<slug> → ~/.ai/skills/<slug>
+	claudeDir := claudeSkillsDir()
+	if claudeDir != "" {
+		if _, err := os.Stat(claudeDir); err == nil {
+			linkPath := filepath.Join(claudeDir, slug)
+			if symlinkErr := ensureSymlink(destDir, linkPath); symlinkErr != nil {
+				// Non-fatal: warn but don't abort.
+				fmt.Fprintf(cmd.ErrOrStderr(), "warning: could not create Claude symlink: %v\n", symlinkErr)
+			}
+		}
+	}
+
+	fmt.Fprintf(cmd.OutOrStdout(), "Installed %s v%s\n", slug, atom.Version)
+	return nil
+}
+
+// runSkillsUninstall is the implementation of `ai skills uninstall <name>`.
+func runSkillsUninstall(cmd *cobra.Command, name string) error {
+	skillsDir := skillsManifestDir()
+	dir, err := findSkillDir(skillsDir, name)
+	if err != nil {
+		return fmt.Errorf("skills uninstall: %w", err)
+	}
+	if dir == "" {
+		return fmt.Errorf("skills uninstall: skill %q is not installed", name)
+	}
+
+	slug := filepath.Base(dir)
+
+	if err := os.RemoveAll(dir); err != nil {
+		return fmt.Errorf("skills uninstall: remove skill dir: %w", err)
+	}
+
+	// Remove symlink from ~/.claude/skills/ if it exists.
+	claudeDir := claudeSkillsDir()
+	if claudeDir != "" {
+		linkPath := filepath.Join(claudeDir, slug)
+		if _, lstatErr := os.Lstat(linkPath); lstatErr == nil {
+			if removeErr := os.Remove(linkPath); removeErr != nil {
+				fmt.Fprintf(cmd.ErrOrStderr(), "warning: could not remove Claude symlink: %v\n", removeErr)
+			}
+		}
+	}
+
+	fmt.Fprintf(cmd.OutOrStdout(), "Uninstalled %s\n", slug)
+	return nil
+}
+
+// runSkillsUpgrade is the implementation of `ai skills upgrade <name> [<version>]`.
+func runSkillsUpgrade(cmd *cobra.Command, name string) error {
+	skillsDir := skillsManifestDir()
+	dir, err := findSkillDir(skillsDir, name)
+	if err != nil {
+		return fmt.Errorf("skills upgrade: %w", err)
+	}
+	if dir == "" {
+		return fmt.Errorf("skills upgrade: skill %q is not installed — run `ai skills install` first", name)
+	}
+
+	slug := filepath.Base(dir)
+
+	// Read current version from frontmatter.
+	oldVersion := "(unknown)"
+	mdPath := filepath.Join(dir, "SKILL.md")
+	if data, readErr := os.ReadFile(mdPath); readErr == nil {
+		if v, ok := parseFrontmatter(string(data))["version"]; ok && v != "" {
+			oldVersion = v
+		}
+	}
+
+	atom, err := fetchSkillAtomJSON(slug)
+	if err != nil {
+		return err
+	}
+
+	if atom.Version == oldVersion {
+		fmt.Fprintf(cmd.OutOrStdout(), "%s is already up-to-date (v%s)\n", slug, oldVersion)
+		return nil
+	}
+
+	if err := writeSkillMD(mdPath, atom); err != nil {
+		return err
+	}
+
+	// Re-create symlink in Claude skills dir if it existed before.
+	claudeDir := claudeSkillsDir()
+	if claudeDir != "" {
+		linkPath := filepath.Join(claudeDir, slug)
+		if _, lstatErr := os.Lstat(linkPath); lstatErr == nil {
+			if symlinkErr := ensureSymlink(dir, linkPath); symlinkErr != nil {
+				fmt.Fprintf(cmd.ErrOrStderr(), "warning: could not refresh Claude symlink: %v\n", symlinkErr)
+			}
+		}
+	}
+
+	fmt.Fprintf(cmd.OutOrStdout(), "Upgraded %s from v%s to v%s\n", slug, oldVersion, atom.Version)
+	return nil
+}
+
+// runSkillsUpgradeAll is the implementation of `ai skills upgrade-all`.
+func runSkillsUpgradeAll(cmd *cobra.Command) error {
+	skillsDir := skillsManifestDir()
+	dirs, err := listSkillDirs(skillsDir)
+	if err != nil {
+		return fmt.Errorf("skills upgrade-all: %w", err)
+	}
+	if len(dirs) == 0 {
+		fmt.Fprintln(cmd.OutOrStdout(), "(no skills installed)")
+		return nil
+	}
+
+	upgraded := 0
+	for _, d := range dirs {
+		slug := filepath.Base(d)
+		if upgradeErr := runSkillsUpgrade(cmd, slug); upgradeErr != nil {
+			fmt.Fprintf(cmd.ErrOrStderr(), "warning: could not upgrade %s: %v\n", slug, upgradeErr)
+		} else {
+			upgraded++
+		}
+	}
+
+	fmt.Fprintf(cmd.OutOrStdout(), "Upgraded %d skill(s)\n", upgraded)
+	return nil
+}
 
 // skillsManifestDir returns the canonical ~/.ai/skills/ path.
 // Override priority: $AI_ROOT env var, then $HOME/.ai/.
@@ -148,23 +408,41 @@ See SPEC.md §7.10.`,
 		newSkillsShowCmd(),
 		newSkillsValidateCmd(),
 		newSkillsTemplatesCmd(),
-		// Retained stubs for install/uninstall/upgrade/upgrade-all/share.
-		&cobra.Command{Use: "install <name>[@<version>]", Short: "Resolve from skill-atoms.com; cache; symlink", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
-			notice("skills install:", args[0])
-			return stub("skills install", "§7.10.2")
-		}},
-		&cobra.Command{Use: "uninstall <name>", Short: "Remove manifest + symlink (content stays cached)", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
-			notice("skills uninstall:", args[0])
-			return stub("skills uninstall", "§7.10.2")
-		}},
-		&cobra.Command{Use: "upgrade <name> [<version>]", Short: "Bump manifest, refetch, re-symlink", Args: cobra.RangeArgs(1, 2), RunE: func(cmd *cobra.Command, args []string) error {
-			notice("skills upgrade:", args)
-			return stub("skills upgrade", "§7.10.2")
-		}},
-		&cobra.Command{Use: "upgrade-all", Short: "Bump every installed skill to its latest stable", RunE: func(cmd *cobra.Command, _ []string) error {
-			notice("skills upgrade-all")
-			return stub("skills upgrade-all", "§7.10.2")
-		}},
+		// install/uninstall/upgrade/upgrade-all — implemented in §7.10.2 (#347).
+		&cobra.Command{
+			Use:   "install <name>[@<version>]",
+			Short: "Fetch from skill-atoms.com and install to ~/.ai/skills/",
+			Long: `install fetches a skill atom from the skill-atoms registry and
+installs it to ~/.ai/skills/<name>/SKILL.md. If ~/.claude/skills/ exists,
+a symlink is created there for Claude Code to discover.`,
+			Args: cobra.ExactArgs(1),
+			RunE: func(c *cobra.Command, args []string) error {
+				return runSkillsInstall(c, args[0])
+			},
+		},
+		&cobra.Command{
+			Use:   "uninstall <name>",
+			Short: "Remove a skill and its Claude symlink",
+			Args:  cobra.ExactArgs(1),
+			RunE: func(c *cobra.Command, args []string) error {
+				return runSkillsUninstall(c, args[0])
+			},
+		},
+		&cobra.Command{
+			Use:   "upgrade <name> [<version>]",
+			Short: "Upgrade an installed skill to its latest (or specified) version",
+			Args:  cobra.RangeArgs(1, 2),
+			RunE: func(c *cobra.Command, args []string) error {
+				return runSkillsUpgrade(c, args[0])
+			},
+		},
+		&cobra.Command{
+			Use:   "upgrade-all",
+			Short: "Upgrade every installed skill to its latest stable version",
+			RunE: func(c *cobra.Command, _ []string) error {
+				return runSkillsUpgradeAll(c)
+			},
+		},
 		&cobra.Command{Use: "share <name>", Short: "File a skill draft upstream as an atom PR", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
 			notice("skills share:", args[0])
 			return stub("skills share", "§7.10.3")
