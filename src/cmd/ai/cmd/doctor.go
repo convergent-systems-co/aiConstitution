@@ -71,7 +71,29 @@ func runDoctor(w io.Writer, fix bool, resetHead string) error {
 	checkTerminalNotifier(w)
 	checkPersonasBlock(w)
 	checkDerivativeFiles(w)
+	_ = checkInstalledSkills(w)
 
+	return nil
+}
+
+// checkInstalledSkills reports whether any skills are installed under the
+// canonical ~/.ai/skills/ directory.
+//
+// Output format:
+//
+//	  OK    N skill(s) installed
+//	  WARN  No skills installed
+//	        Run: ai skills available  (to see what's installable)
+//	        Run: ai skills install <name>  (to install)
+func checkInstalledSkills(w io.Writer) error {
+	installedSkills, _ := listSkillDirs(skillsManifestDir())
+	if len(installedSkills) == 0 {
+		fmt.Fprintln(w, "  WARN  No skills installed")
+		fmt.Fprintln(w, "        Run: ai skills available  (to see what's installable)")
+		fmt.Fprintln(w, "        Run: ai skills install <name>  (to install)")
+	} else {
+		fmt.Fprintf(w, "  OK    %d skill(s) installed\n", len(installedSkills))
+	}
 	return nil
 }
 

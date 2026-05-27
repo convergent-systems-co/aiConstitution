@@ -136,3 +136,66 @@ func TestDoctorPersonasBlockPresent(t *testing.T) {
 		t.Errorf("expected personas block OK, got:\n%s", out.String())
 	}
 }
+
+// ---------------------------------------------------------------------------
+// #367 — ai doctor skills check
+// ---------------------------------------------------------------------------
+
+// setAIRoot temporarily overrides AI_ROOT for the duration of the test,
+// which controls where skillsManifestDir() resolves to.
+func setAIRoot(t *testing.T, root string) {
+	t.Helper()
+	t.Setenv("AI_ROOT", root)
+}
+
+func TestDoctorSkillsCheck_NoSkills(t *testing.T) {
+	root := t.TempDir()
+	setAIRoot(t, root)
+	// No skills/ subdirectory — simulates fresh install with no skills.
+
+	var out bytes.Buffer
+	if err := checkInstalledSkills(&out); err != nil {
+		t.Fatalf("checkInstalledSkills returned unexpected error: %v", err)
+	}
+
+	got := out.String()
+	if !strings.Contains(got, "WARN") {
+		t.Errorf("expected WARN when no skills installed; got:\n%s", got)
+	}
+	if !strings.Contains(got, "ai skills available") {
+		t.Errorf("expected hint 'ai skills available' in output; got:\n%s", got)
+	}
+	if !strings.Contains(got, "ai skills install") {
+		t.Errorf("expected hint 'ai skills install' in output; got:\n%s", got)
+	}
+}
+
+func TestDoctorSkillsCheck_WithSkills(t *testing.T) {
+	root := t.TempDir()
+	setAIRoot(t, root)
+
+	// Create two fake skill directories.
+	for _, slug := range []string{"commit", "review"} {
+		dir := filepath.Join(root, "skills", slug)
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	var out bytes.Buffer
+	if err := checkInstalledSkills(&out); err != nil {
+		t.Fatalf("checkInstalledSkills returned unexpected error: %v", err)
+	}
+
+	got := out.String()
+	if !strings.Contains(got, "OK") {
+		t.Errorf("expected OK when skills are installed; got:\n%s", got)
+	}
+	if !strings.Contains(got, "2") {
+		t.Errorf("expected count '2' in output; got:\n%s", got)
+	}
+	// Must NOT emit WARN when skills are present.
+	if strings.Contains(got, "WARN") {
+		t.Errorf("unexpected WARN when skills are installed; got:\n%s", got)
+	}
+}
