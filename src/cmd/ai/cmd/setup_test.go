@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/spf13/cobra"
 )
 
 // TestWriteClaudeMDCreatesFile verifies that writeClaudeMD writes a file
@@ -132,7 +134,7 @@ func TestRunSetupTUI_NonTTY_FallsBack(t *testing.T) {
 	// CLAUDE.md, and the Copilot symlink.
 	t.Setenv("AICONST_SEEDS", "Q01=Test User,Q07=both")
 
-	err := runSetupTUI(true /* noHooks=true to avoid hook extraction */)
+	err := runSetupTUI(&cobra.Command{}, true /* noHooks=true to avoid hook extraction */)
 	if err != nil {
 		t.Fatalf("runSetupTUI non-TTY fallback: unexpected error: %v", err)
 	}

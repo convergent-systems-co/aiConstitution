@@ -52,7 +52,7 @@ See SPEC.md §3.1, §4, and questions.yaml.`,
 			if nonInteractive {
 				return runSetupNonInteractive(profile)
 			}
-			return runSetupTUI(noHooks)
+			return runSetupTUI(cmd, noHooks)
 		},
 	}
 
@@ -67,7 +67,8 @@ See SPEC.md §3.1, §4, and questions.yaml.`,
 // runSetupTUI runs the Bubble Tea wizard and, on completion, wires up the
 // constitution files and optionally hooks, CLAUDE.md, and the Copilot symlink.
 // When noHooks is true, only the constitution files are written.
-func runSetupTUI(noHooks bool) error {
+// cmd is passed so that runSkillSelectionPromptReal can use it for output routing.
+func runSetupTUI(cmd *cobra.Command, noHooks bool) error {
 	// Detect and migrate legacy four-file layout before running the wizard.
 	// This ensures the wizard sees the existing rules and the user can
 	// compare what their original constitution looked like vs the new one.
@@ -99,7 +100,7 @@ func runSetupTUI(noHooks bool) error {
 	if !cbterm.IsTerminal(os.Stdout.Fd()) {
 		fmt.Fprintln(os.Stderr, "Note: non-interactive terminal detected; running in non-interactive mode.")
 		fmt.Fprintln(os.Stderr, "For the full TUI wizard, run: ai setup  (in an interactive terminal)")
-		return runSetupNonInteractive("")
+		return runSetupNonInteractive("") // skill selection is skipped in non-interactive mode
 	}
 
 	// Load the embedded questions taxonomy.
@@ -142,6 +143,13 @@ func runSetupTUI(noHooks bool) error {
 	if !finalWizard.Done() {
 		fmt.Fprintln(os.Stderr, "setup: wizard exited without completing")
 		return nil
+	}
+
+	// Offer skill selection before wiring constitution files. Non-fatal: if the
+	// fetch or any install fails, setup continues to runSetupPostWizard.
+	// runSkillSelectionPromptReal is a no-op when stdout is not a terminal.
+	if selErr := runSkillSelectionPromptReal(cmd); selErr != nil {
+		fmt.Fprintf(os.Stderr, "setup: skill selection: %v (continuing)\n", selErr)
 	}
 
 	aiRoot := paths.AIRoot()
