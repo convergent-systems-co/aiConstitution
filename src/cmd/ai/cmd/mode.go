@@ -2,9 +2,12 @@ package cmd
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
+	"text/tabwriter"
 	"time"
 
 	"github.com/convergent-systems-co/aiConstitution/src/internal/config"
@@ -77,8 +80,7 @@ See SPEC.md §3.7 + §7.`,
 		Use:   "current",
 		Short: "Print the active mode",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			notice("mode current:", "would read ~/.config/aiConstitution/mode.json")
-			return stub("mode current", "§7.4")
+			return runModeCurrent(cmd)
 		},
 	})
 
@@ -87,8 +89,7 @@ See SPEC.md §3.7 + §7.`,
 		Use:   "list",
 		Short: "Enumerate profiles + personas, grouped by source",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			notice("mode list:", "would walk profiles + personas + drafts + atoms")
-			return stub("mode list", "§7.3")
+			return runModeList(cmd)
 		},
 	})
 
@@ -116,8 +117,7 @@ See SPEC.md §3.7 + §7.`,
 		Short: "Show resolved persona/profile content + metadata",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			notice("mode show:", args[0])
-			return stub("mode show", "§7.8.5")
+			return runModeShow(cmd, args[0])
 		},
 	})
 
@@ -136,6 +136,101 @@ See SPEC.md §3.7 + §7.`,
 	c.AddCommand(newPmSubCmd())
 
 	return c
+}
+
+// runModeCurrent reads ~/.config/aiConstitution/mode.json and prints the active
+// mode slug, or "(none)" if the file is absent or the mode field is empty.
+func runModeCurrent(cmd *cobra.Command) error {
+	modeFile := paths.ModeJSON()
+	data, err := os.ReadFile(modeFile) //nolint:gosec
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			fmt.Fprintln(cmd.OutOrStdout(), "(none)")
+			return nil
+		}
+		return fmt.Errorf("mode current: read %s: %w", modeFile, err)
+	}
+
+	var m pmModeJSON
+	if jsonErr := json.Unmarshal(data, &m); jsonErr != nil {
+		return fmt.Errorf("mode current: parse %s: %w", modeFile, jsonErr)
+	}
+	if m.Mode == "" {
+		fmt.Fprintln(cmd.OutOrStdout(), "(none)")
+		return nil
+	}
+	fmt.Fprintln(cmd.OutOrStdout(), m.Mode)
+	return nil
+}
+
+// modeRow is a single row in the `mode list` table.
+type modeRow struct {
+	name   string
+	kind   string // "persona" or "profile"
+	source string // "local"
+}
+
+// runModeList walks ~/.ai/personas/ (personas) and ~/.config/aiConstitution/profiles/
+// (profiles) and prints a NAME | TYPE | SOURCE table.
+func runModeList(cmd *cobra.Command) error {
+	var rows []modeRow
+
+	// Walk personas.
+	personasRoot := filepath.Join(paths.AIRoot(), "personas")
+	if entries, err := os.ReadDir(personasRoot); err == nil {
+		for _, e := range entries {
+			if e.IsDir() || !strings.HasSuffix(e.Name(), ".yaml") {
+				continue
+			}
+			name := strings.TrimSuffix(e.Name(), ".yaml")
+			rows = append(rows, modeRow{name: name, kind: "persona", source: "local"})
+		}
+	}
+
+	// Walk profiles.
+	profilesRoot := filepath.Join(paths.ConfigDir(), "profiles")
+	if entries, err := os.ReadDir(profilesRoot); err == nil {
+		for _, e := range entries {
+			if e.IsDir() || !strings.HasSuffix(e.Name(), ".yaml") {
+				continue
+			}
+			name := strings.TrimSuffix(e.Name(), ".yaml")
+			rows = append(rows, modeRow{name: name, kind: "profile", source: "local"})
+		}
+	}
+
+	if len(rows) == 0 {
+		fmt.Fprintln(cmd.OutOrStdout(), "(no modes available)")
+		return nil
+	}
+
+	w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
+	fmt.Fprintln(w, "NAME\tTYPE\tSOURCE")
+	for _, r := range rows {
+		fmt.Fprintf(w, "%s\t%s\t%s\n", r.name, r.kind, r.source)
+	}
+	return w.Flush()
+}
+
+// runModeShow searches for a persona or profile named `name` and prints its
+// file content. Persona lookup (~/.ai/personas/<name>.yaml) is tried first,
+// then profile lookup (~/.config/aiConstitution/profiles/<name>.yaml).
+func runModeShow(cmd *cobra.Command, name string) error {
+	candidates := []string{
+		filepath.Join(paths.AIRoot(), "personas", name+".yaml"),
+		filepath.Join(paths.ConfigDir(), "profiles", name+".yaml"),
+	}
+	for _, path := range candidates {
+		data, err := os.ReadFile(path) //nolint:gosec
+		if err == nil {
+			fmt.Fprint(cmd.OutOrStdout(), string(data))
+			return nil
+		}
+		if !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("mode show: read %s: %w", path, err)
+		}
+	}
+	return fmt.Errorf("mode %q not found", name)
 }
 
 // newFocusCmd is the documented alias of `ai mode` (SPEC.md §3.7).
