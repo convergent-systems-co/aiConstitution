@@ -10,7 +10,7 @@ import Base from '../layouts/Base.astro';
       package manager. Per <a href="/spec#15-file-layout-v08">SPEC §15</a>,
       <code>~/.ai/bin/</code> does not contain the binary — only helper
       wrappers — so updates flow through <code>brew</code> /
-      <code>scoop</code> / <code>winget</code> and the migration prompt
+      <code>scoop</code> and the migration prompt
       in <code>ai update --migrate</code>.
     </p>
 
@@ -20,9 +20,6 @@ import Base from '../layouts/Base.astro';
     <h3>Windows (Scoop)</h3>
 <pre><code>scoop bucket add convergent-systems-co https://github.com/convergent-systems-co/scoop-bucket
 scoop install ai</code></pre>
-
-    <h3>Windows (winget)</h3>
-<pre><code>winget install convergent-systems-co.ai</code></pre>
 
     <h3>From source</h3>
 <pre><code>git clone https://github.com/convergent-systems-co/aiConstitution.git
@@ -36,7 +33,7 @@ make build      # produces dist/ai
     </p>
 
     <h2>First run</h2>
-<pre><code>ai setup        # reference-first guided wizard (8 questions)
+<pre><code>ai setup        # guided wizard — personalises your constitution
 ai doctor       # verify the install
 ai compress     # optional: generate ~5KB compact constitution for AI loading
 ai compress --wire  # switch Claude Code to load compact version</code></pre>
