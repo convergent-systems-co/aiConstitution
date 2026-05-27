@@ -22,6 +22,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 
 	stdembed "embed"
 )
@@ -182,12 +183,12 @@ func writeFile(dst string, data []byte, mode os.FileMode, overwrite bool) (strin
 }
 
 // executableForName chooses the mode for an extracted hook file.
-// Python scripts and TOML config get 0o644; everything else stays
-// 0o644 too — only the wrappers (which ExtractWrappers handles
-// separately) need the executable bit set on extraction. The Python
-// hooks are invoked via `python3 <path>` by the Claude/Copilot hook
-// surface; they don't need +x to be invoked that way.
+// Python scripts get 0o755 so Claude Code's shell hook runner can
+// invoke them directly (/bin/sh -c <path> requires +x). TOML and
+// other config files stay 0o644.
 func executableForName(name string) os.FileMode {
-	_ = name
+	if strings.HasSuffix(name, ".py") {
+		return 0o755
+	}
 	return 0o644
 }
