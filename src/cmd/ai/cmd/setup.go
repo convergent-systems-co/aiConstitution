@@ -184,6 +184,26 @@ func runSetupPostWizard(aiRoot, claudeDir, copilotDir string, answers map[string
 	if err := os.MkdirAll(aiRoot, 0o750); err != nil {
 		return fmt.Errorf("setup: mkdir airoot: %w", err)
 	}
+	// Create all directories the system writes to on first use so that hooks
+	// and commands never hit "no such file or directory" on a fresh install.
+	dirs := []string{
+		"audit",
+		"audit/overrides",
+		"audit/violations",
+		"audit/interactions",
+		"memory",
+		"governance",
+		"governance/plans",
+		"governance/schemas",
+		"governance/personas",
+		"governance/agentic",
+		"checkpoints",
+	}
+	for _, d := range dirs {
+		if err := os.MkdirAll(filepath.Join(aiRoot, d), 0o750); err != nil {
+			return fmt.Errorf("setup: mkdir %s: %w", d, err)
+		}
+	}
 	constitutionPath := filepath.Join(aiRoot, "Constitution.md")
 	if err := os.WriteFile(constitutionPath, []byte(rendered), 0o600); err != nil { //nolint:gosec
 		return fmt.Errorf("setup: write Constitution.md: %w", err)

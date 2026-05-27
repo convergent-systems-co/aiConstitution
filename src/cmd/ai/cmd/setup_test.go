@@ -143,6 +143,46 @@ func TestRunSetupTUI_NonTTY_FallsBack(t *testing.T) {
 	}
 }
 
+// TestSetupCreatesDirectories verifies that runSetupPostWizard creates all
+// required subdirectories under aiRoot so that hooks and commands can write
+// to them on first use without hitting "no such file or directory" errors.
+func TestSetupCreatesDirectories(t *testing.T) {
+	tmp := t.TempDir()
+	claudeDir := filepath.Join(tmp, ".claude")
+	aiRoot := filepath.Join(tmp, ".ai")
+	copilotDir := filepath.Join(tmp, ".copilot")
+
+	answers := map[string]string{"Q01": "Test Principal", "Q07": "both"}
+	if err := runSetupPostWizard(aiRoot, claudeDir, copilotDir, answers, true /* noHooks */); err != nil {
+		t.Fatalf("runSetupPostWizard: %v", err)
+	}
+
+	requiredDirs := []string{
+		"audit",
+		"audit/overrides",
+		"audit/violations",
+		"audit/interactions",
+		"memory",
+		"governance",
+		"governance/plans",
+		"governance/schemas",
+		"governance/personas",
+		"governance/agentic",
+		"checkpoints",
+	}
+	for _, d := range requiredDirs {
+		path := filepath.Join(aiRoot, d)
+		info, err := os.Stat(path)
+		if err != nil {
+			t.Errorf("expected directory %q to exist: %v", d, err)
+			continue
+		}
+		if !info.IsDir() {
+			t.Errorf("expected %q to be a directory, got file mode %v", d, info.Mode())
+		}
+	}
+}
+
 // TestRunSetupWritesConstitutionFiles is an integration-style test that
 // exercises the setup helpers end-to-end using temp dirs for all paths.
 // It only verifies that config.Save is called without error (the stub
