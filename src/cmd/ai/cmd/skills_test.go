@@ -2,6 +2,9 @@ package cmd_test
 
 import (
 	"bytes"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -351,5 +354,220 @@ func TestSkillsTemplatesShow_TemplateNotFound_ReturnsError(t *testing.T) {
 	_, _, err := runSkillsCmd(t, root, "skills", "templates", "show", "templates-skill", "nonexistent.txt")
 	if err == nil {
 		t.Fatal("expected error for nonexistent template file")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Helpers for install/uninstall/upgrade/upgrade-all tests (#347)
+// ---------------------------------------------------------------------------
+
+// fakeSkillAtom builds the JSON payload that a real skill-atoms GitHub API
+// endpoint would return.
+func fakeSkillAtom(slug, version, description, fragment string) []byte {
+	payload := map[string]interface{}{
+		"id":                     "skill/" + slug,
+		"version":                version,
+		"name":                   slug,
+		"description":            description,
+		"system_prompt_fragment": fragment,
+	}
+	b, _ := json.Marshal(payload)
+	return b
+}
+
+// startSkillAtomServer starts an httptest.Server that returns fakePayload for
+// any request. Returns the server; caller should t.Cleanup(srv.Close) or
+// rely on t.Cleanup registered here.
+func startSkillAtomServer(t *testing.T, status int, fakePayload []byte) *httptest.Server {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(status)
+		_, _ = w.Write(fakePayload)
+	}))
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+// setSkillAtomBaseURL temporarily overrides cmd.SkillAtomsBaseURL for the
+// duration of the test.
+func setSkillAtomBaseURL(t *testing.T, baseURL string) {
+	t.Helper()
+	old := cmd.SkillAtomsBaseURL
+	cmd.SkillAtomsBaseURL = baseURL
+	t.Cleanup(func() { cmd.SkillAtomsBaseURL = old })
+}
+
+// ---------------------------------------------------------------------------
+// #347 — ai skills install
+// ---------------------------------------------------------------------------
+
+func TestSkillsInstall_Success(t *testing.T) {
+	root := t.TempDir()
+	payload := fakeSkillAtom("commit", "1.2.0", "Generate a conventional commit message.", "You are a commit message assistant.")
+	srv := startSkillAtomServer(t, http.StatusOK, payload)
+	setSkillAtomBaseURL(t, srv.URL)
+
+	out, _, err := runSkillsCmd(t, root, "skills", "install", "commit")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// SKILL.md must exist at ~/.ai/skills/commit/SKILL.md
+	skillMDPath := filepath.Join(root, "skills", "commit", "SKILL.md")
+	data, readErr := os.ReadFile(skillMDPath)
+	if readErr != nil {
+		t.Fatalf("SKILL.md not written: %v", readErr)
+	}
+
+	content := string(data)
+	if !strings.Contains(content, "name: commit") {
+		t.Errorf("SKILL.md missing 'name: commit'; got:\n%s", content)
+	}
+	if !strings.Contains(content, "version: 1.2.0") {
+		t.Errorf("SKILL.md missing 'version: 1.2.0'; got:\n%s", content)
+	}
+	if !strings.Contains(content, "Generate a conventional commit message.") {
+		t.Errorf("SKILL.md missing description; got:\n%s", content)
+	}
+	if !strings.Contains(content, "You are a commit message assistant.") {
+		t.Errorf("SKILL.md missing system_prompt_fragment; got:\n%s", content)
+	}
+
+	if !strings.Contains(out, "Installed commit v1.2.0") {
+		t.Errorf("expected 'Installed commit v1.2.0' in output; got:\n%s", out)
+	}
+}
+
+func TestSkillsInstall_NotFound(t *testing.T) {
+	root := t.TempDir()
+	srv := startSkillAtomServer(t, http.StatusNotFound, []byte(`{"message":"Not Found"}`))
+	setSkillAtomBaseURL(t, srv.URL)
+
+	_, errStr, err := runSkillsCmd(t, root, "skills", "install", "nonexistent-skill")
+	if err == nil {
+		t.Fatal("expected error for 404, got nil")
+	}
+	combined := errStr + err.Error()
+	if !strings.Contains(combined, "nonexistent-skill") {
+		t.Errorf("error should mention the skill name; got: %s", combined)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// #347 — ai skills uninstall
+// ---------------------------------------------------------------------------
+
+func TestSkillsUninstall_Success(t *testing.T) {
+	root := t.TempDir()
+	// Pre-install a skill manually.
+	skillDir := filepath.Join(root, "skills", "commit")
+	if err := os.MkdirAll(skillDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte("---\nname: commit\ndescription: test\n---\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// Also create a symlink in a fake ~/.claude/skills/ directory.
+	claudeSkillsDir := filepath.Join(root, "claude-skills")
+	if err := os.MkdirAll(claudeSkillsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	symlinkPath := filepath.Join(claudeSkillsDir, "commit")
+	if err := os.Symlink(skillDir, symlinkPath); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv("AI_ROOT", root)
+	t.Setenv("CLAUDE_SKILLS_DIR", claudeSkillsDir)
+
+	out, _, err := runSkillsCmd(t, root, "skills", "uninstall", "commit")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(out, "Uninstalled commit") {
+		t.Errorf("expected 'Uninstalled commit'; got:\n%s", out)
+	}
+
+	// Skill dir and symlink must be gone.
+	if _, statErr := os.Stat(skillDir); !os.IsNotExist(statErr) {
+		t.Error("skill dir should have been removed")
+	}
+	if _, lstatErr := os.Lstat(symlinkPath); !os.IsNotExist(lstatErr) {
+		t.Error("symlink should have been removed")
+	}
+}
+
+func TestSkillsUninstall_NotInstalled(t *testing.T) {
+	root := t.TempDir()
+	_, errStr, err := runSkillsCmd(t, root, "skills", "uninstall", "ghost-skill")
+	if err == nil {
+		t.Fatal("expected error when skill is not installed")
+	}
+	combined := errStr + err.Error()
+	if !strings.Contains(combined, "ghost-skill") {
+		t.Errorf("error should mention the skill name; got: %s", combined)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// #347 — ai skills upgrade
+// ---------------------------------------------------------------------------
+
+func TestSkillsUpgrade_Success(t *testing.T) {
+	root := t.TempDir()
+	// Pre-install skill at v1.0.0.
+	skillDir := filepath.Join(root, "skills", "commit")
+	if err := os.MkdirAll(skillDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	oldMD := "---\nname: commit\ndescription: old\nversion: 1.0.0\n---\n# commit\nold fragment\n"
+	if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte(oldMD), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Mock server returns v1.2.0.
+	payload := fakeSkillAtom("commit", "1.2.0", "New description.", "New fragment.")
+	srv := startSkillAtomServer(t, http.StatusOK, payload)
+	setSkillAtomBaseURL(t, srv.URL)
+
+	out, _, err := runSkillsCmd(t, root, "skills", "upgrade", "commit")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !strings.Contains(out, "1.0.0") {
+		t.Errorf("output should mention old version 1.0.0; got:\n%s", out)
+	}
+	if !strings.Contains(out, "1.2.0") {
+		t.Errorf("output should mention new version 1.2.0; got:\n%s", out)
+	}
+
+	// SKILL.md should now contain the new fragment.
+	data, _ := os.ReadFile(filepath.Join(skillDir, "SKILL.md"))
+	if !strings.Contains(string(data), "New fragment.") {
+		t.Errorf("SKILL.md not updated; got:\n%s", string(data))
+	}
+}
+
+// ---------------------------------------------------------------------------
+// #347 — ai skills upgrade-all
+// ---------------------------------------------------------------------------
+
+func TestSkillsUpgradeAll_Empty(t *testing.T) {
+	root := t.TempDir()
+	// Create empty skills dir.
+	if err := os.MkdirAll(filepath.Join(root, "skills"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// No server needed — there is nothing to upgrade.
+	out, _, err := runSkillsCmd(t, root, "skills", "upgrade-all")
+	if err != nil {
+		t.Fatalf("upgrade-all on empty dir should not error; got: %v", err)
+	}
+	// Should emit a "nothing to do" style message.
+	if out == "" {
+		t.Error("expected some output from upgrade-all on empty dir")
 	}
 }
