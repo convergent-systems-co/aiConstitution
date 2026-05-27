@@ -106,3 +106,39 @@ func TestMigrateGenerateRuntime_WritesRuntimeFile(t *testing.T) {
 		t.Error("Constitution.runtime.md not written by --generate-runtime")
 	}
 }
+
+// TestMigrateGenerateRuntime_PartialExtractionSilent verifies that when
+// ExtractRuntime cannot parse the pre-migration Constitution.md (which uses
+// the old four-file heading style rather than the v2 §3.1 style expected by
+// ExtractRuntime), no "warning:" line is emitted to stdout or stderr.
+//
+// The runtime file should still be written (possibly with partial content) and
+// the command should return nil.
+func TestMigrateGenerateRuntime_PartialExtractionSilent(t *testing.T) {
+	aiRoot := t.TempDir()
+	t.Setenv("AI_ROOT", aiRoot)
+
+	// Write a Constitution.md that uses the old four-file heading style.
+	// ExtractRuntime expects "### §3.1 Prime Directives" but the legacy
+	// format uses "## 1. Prime Directives" — this triggers the extraction
+	// error path that previously emitted a warning.
+	oldStyleConst := "# Constitution\n\n## 1. The File System\n\nFour files.\n\n## 8. Changelog\n- 0.3\n"
+	if err := os.WriteFile(filepath.Join(aiRoot, "Constitution.md"), []byte(oldStyleConst), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	out, err := runMigrateCmd(t, "--generate-runtime")
+	if err != nil {
+		t.Fatalf("migrate --generate-runtime returned error: %v", err)
+	}
+
+	// No "warning:" line should appear in combined output.
+	if strings.Contains(out, "warning:") {
+		t.Errorf("--generate-runtime emitted an unexpected warning line; got:\n%s", out)
+	}
+
+	// Runtime file should have been written despite the partial extraction.
+	if _, statErr := os.Stat(filepath.Join(aiRoot, "Constitution.runtime.md")); statErr != nil {
+		t.Error("Constitution.runtime.md not written even with partial extraction")
+	}
+}

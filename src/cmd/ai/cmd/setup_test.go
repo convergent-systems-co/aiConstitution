@@ -114,6 +114,35 @@ func TestInstallCopilotSymlinkStaleSymlink(t *testing.T) {
 	}
 }
 
+// TestRunSetupTUI_NonTTY_FallsBack verifies that runSetupTUI does not attempt
+// to launch the Bubble Tea TUI when stdout is not a terminal (e.g. in CI or
+// when output is piped). It should fall back to the non-interactive path and
+// complete without error.
+//
+// In test environments os.Stdout is never a TTY, so this test exercises the
+// real TTY-detection branch unconditionally.
+func TestRunSetupTUI_NonTTY_FallsBack(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("AI_ROOT", tmp)
+	t.Setenv("HOME", tmp)
+
+	// runSetupTUI falls back to runSetupNonInteractive when not a TTY.
+	// runSetupNonInteractive uses AICONST_SEEDS to fill required answers
+	// and then calls runSetupPostWizard — which writes Constitution.md,
+	// CLAUDE.md, and the Copilot symlink.
+	t.Setenv("AICONST_SEEDS", "Q01=Test User,Q07=both")
+
+	err := runSetupTUI(true /* noHooks=true to avoid hook extraction */)
+	if err != nil {
+		t.Fatalf("runSetupTUI non-TTY fallback: unexpected error: %v", err)
+	}
+
+	// Constitution.md must have been written.
+	if _, statErr := os.Stat(filepath.Join(tmp, "Constitution.md")); statErr != nil {
+		t.Error("Constitution.md not written by non-TTY fallback path")
+	}
+}
+
 // TestRunSetupWritesConstitutionFiles is an integration-style test that
 // exercises the setup helpers end-to-end using temp dirs for all paths.
 // It only verifies that config.Save is called without error (the stub

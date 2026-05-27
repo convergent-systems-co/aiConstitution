@@ -179,12 +179,15 @@ func runMigrateGenerateRuntime(cmd *cobra.Command, root string) error {
 	}
 	rc, err := constitution.ExtractRuntime(string(data))
 	if err != nil {
-		// Lenient: log the extraction error but still write whatever FormatRuntime
-		// produces from the partial RuntimeContent. The unified document generated
-		// by --flatten uses section headings (e.g. "§3 Common") that don't match
-		// the ExtractRuntime patterns tuned for the full v2 format. The runtime file
-		// is still useful even when partially populated.
-		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "warning: runtime extraction incomplete: %v\n", err)
+		// Lenient: silently continue when ExtractRuntime cannot parse the pre-migration
+		// file. The unified document produced by --flatten uses the old four-file
+		// heading style (e.g. "## 1. Prime Directives") rather than the v2 §3.1 style
+		// that ExtractRuntime expects. The runtime file is a bonus optimisation — if it
+		// can't be fully populated from a pre-migration file it is fine; the setup
+		// wizard will regenerate it from the freshly-rendered Constitution.md. Emitting
+		// a "warning:" here was misleading because the wizard always overwrites the
+		// file with a correct one immediately after migration completes.
+		_ = err
 	}
 	out := constitution.FormatRuntime(rc)
 	dest := filepath.Join(root, "Constitution.runtime.md")
