@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"text/tabwriter"
 
 	"github.com/spf13/cobra"
 )
@@ -23,13 +24,145 @@ import (
 var SkillAtomsBaseURL = "https://api.github.com/repos/convergent-systems-co/skill-atoms/contents"
 
 // skillAtom is the JSON schema returned by the skill-atoms GitHub API endpoint.
-// Only the fields relevant for install/upgrade are decoded.
+// Only the fields relevant for install/upgrade/listing are decoded.
 type skillAtom struct {
-	ID                  string `json:"id"`
-	Version             string `json:"version"`
-	Name                string `json:"name"`
-	Description         string `json:"description"`
+	ID                   string `json:"id"`
+	Version              string `json:"version"`
+	Name                 string `json:"name"`
+	Description          string `json:"description"`
 	SystemPromptFragment string `json:"system_prompt_fragment"`
+	Lifecycle            string `json:"lifecycle"`
+}
+
+// skillAtomDirEntry is a single entry in the GitHub Contents API directory
+// listing returned when fetching the /skills/skill path.
+type skillAtomDirEntry struct {
+	Name        string `json:"name"`
+	DownloadURL string `json:"download_url"`
+}
+
+// fetchSkillsDirectory fetches the GitHub Contents API directory listing for
+// the skills/skill path and returns the raw entries. Only entries whose name
+// ends with ".json" are included in the result.
+func fetchSkillsDirectory() ([]skillAtomDirEntry, error) {
+	url := SkillAtomsBaseURL + "/skills/skill"
+	req, err := http.NewRequest(http.MethodGet, url, nil) //nolint:noctx // CLI tool
+	if err != nil {
+		return nil, fmt.Errorf("skills: build directory request: %w", err)
+	}
+	req.Header.Set("Accept", "application/vnd.github+json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("skills: fetch directory: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("skills: fetch directory: HTTP %d", resp.StatusCode)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("skills: read directory response: %w", err)
+	}
+
+	var entries []skillAtomDirEntry
+	if err := json.Unmarshal(body, &entries); err != nil {
+		return nil, fmt.Errorf("skills: parse directory JSON: %w", err)
+	}
+
+	// Filter to .json files only.
+	filtered := entries[:0]
+	for _, e := range entries {
+		if strings.HasSuffix(e.Name, ".json") {
+			filtered = append(filtered, e)
+		}
+	}
+	return filtered, nil
+}
+
+// fetchSkillAtomFromURL fetches a skill atom JSON from an explicit download URL.
+// Used by runSkillsAvailable to hydrate each directory entry.
+func fetchSkillAtomFromURL(downloadURL string) (*skillAtom, error) {
+	req, err := http.NewRequest(http.MethodGet, downloadURL, nil) //nolint:noctx // CLI tool
+	if err != nil {
+		return nil, fmt.Errorf("skills: build atom request: %w", err)
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("skills: fetch atom: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("skills: fetch atom: HTTP %d", resp.StatusCode)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("skills: read atom response: %w", err)
+	}
+
+	var atom skillAtom
+	if err := json.Unmarshal(body, &atom); err != nil {
+		return nil, fmt.Errorf("skills: parse atom JSON: %w", err)
+	}
+	return &atom, nil
+}
+
+// runSkillsAvailable implements `ai skills available`.
+// It lists all skills published in the skill-atoms registry, excluding
+// deprecated and retired entries.
+func runSkillsAvailable(cmd *cobra.Command, _ []string) error {
+	entries, err := fetchSkillsDirectory()
+	if err != nil {
+		return err
+	}
+
+	// Hydrate each entry into a full atom.
+	type row struct{ name, version, description string }
+	var rows []row
+	for _, e := range entries {
+		atom, fetchErr := fetchSkillAtomFromURL(e.DownloadURL)
+		if fetchErr != nil {
+			// Non-fatal: skip entries that fail to hydrate.
+			fmt.Fprintf(cmd.ErrOrStderr(), "warning: could not fetch %s: %v\n", e.Name, fetchErr)
+			continue
+		}
+		lc := strings.ToLower(atom.Lifecycle)
+		if lc == "deprecated" || lc == "retired" {
+			continue
+		}
+		name := atom.Name
+		if name == "" {
+			name = strings.TrimSuffix(e.Name, ".json")
+		}
+		rows = append(rows, row{name, atom.Version, atom.Description})
+	}
+
+	if len(rows) == 0 {
+		fmt.Fprintln(cmd.OutOrStdout(), "(no skills available)")
+		return nil
+	}
+
+	w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
+	fmt.Fprintln(w, "NAME\tVERSION\tDESCRIPTION")
+	for _, r := range rows {
+		fmt.Fprintf(w, "%s\t%s\t%s\n", r.name, r.version, r.description)
+	}
+	return w.Flush()
+}
+
+// newSkillsAvailableCmd returns the cobra command for `ai skills available`.
+func newSkillsAvailableCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "available",
+		Short: "List skills available to install from skill-atoms.com",
+		Args:  cobra.NoArgs,
+		RunE:  runSkillsAvailable,
+	}
 }
 
 // fetchSkillAtomJSON fetches the skill atom JSON for slug from the configured
@@ -408,6 +541,7 @@ See SPEC.md §7.10.`,
 		newSkillsShowCmd(),
 		newSkillsValidateCmd(),
 		newSkillsTemplatesCmd(),
+		newSkillsAvailableCmd(),
 		// install/uninstall/upgrade/upgrade-all — implemented in §7.10.2 (#347).
 		&cobra.Command{
 			Use:   "install <name>[@<version>]",

@@ -571,3 +571,140 @@ func TestSkillsUpgradeAll_Empty(t *testing.T) {
 		t.Error("expected some output from upgrade-all on empty dir")
 	}
 }
+
+// ---------------------------------------------------------------------------
+// #365 — ai skills available
+// ---------------------------------------------------------------------------
+
+// startSkillsAvailableServer starts a mock GitHub Contents API server that
+// serves a directory listing of skill entries and individual atom JSON payloads.
+//
+// entries maps slug → skillAtom JSON body. The directory listing is built
+// automatically from the keys. If a slug maps to nil bytes, the atom fetch
+// returns 404 for that entry (used to test resilience).
+func startSkillsAvailableServer(t *testing.T, entries map[string][]byte) *httptest.Server {
+	t.Helper()
+	var srv *httptest.Server
+	srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+
+		// Directory listing endpoint: /skills/skill
+		if r.URL.Path == "/skills/skill" {
+			var listing []map[string]interface{}
+			for slug, body := range entries {
+				entry := map[string]interface{}{
+					"name":         slug + ".json",
+					"download_url": srv.URL + "/atoms/" + slug + ".json",
+				}
+				if body == nil {
+					entry["download_url"] = srv.URL + "/atoms/notfound/" + slug + ".json"
+				}
+				listing = append(listing, entry)
+			}
+			b, _ := json.Marshal(listing)
+			_, _ = w.Write(b)
+			return
+		}
+
+		// Individual atom endpoint: /atoms/<slug>.json
+		if strings.HasPrefix(r.URL.Path, "/atoms/") && !strings.Contains(r.URL.Path, "/notfound/") {
+			slug := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/atoms/"), ".json")
+			if body, ok := entries[slug]; ok && body != nil {
+				_, _ = w.Write(body)
+				return
+			}
+		}
+
+		// Anything else → 404.
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = w.Write([]byte(`{"message":"Not Found"}`))
+	}))
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+func TestSkillsAvailable_Success(t *testing.T) {
+	root := t.TempDir()
+	entries := map[string][]byte{
+		"commit": fakeSkillAtomWithLifecycle("commit", "1.2.0", "Generate commit messages.", ""),
+		"review": fakeSkillAtomWithLifecycle("review", "0.5.1", "AI code review assistant.", ""),
+	}
+	srv := startSkillsAvailableServer(t, entries)
+	setSkillAtomBaseURL(t, srv.URL)
+
+	out, _, err := runSkillsCmd(t, root, "skills", "available")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Table must include both skills.
+	if !strings.Contains(out, "commit") {
+		t.Errorf("output missing 'commit'; got:\n%s", out)
+	}
+	if !strings.Contains(out, "1.2.0") {
+		t.Errorf("output missing version '1.2.0'; got:\n%s", out)
+	}
+	if !strings.Contains(out, "Generate commit messages.") {
+		t.Errorf("output missing description; got:\n%s", out)
+	}
+	if !strings.Contains(out, "review") {
+		t.Errorf("output missing 'review'; got:\n%s", out)
+	}
+	if !strings.Contains(out, "0.5.1") {
+		t.Errorf("output missing version '0.5.1'; got:\n%s", out)
+	}
+}
+
+func TestSkillsAvailable_Empty(t *testing.T) {
+	root := t.TempDir()
+	srv := startSkillsAvailableServer(t, map[string][]byte{})
+	setSkillAtomBaseURL(t, srv.URL)
+
+	out, _, err := runSkillsCmd(t, root, "skills", "available")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(out, "(no skills available)") {
+		t.Errorf("expected '(no skills available)'; got:\n%s", out)
+	}
+}
+
+func TestSkillsAvailable_FiltersDeprecated(t *testing.T) {
+	root := t.TempDir()
+	entries := map[string][]byte{
+		"active":     fakeSkillAtomWithLifecycle("active", "1.0.0", "Active skill.", ""),
+		"deprecated": fakeSkillAtomWithLifecycle("deprecated", "0.9.0", "Old skill.", "deprecated"),
+		"retired":    fakeSkillAtomWithLifecycle("retired", "0.1.0", "Retired skill.", "retired"),
+	}
+	srv := startSkillsAvailableServer(t, entries)
+	setSkillAtomBaseURL(t, srv.URL)
+
+	out, _, err := runSkillsCmd(t, root, "skills", "available")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !strings.Contains(out, "active") {
+		t.Errorf("output should contain 'active'; got:\n%s", out)
+	}
+	if strings.Contains(out, "deprecated") {
+		t.Errorf("output should NOT contain 'deprecated' skill; got:\n%s", out)
+	}
+	if strings.Contains(out, "retired") {
+		t.Errorf("output should NOT contain 'retired' skill; got:\n%s", out)
+	}
+}
+
+// fakeSkillAtomWithLifecycle is like fakeSkillAtom but also sets the lifecycle field.
+func fakeSkillAtomWithLifecycle(slug, version, description, lifecycle string) []byte {
+	payload := map[string]interface{}{
+		"id":                     "skill/" + slug,
+		"version":                version,
+		"name":                   slug,
+		"description":            description,
+		"system_prompt_fragment": "",
+		"lifecycle":              lifecycle,
+	}
+	b, _ := json.Marshal(payload)
+	return b
+}
