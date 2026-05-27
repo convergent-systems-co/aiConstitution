@@ -543,17 +543,45 @@ See SPEC.md §7.10.`,
 		newSkillsTemplatesCmd(),
 		newSkillsAvailableCmd(),
 		// install/uninstall/upgrade/upgrade-all — implemented in §7.10.2 (#347).
-		&cobra.Command{
-			Use:   "install <name>[@<version>]",
-			Short: "Fetch from skill-atoms.com and install to ~/.ai/skills/",
-			Long: `install fetches a skill atom from the skill-atoms registry and
+		func() *cobra.Command {
+			var installAll bool
+			cmd := &cobra.Command{
+				Use:   "install [<name>[@<version>]]",
+				Short: "Fetch from skill-atoms.com and install to ~/.ai/skills/",
+				Long: `install fetches a skill atom from the skill-atoms registry and
 installs it to ~/.ai/skills/<name>/SKILL.md. If ~/.claude/skills/ exists,
-a symlink is created there for Claude Code to discover.`,
-			Args: cobra.ExactArgs(1),
-			RunE: func(c *cobra.Command, args []string) error {
-				return runSkillsInstall(c, args[0])
-			},
-		},
+a symlink is created there for Claude Code to discover.
+
+Use --all to install every available skill at once.`,
+				Args: func(cmd *cobra.Command, args []string) error {
+					if installAll {
+						return cobra.NoArgs(cmd, args)
+					}
+					return cobra.ExactArgs(1)(cmd, args)
+				},
+				RunE: func(c *cobra.Command, args []string) error {
+					if installAll {
+						slugs, err := fetchSkillsDirectory()
+						if err != nil {
+							return fmt.Errorf("skills install --all: fetch list: %w", err)
+						}
+						var errs []string
+						for _, s := range slugs {
+							if installErr := runSkillsInstall(c, s.Slug); installErr != nil {
+								errs = append(errs, s.Slug+": "+installErr.Error())
+							}
+						}
+						if len(errs) > 0 {
+							return fmt.Errorf("some skills failed to install:\n  %s", strings.Join(errs, "\n  "))
+						}
+						return nil
+					}
+					return runSkillsInstall(c, args[0])
+				},
+			}
+			cmd.Flags().BoolVar(&installAll, "all", false, "install every available skill")
+			return cmd
+		}(),
 		&cobra.Command{
 			Use:   "uninstall <name>",
 			Short: "Remove a skill and its Claude symlink",
