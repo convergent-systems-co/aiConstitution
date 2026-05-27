@@ -72,14 +72,19 @@ jobs:
             echo "::error::Missing CLOUDFLARE_API_TOKEN or CLOUDFLARE_ACCOUNT_ID secret"
             exit 1
           fi
+          # Use the Pages project endpoint — the same one wrangler calls.
+          # /user/tokens/verify requires User:API Tokens:Read which a
+          # Pages-scoped token does not have, so we validate against the
+          # actual resource the deploy needs.
           HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
             -H "Authorization: Bearer $CF_TOKEN" \
-            "https://api.cloudflare.com/client/v4/user/tokens/verify")
+            "https://api.cloudflare.com/client/v4/accounts/$CF_ACCOUNT/pages/projects/ai-constitution")
           if [ "$HTTP_STATUS" != "200" ]; then
-            echo "::error::CLOUDFLARE_API_TOKEN invalid (HTTP $HTTP_STATUS). Create an API Token at https://dash.cloudflare.com/profile/api-tokens with 'Cloudflare Pages:Edit' permission."
+            echo "::error::Cloudflare Pages API returned HTTP $HTTP_STATUS."
+            echo "::error::Verify CLOUDFLARE_API_TOKEN has Account:Cloudflare Pages:Edit scope."
             exit 1
           fi
-          echo "Cloudflare credentials validated (account: $CF_ACCOUNT)"
+          echo "Cloudflare credentials validated — Pages project reachable"
 
       - uses: convergent-systems-co/action-atoms/composite/cs-page-deployment@7f36ff3b93a3a3ae83bfa805ecafee80cb25e341
         with:
