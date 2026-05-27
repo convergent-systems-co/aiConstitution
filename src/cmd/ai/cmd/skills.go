@@ -567,8 +567,9 @@ Use --all to install every available skill at once.`,
 						}
 						var errs []string
 						for _, s := range slugs {
-							if installErr := runSkillsInstall(c, s.Slug); installErr != nil {
-								errs = append(errs, s.Slug+": "+installErr.Error())
+							slug := strings.TrimSuffix(s.Name, ".json")
+							if installErr := runSkillsInstall(c, slug); installErr != nil {
+								errs = append(errs, slug+": "+installErr.Error())
 							}
 						}
 						if len(errs) > 0 {
