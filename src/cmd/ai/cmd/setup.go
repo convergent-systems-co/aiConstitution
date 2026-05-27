@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	cbterm "github.com/charmbracelet/x/term"
 	"github.com/spf13/cobra"
 
 	"github.com/convergent-systems-co/aiConstitution/src/cmd/ai/embed"
@@ -92,6 +93,15 @@ func runSetupTUI(noHooks bool) error {
 		fmt.Println()
 	}
 
+	// TTY detection: Bubble Tea requires an interactive terminal. If stdout is
+	// not a TTY (e.g. piped output, CI, restricted terminal emulators), fall
+	// back to the non-interactive path rather than failing with a cryptic error.
+	if !cbterm.IsTerminal(os.Stdout.Fd()) {
+		fmt.Fprintln(os.Stderr, "Note: non-interactive terminal detected; running in non-interactive mode.")
+		fmt.Fprintln(os.Stderr, "For the full TUI wizard, run: ai setup  (in an interactive terminal)")
+		return runSetupNonInteractive("")
+	}
+
 	// Load the embedded questions taxonomy.
 	taxData := embed.QuestionsYAML()
 	tax, err := internalwizard.ParseTaxonomy(taxData)
@@ -118,7 +128,11 @@ func runSetupTUI(noHooks bool) error {
 	prog := tea.NewProgram(m)
 	finalModel, err := prog.Run()
 	if err != nil {
-		return fmt.Errorf("setup: TUI error: %w", err)
+		// TUI failed after TTY check passed (e.g. restricted terminal emulator
+		// that reports as a TTY but cannot drive a full TUI). Fall back to the
+		// non-interactive path rather than surfacing a confusing Bubble Tea error.
+		fmt.Fprintf(os.Stderr, "TUI unavailable (%v); running non-interactive setup.\n", err)
+		return runSetupNonInteractive("")
 	}
 	finalWizard, ok := finalModel.(tui.Model)
 	if !ok {
