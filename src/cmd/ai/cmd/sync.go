@@ -1,11 +1,14 @@
 package cmd
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/convergent-systems-co/aiConstitution/src/internal/paths"
@@ -40,6 +43,21 @@ var runGitQuiet = func(dir string, args ...string) (bool, error) {
 		return false, err
 	}
 	return true, nil
+}
+
+// runGitOutput is the package-level seam for git commands that return
+// captured stdout as a string. Tests substitute a fake that returns
+// deterministic output without shelling out.
+var runGitOutput = func(dir string, args ...string) (string, error) {
+	cmd := exec.Command("git", args...) //nolint:gosec // G204: args come from CLI; dir from paths
+	cmd.Dir = dir
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		return "", fmt.Errorf("git %v: %w", args, err)
+	}
+	return stdout.String(), nil
 }
 
 // runGitTo is the underlying exec wrapper used by the default runGit.
@@ -114,8 +132,7 @@ See SPEC.md §3.4 + §12.`,
 		Use:   "status",
 		Short: "Show sync state: configured remote, last push, last pull, dirty count",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			notice("sync status:", "would report configured remote + ahead/behind counts.")
-			return stub("sync status", "§12")
+			return doSyncStatus(cmd.OutOrStdout())
 		},
 	}
 
@@ -153,4 +170,77 @@ func doSyncPush(_ io.Writer, remote string) error {
 func doSyncPull(_ io.Writer, remote string) error {
 	dir := paths.AIRoot()
 	return runGit(dir, "pull", remote, "main")
+}
+
+// doSyncStatus reports the sync state of ~/.ai/:
+//   - current commit (short)
+//   - configured remote URL
+//   - ahead/behind counts vs origin/main
+//   - relative time of last commit
+//
+// If ~/.ai/ is not a git repository the function prints a clear message
+// and returns a non-nil error so the command exits non-zero.
+func doSyncStatus(w io.Writer) error {
+	dir := paths.AIRoot()
+
+	// Detect whether dir is a git repo before attempting other queries.
+	commit, err := runGitOutput(dir, "rev-parse", "--short", "HEAD")
+	if err != nil {
+		fmt.Fprintf(w, "~/.ai/ is not a git repository\n") //nolint:errcheck
+		return err
+	}
+	commit = strings.TrimSpace(commit)
+
+	// Remote URL — best effort; blank if the repo has no origin.
+	remoteURL, _ := runGitOutput(dir, "remote", "get-url", "origin")
+	remoteURL = strings.TrimSpace(remoteURL)
+	if remoteURL == "" {
+		remoteURL = "(no remote configured)"
+	}
+
+	// Ahead / behind counts. rev-list --count may fail when there is no
+	// tracking branch; treat those as 0.
+	behind := gitCount(dir, "rev-list", "--count", "HEAD..origin/main")
+	ahead := gitCount(dir, "rev-list", "--count", "origin/main..HEAD")
+
+	// Last commit timestamp (relative).
+	lastPull, _ := runGitOutput(dir, "log", "-1", "--format=%cd", "--date=relative")
+	lastPull = strings.TrimSpace(lastPull)
+	if lastPull == "" {
+		lastPull = "(unknown)"
+	}
+
+	// Build status string.
+	var statusLine string
+	switch {
+	case ahead == 0 && behind == 0:
+		statusLine = "up to date"
+	default:
+		parts := []string{}
+		if ahead > 0 {
+			parts = append(parts, fmt.Sprintf("%d ahead", ahead))
+		}
+		if behind > 0 {
+			parts = append(parts, fmt.Sprintf("%d behind", behind))
+		}
+		statusLine = strings.Join(parts, ", ")
+	}
+
+	fmt.Fprintf(w, "Sync status — ~/.ai/\n") //nolint:errcheck
+	fmt.Fprintf(w, "Remote:    %s\n", remoteURL) //nolint:errcheck
+	fmt.Fprintf(w, "Commit:    %s\n", commit) //nolint:errcheck
+	fmt.Fprintf(w, "Status:    %s\n", statusLine) //nolint:errcheck
+	fmt.Fprintf(w, "Last pull: %s\n", lastPull) //nolint:errcheck
+	return nil
+}
+
+// gitCount runs a rev-list --count command and returns the integer result.
+// Returns 0 on any error (e.g., no tracking branch).
+func gitCount(dir string, args ...string) int {
+	out, err := runGitOutput(dir, args...)
+	if err != nil {
+		return 0
+	}
+	n, _ := strconv.Atoi(strings.TrimSpace(out))
+	return n
 }
