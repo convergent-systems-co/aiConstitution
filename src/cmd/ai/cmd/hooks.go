@@ -38,10 +38,10 @@ See SPEC.md §3.10 + §9.`,
 		RunE:  runHooksAvailable,
 	})
 
-	// list — hooks installed on disk in ~/.ai/hooks/ with wiring status
+	// list — hooks installed on disk in ~/.ai/hooks/ with per-client wiring columns
 	c.AddCommand(&cobra.Command{
 		Use:   "list",
-		Short: "List installed hooks and their wiring status",
+		Short: "List installed hooks with per-client wiring status",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			home, _ := os.UserHomeDir()
 			aiRoot := os.Getenv("AI_ROOT")
@@ -49,32 +49,50 @@ See SPEC.md §3.10 + §9.`,
 				aiRoot = filepath.Join(home, ".ai")
 			}
 			hooksDir := filepath.Join(aiRoot, "hooks")
-			settingsPath := filepath.Join(home, ".claude", "settings.json")
 
 			entries, err := os.ReadDir(hooksDir)
 			if err != nil {
 				if os.IsNotExist(err) {
-					fmt.Fprintf(cmd.OutOrStdout(), "No hooks installed (run: ai hooks install --all)\n")
+					fmt.Fprintln(cmd.OutOrStdout(), "No hooks installed (run: ai hooks install --all)")
 					return nil
 				}
 				return err
 			}
 
-			wired := readWiredHookNames(settingsPath)
+			// Per-client wiring maps.
+			claudeGlobal := readWiredHookNames(filepath.Join(home, ".claude", "settings.json"))
+			claudeLocal := readWiredHookNames(filepath.Join(".", ".claude", "settings.json"))
+
+			// Copilot: wired if Constitution.runtime.md symlink exists in ~/.copilot/instructions/
+			copilotLink := filepath.Join(home, ".copilot", "instructions", "constitution.md")
+			_, copilotLinked := os.Lstat(copilotLink)
+			copilotWired := copilotLinked == nil
 
 			out := cmd.OutOrStdout()
-			fmt.Fprintf(out, "  %-32s  %s\n", "HOOK", "STATUS")
-			fmt.Fprintf(out, "  %-32s  %s\n", strings.Repeat("─", 32), strings.Repeat("─", 10))
+			const hookW = 32
+			fmt.Fprintf(out, "  %-*s  %-9s  %-9s  %s\n", hookW, "HOOK", "INSTALLED", "CLAUDE", "COPILOT")
+			fmt.Fprintf(out, "  %-*s  %-9s  %-9s  %s\n",
+				hookW, strings.Repeat("─", hookW),
+				strings.Repeat("─", 9), strings.Repeat("─", 9), strings.Repeat("─", 7))
+
 			count := 0
 			for _, e := range entries {
 				if e.IsDir() || !isHookFile(e.Name()) {
 					continue
 				}
-				status := "installed"
-				if wired[e.Name()] {
-					status = "wired"
+				claudeStatus := "-"
+				if claudeGlobal[e.Name()] {
+					claudeStatus = "global"
+				} else if claudeLocal[e.Name()] {
+					claudeStatus = "project"
 				}
-				fmt.Fprintf(out, "  %-32s  %s\n", e.Name(), status)
+				// Copilot hooks are constitution-level, not per-file
+				copilotStatus := "-"
+				if copilotWired {
+					copilotStatus = "wired"
+				}
+				fmt.Fprintf(out, "  %-*s  %-9s  %-9s  %s\n",
+					hookW, e.Name(), "✓", claudeStatus, copilotStatus)
 				count++
 			}
 			if count == 0 {
@@ -172,6 +190,7 @@ Prints [✓] or [✗] per hook. Exit 1 if any [✗].`,
 	var installForce bool
 	var installClaude bool
 	var installClaudeRoot string
+	var installCopilot bool
 	install := &cobra.Command{
 		Use:   "install [<name>]",
 		Short: "Extract embedded hook(s) / wrappers to ~/.ai/ (idempotent)",
@@ -187,6 +206,8 @@ Prints [✓] or [✗] per hook. Exit 1 if any [✗].`,
   ai hooks install --claude               wire installed hooks into
                                           .claude/settings.json in
                                           the current repo
+  ai hooks install --copilot              symlink Constitution.runtime.md
+                                          into ~/.copilot/instructions/
 
   --force                overwrite existing files
   --repo=<path>          (with no positional) install a pre-commit
@@ -194,6 +215,7 @@ Prints [✓] or [✗] per hook. Exit 1 if any [✗].`,
                          that defers to ~/.ai/hooks/secret-precommit.py
   --claude               wire ~/.ai/hooks/*.py into .claude/settings.json
   --claude-root=<path>   directory containing .claude/ (default ".")
+  --copilot              symlink Constitution.runtime.md into ~/.copilot/instructions/
 
 Per SPEC.md §3.10 + §10.2 + §14.1.`,
 		Args: cobra.MaximumNArgs(1),
@@ -205,6 +227,21 @@ Per SPEC.md §3.10 + §10.2 + §14.1.`,
 			if installClaude {
 				return runHooksInstallClaude(cmd, installClaudeRoot)
 			}
+			if installCopilot {
+				home, err := os.UserHomeDir()
+				if err != nil {
+					return err
+				}
+				aiRoot := os.Getenv("AI_ROOT")
+				if aiRoot == "" {
+					aiRoot = filepath.Join(home, ".ai")
+				}
+				if err := runHooksCopilotInstall(aiRoot, home); err != nil {
+					return err
+				}
+				fmt.Fprintf(cmd.OutOrStdout(), "Wired Constitution.runtime.md into ~/.copilot/instructions/constitution.md\n")
+				return nil
+			}
 			return runHooksInstall(installRepo, target, installAllHooks || installAll, installForce)
 		},
 	}
@@ -214,6 +251,7 @@ Per SPEC.md §3.10 + §10.2 + §14.1.`,
 	install.Flags().BoolVar(&installForce, "force", false, "overwrite existing files")
 	install.Flags().BoolVar(&installClaude, "claude", false, "wire ~/.ai/hooks/*.py into .claude/settings.json")
 	install.Flags().StringVar(&installClaudeRoot, "claude-root", ".", "directory containing .claude/ (default: current dir)")
+	install.Flags().BoolVar(&installCopilot, "copilot", false, "symlink Constitution.runtime.md into ~/.copilot/instructions/")
 
 	c.AddCommand(propose, install)
 	return c
