@@ -225,11 +225,28 @@ func checkInstalledSkills(w io.Writer) error {
 	return nil
 }
 
-// checkPersonasBlock verifies the <!-- ai:personas --> block exists in CLAUDE.md.
+// checkPersonasBlock verifies the <!-- ai:personas --> block exists in CLAUDE.md,
+// but only when Constitution.md actually contains persona sections to wire.
+// If Constitution.md has no persona sections, the block is not required and no
+// warning is emitted — otherwise users with minimal constitutions get a false positive.
 func checkPersonasBlock(w io.Writer) {
+	// Only warn if Constitution.md actually has persona sections to wire.
+	root := paths.AIRoot()
+	constPath := filepath.Join(root, "Constitution.md")
+	constData, err := os.ReadFile(constPath) //nolint:gosec
+	if err != nil {
+		return // can't read constitution — skip this check silently
+	}
+	sections := constitution.ParseSections(string(constData))
+	if len(sections) == 0 {
+		// No persona sections → nothing to wire → not a problem.
+		return
+	}
+
+	// Persona sections exist — check that CLAUDE.md has the wiring block.
 	claudeMD := paths.ClaudeMD()
-	data, err := os.ReadFile(claudeMD) //nolint:gosec
-	if err != nil || !strings.Contains(string(data), "<!-- ai:personas") {
+	claudeData, err := os.ReadFile(claudeMD) //nolint:gosec
+	if err != nil || !strings.Contains(string(claudeData), "<!-- ai:personas") {
 		fmt.Fprintln(w, "[⚠] CLAUDE.md personas block missing — run `ai compress --wire` or `ai mode` to create it")
 		return
 	}

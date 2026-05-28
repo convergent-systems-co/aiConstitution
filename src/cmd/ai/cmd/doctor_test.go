@@ -103,6 +103,14 @@ func TestDoctorTerminalNotifierSkippedOnNonDarwin(t *testing.T) {
 func TestDoctorPersonasBlockMissing(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("HOME", dir)
+	t.Setenv("AI_ROOT", dir)
+
+	// Write a Constitution.md with persona sections so the check is active.
+	constContent := "## 1. Coder Rules\nSome coder rules.\n"
+	if err := os.WriteFile(filepath.Join(dir, "Constitution.md"), []byte(constContent), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
 	claudeDir := filepath.Join(dir, ".claude")
 	if err := os.MkdirAll(claudeDir, 0o755); err != nil {
 		t.Fatal(err)
@@ -121,6 +129,14 @@ func TestDoctorPersonasBlockMissing(t *testing.T) {
 func TestDoctorPersonasBlockPresent(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("HOME", dir)
+	t.Setenv("AI_ROOT", dir)
+
+	// Write a Constitution.md with persona sections so the check is active.
+	constContent := "## 1. Coder Rules\nSome coder rules.\n"
+	if err := os.WriteFile(filepath.Join(dir, "Constitution.md"), []byte(constContent), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
 	claudeDir := filepath.Join(dir, ".claude")
 	if err := os.MkdirAll(claudeDir, 0o755); err != nil {
 		t.Fatal(err)
@@ -134,6 +150,91 @@ func TestDoctorPersonasBlockPresent(t *testing.T) {
 	_ = runDoctor(&out, false, "")
 	if !strings.Contains(out.String(), "[✓] CLAUDE.md personas block") {
 		t.Errorf("expected personas block OK, got:\n%s", out.String())
+	}
+}
+
+// ---------------------------------------------------------------------------
+// #403 — checkPersonasBlock false-positive fix
+// ---------------------------------------------------------------------------
+
+// TestCheckPersonasBlock_NoSections verifies that when Constitution.md has no
+// persona sections, checkPersonasBlock emits no warning even if CLAUDE.md lacks
+// the personas block.
+func TestCheckPersonasBlock_NoSections(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("AI_ROOT", dir)
+	t.Setenv("HOME", dir)
+
+	// Constitution.md with no "## N. <Name> Rules" sections.
+	if err := os.WriteFile(filepath.Join(dir, "Constitution.md"), []byte("# My Constitution\n\nJust a paragraph.\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// CLAUDE.md without the personas block.
+	claudeDir := filepath.Join(dir, ".claude")
+	if err := os.MkdirAll(claudeDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(claudeDir, "CLAUDE.md"), []byte("# Instructions\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	var out bytes.Buffer
+	CheckPersonasBlockForTest(&out)
+	if strings.Contains(out.String(), "personas block missing") {
+		t.Errorf("expected no personas warning when Constitution.md has no sections; got:\n%s", out.String())
+	}
+}
+
+// TestCheckPersonasBlock_SectionsNoBlock verifies that when Constitution.md has
+// persona sections but CLAUDE.md lacks the personas block, a warning is emitted.
+func TestCheckPersonasBlock_SectionsNoBlock(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("AI_ROOT", dir)
+	t.Setenv("HOME", dir)
+
+	constContent := "## 1. Coder Rules\nWrite clean code.\n"
+	if err := os.WriteFile(filepath.Join(dir, "Constitution.md"), []byte(constContent), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	claudeDir := filepath.Join(dir, ".claude")
+	if err := os.MkdirAll(claudeDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(claudeDir, "CLAUDE.md"), []byte("# Instructions\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	var out bytes.Buffer
+	CheckPersonasBlockForTest(&out)
+	if !strings.Contains(out.String(), "[⚠] CLAUDE.md personas block missing") {
+		t.Errorf("expected personas block warning when sections exist but block absent; got:\n%s", out.String())
+	}
+}
+
+// TestCheckPersonasBlock_SectionsWithBlock verifies that when Constitution.md has
+// persona sections and CLAUDE.md includes the personas block, an OK line is emitted.
+func TestCheckPersonasBlock_SectionsWithBlock(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("AI_ROOT", dir)
+	t.Setenv("HOME", dir)
+
+	constContent := "## 1. Coder Rules\nWrite clean code.\n"
+	if err := os.WriteFile(filepath.Join(dir, "Constitution.md"), []byte(constContent), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	claudeDir := filepath.Join(dir, ".claude")
+	if err := os.MkdirAll(claudeDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	block := "<!-- ai:personas — managed by ai cli, do not edit manually -->\n<!-- /ai:personas -->\n"
+	if err := os.WriteFile(filepath.Join(claudeDir, "CLAUDE.md"), []byte(block), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	var out bytes.Buffer
+	CheckPersonasBlockForTest(&out)
+	if !strings.Contains(out.String(), "[✓] CLAUDE.md personas block") {
+		t.Errorf("expected OK line when sections exist and block is present; got:\n%s", out.String())
 	}
 }
 
