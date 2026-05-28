@@ -77,7 +77,8 @@ func runDoctor(w io.Writer, fix bool, resetHead string) error {
 }
 
 // checkInstalledSkills reports whether any skills are installed under the
-// canonical ~/.ai/skills/ directory.
+// canonical ~/.ai/skills/ directory. When skills are installed but one or more
+// are missing their Claude symlink, it also warns and suggests `ai skills link`.
 //
 // Output format:
 //
@@ -85,14 +86,35 @@ func runDoctor(w io.Writer, fix bool, resetHead string) error {
 //	  WARN  No skills installed
 //	        Run: ai skills available  (to see what's installable)
 //	        Run: ai skills install <name>  (to install)
+//	  WARN  Skills installed but not linked to Claude — run: ai skills link
 func checkInstalledSkills(w io.Writer) error {
 	installedSkills, _ := listSkillDirs(skillsManifestDir())
 	if len(installedSkills) == 0 {
 		fmt.Fprintln(w, "  WARN  No skills installed")
 		fmt.Fprintln(w, "        Run: ai skills available  (to see what's installable)")
 		fmt.Fprintln(w, "        Run: ai skills install <name>  (to install)")
-	} else {
-		fmt.Fprintf(w, "  OK    %d skill(s) installed\n", len(installedSkills))
+		return nil
+	}
+
+	fmt.Fprintf(w, "  OK    %d skill(s) installed\n", len(installedSkills))
+
+	// Check whether any installed skill is missing its Claude symlink.
+	claudeDir := claudeSkillsDir()
+	if claudeDir == "" {
+		return nil
+	}
+	if _, err := os.Stat(claudeDir); err != nil {
+		// Claude dir does not exist — nothing to check.
+		return nil
+	}
+
+	for _, skillPath := range installedSkills {
+		slug := filepath.Base(skillPath)
+		linkPath := filepath.Join(claudeDir, slug)
+		if _, err := os.Lstat(linkPath); os.IsNotExist(err) {
+			fmt.Fprintln(w, "  WARN  Skills installed but not linked to Claude — run: ai skills link")
+			return nil
+		}
 	}
 	return nil
 }

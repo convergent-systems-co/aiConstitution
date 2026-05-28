@@ -175,9 +175,21 @@ func TestDoctorSkillsCheck_WithSkills(t *testing.T) {
 	setAIRoot(t, root)
 
 	// Create two fake skill directories.
-	for _, slug := range []string{"commit", "review"} {
+	slugs := []string{"commit", "review"}
+	for _, slug := range slugs {
 		dir := filepath.Join(root, "skills", slug)
 		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// Create a Claude skills dir with symlinks already present so the
+	// unlinked-skills check does not produce a WARN in this count-focused test.
+	claudeDir := t.TempDir()
+	t.Setenv("CLAUDE_SKILLS_DIR", claudeDir)
+	for _, slug := range slugs {
+		skillDir := filepath.Join(root, "skills", slug)
+		if err := os.Symlink(skillDir, filepath.Join(claudeDir, slug)); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -194,8 +206,81 @@ func TestDoctorSkillsCheck_WithSkills(t *testing.T) {
 	if !strings.Contains(got, "2") {
 		t.Errorf("expected count '2' in output; got:\n%s", got)
 	}
-	// Must NOT emit WARN when skills are present.
+	// Must NOT emit WARN when skills are installed and linked.
 	if strings.Contains(got, "WARN") {
-		t.Errorf("unexpected WARN when skills are installed; got:\n%s", got)
+		t.Errorf("unexpected WARN when skills are installed and linked; got:\n%s", got)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// #371 — doctor detects unlinked skills
+// ---------------------------------------------------------------------------
+
+func TestDoctorDetectsUnlinkedSkills(t *testing.T) {
+	root := t.TempDir()
+	setAIRoot(t, root)
+
+	// Create two skill dirs (no SKILL.md needed for count check).
+	for _, slug := range []string{"alpha", "beta"} {
+		if err := os.MkdirAll(filepath.Join(root, "skills", slug), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// Create a Claude skills dir that has NO symlinks yet.
+	claudeDir := t.TempDir()
+	t.Setenv("CLAUDE_SKILLS_DIR", claudeDir)
+
+	var out bytes.Buffer
+	if err := checkInstalledSkills(&out); err != nil {
+		t.Fatalf("checkInstalledSkills returned unexpected error: %v", err)
+	}
+
+	got := out.String()
+	// Should still show OK for installed count...
+	if !strings.Contains(got, "OK") {
+		t.Errorf("expected OK for installed count; got:\n%s", got)
+	}
+	// ...but also warn that symlinks are missing.
+	if !strings.Contains(got, "WARN") {
+		t.Errorf("expected WARN about unlinked skills; got:\n%s", got)
+	}
+	if !strings.Contains(got, "ai skills link") {
+		t.Errorf("expected hint 'ai skills link' in output; got:\n%s", got)
+	}
+}
+
+func TestDoctorLinkedSkills_NoWarn(t *testing.T) {
+	root := t.TempDir()
+	setAIRoot(t, root)
+
+	slugs := []string{"alpha", "beta"}
+	claudeDir := t.TempDir()
+	t.Setenv("CLAUDE_SKILLS_DIR", claudeDir)
+
+	// Create skill dirs and corresponding symlinks in the Claude dir.
+	for _, slug := range slugs {
+		skillDir := filepath.Join(root, "skills", slug)
+		if err := os.MkdirAll(skillDir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		// Create a proper symlink so the check sees them as linked.
+		if err := os.Symlink(skillDir, filepath.Join(claudeDir, slug)); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	var out bytes.Buffer
+	if err := checkInstalledSkills(&out); err != nil {
+		t.Fatalf("checkInstalledSkills returned unexpected error: %v", err)
+	}
+
+	got := out.String()
+	if !strings.Contains(got, "OK") {
+		t.Errorf("expected OK when all skills linked; got:\n%s", got)
+	}
+	// Must NOT warn about unlinked skills when all are linked.
+	if strings.Contains(got, "ai skills link") {
+		t.Errorf("unexpected 'ai skills link' hint when all skills are linked; got:\n%s", got)
 	}
 }

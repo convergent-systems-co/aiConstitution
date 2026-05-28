@@ -703,6 +703,186 @@ func fakeSkillAtomWithLifecycle(slug, version, description, lifecycle string) []
 	return b
 }
 
+// ---------------------------------------------------------------------------
+// #371 — ai skills link
+// ---------------------------------------------------------------------------
+
+// makeSkillsWithSKILLMD creates skill directories that each contain a SKILL.md
+// under <root>/skills/<slug>/SKILL.md. Returns the AI_ROOT dir.
+func makeSkillsWithSKILLMD(t *testing.T, slugs ...string) string {
+	t.Helper()
+	root := t.TempDir()
+	for _, slug := range slugs {
+		dir := filepath.Join(root, "skills", slug)
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		md := "---\nname: " + slug + "\ndescription: test\nversion: 1.0.0\n---\n# " + slug + "\n"
+		if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte(md), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return root
+}
+
+func TestSkillsLink_LinkedToBoth(t *testing.T) {
+	root := makeSkillsWithSKILLMD(t, "alpha", "beta")
+
+	claudeDir := t.TempDir()
+	copilotDir := t.TempDir()
+
+	t.Setenv("AI_ROOT", root)
+	t.Setenv("CLAUDE_SKILLS_DIR", claudeDir)
+	t.Setenv("COPILOT_INSTRUCTIONS_DIR", copilotDir)
+
+	out, _, err := runSkillsCmd(t, root, "skills", "link")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Output must report 2 Claude links and 2 Copilot links.
+	if !strings.Contains(out, "2") {
+		t.Errorf("expected count 2 in output; got:\n%s", out)
+	}
+
+	// Claude symlinks: ~/.claude/skills/alpha and ~/.claude/skills/beta
+	for _, slug := range []string{"alpha", "beta"} {
+		linkPath := filepath.Join(claudeDir, slug)
+		if _, err := os.Lstat(linkPath); err != nil {
+			t.Errorf("expected Claude symlink %s; got err: %v", linkPath, err)
+		}
+	}
+
+	// Copilot symlinks: ~/.copilot/instructions/alpha.md and beta.md
+	for _, slug := range []string{"alpha", "beta"} {
+		linkPath := filepath.Join(copilotDir, slug+".md")
+		if _, err := os.Lstat(linkPath); err != nil {
+			t.Errorf("expected Copilot symlink %s; got err: %v", linkPath, err)
+		}
+	}
+}
+
+func TestSkillsLink_NoDirs(t *testing.T) {
+	// No CLAUDE_SKILLS_DIR and no existing ~/.copilot/instructions → 0, 0
+	root := makeSkillsWithSKILLMD(t, "alpha", "beta")
+
+	t.Setenv("AI_ROOT", root)
+	// Point CLAUDE_SKILLS_DIR at a non-existent directory.
+	t.Setenv("CLAUDE_SKILLS_DIR", filepath.Join(t.TempDir(), "nonexistent"))
+	// COPILOT_INSTRUCTIONS_DIR not set; no ~/.copilot/instructions exists.
+	t.Setenv("COPILOT_INSTRUCTIONS_DIR", "")
+
+	out, _, err := runSkillsCmd(t, root, "skills", "link")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Both counts should be 0.
+	if !strings.Contains(out, "0") {
+		t.Errorf("expected 0 links reported; got:\n%s", out)
+	}
+}
+
+func TestSkillsLink_Idempotent(t *testing.T) {
+	// Running link twice should not error and should produce the same symlinks.
+	root := makeSkillsWithSKILLMD(t, "gamma")
+
+	claudeDir := t.TempDir()
+	copilotDir := t.TempDir()
+
+	t.Setenv("AI_ROOT", root)
+	t.Setenv("CLAUDE_SKILLS_DIR", claudeDir)
+	t.Setenv("COPILOT_INSTRUCTIONS_DIR", copilotDir)
+
+	// First run.
+	if _, _, err := runSkillsCmd(t, root, "skills", "link"); err != nil {
+		t.Fatalf("first link run failed: %v", err)
+	}
+	// Second run — must not fail.
+	if _, _, err := runSkillsCmd(t, root, "skills", "link"); err != nil {
+		t.Fatalf("second link run (idempotent) failed: %v", err)
+	}
+
+	// Symlinks must still exist after both runs.
+	if _, err := os.Lstat(filepath.Join(claudeDir, "gamma")); err != nil {
+		t.Errorf("Claude symlink missing after idempotent re-link: %v", err)
+	}
+	if _, err := os.Lstat(filepath.Join(copilotDir, "gamma.md")); err != nil {
+		t.Errorf("Copilot symlink missing after idempotent re-link: %v", err)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// #371 — Copilot wiring on install / uninstall
+// ---------------------------------------------------------------------------
+
+func TestCopilotWiringOnInstall(t *testing.T) {
+	root := t.TempDir()
+	copilotDir := t.TempDir()
+
+	payload := fakeSkillAtom("commit", "1.2.0", "Generate a commit message.", "You are a commit assistant.")
+	srv := startSkillAtomServer(t, http.StatusOK, payload)
+	setSkillAtomBaseURL(t, srv.URL)
+
+	t.Setenv("AI_ROOT", root)
+	t.Setenv("COPILOT_INSTRUCTIONS_DIR", copilotDir)
+
+	out, _, err := runSkillsCmd(t, root, "skills", "install", "commit")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(out, "Installed commit v1.2.0") {
+		t.Errorf("expected install confirmation; got:\n%s", out)
+	}
+
+	// Copilot symlink must exist at ~/.copilot/instructions/commit.md
+	linkPath := filepath.Join(copilotDir, "commit.md")
+	info, err := os.Lstat(linkPath)
+	if err != nil {
+		t.Fatalf("expected Copilot symlink at %s; got err: %v", linkPath, err)
+	}
+	if info.Mode()&os.ModeSymlink == 0 {
+		t.Errorf("expected %s to be a symlink; got mode %v", linkPath, info.Mode())
+	}
+}
+
+func TestCopilotWiringOnUninstall(t *testing.T) {
+	root := t.TempDir()
+
+	// Pre-create the skill dir with a SKILL.md.
+	skillDir := filepath.Join(root, "skills", "commit")
+	if err := os.MkdirAll(skillDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"),
+		[]byte("---\nname: commit\ndescription: test\n---\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create a fake Copilot instructions dir with a pre-existing symlink.
+	copilotDir := t.TempDir()
+	linkPath := filepath.Join(copilotDir, "commit.md")
+	if err := os.Symlink(filepath.Join(skillDir, "SKILL.md"), linkPath); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv("AI_ROOT", root)
+	t.Setenv("COPILOT_INSTRUCTIONS_DIR", copilotDir)
+
+	out, _, err := runSkillsCmd(t, root, "skills", "uninstall", "commit")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(out, "Uninstalled commit") {
+		t.Errorf("expected uninstall confirmation; got:\n%s", out)
+	}
+
+	// Copilot symlink must be gone.
+	if _, lstatErr := os.Lstat(linkPath); !os.IsNotExist(lstatErr) {
+		t.Errorf("Copilot symlink should have been removed; lstat: %v", lstatErr)
+	}
+}
+
 // fakeSkillAtomWithDeps builds an atom JSON payload that includes a depends_on list.
 func fakeSkillAtomWithDeps(slug, version, description string, deps []string) []byte {
 	payload := map[string]interface{}{
