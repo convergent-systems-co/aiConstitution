@@ -12,37 +12,21 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// fetchDirFn is the injectable type for fetching the skill-atoms directory listing.
 type fetchDirFn func() ([]skillAtomDirEntry, error)
-
-// fetchAtomFn is the injectable type for fetching a single skill atom by download URL.
 type fetchAtomFn func(url string) (*skillAtom, error)
-
-// installFn is the injectable type for installing a skill by slug.
 type installFn func(cmd *cobra.Command, slug string) error
 
-// skillRow holds a display-ready entry for the skill selection prompt.
 type skillRow struct {
 	slug        string
 	name        string
 	description string
 }
 
-// runSkillSelectionPrompt shows a numbered skill list on w, reads a selection
-// from r, and installs the chosen skills via the install function.
+// runSkillSelectionPrompt shows a deduplicated, screen-aware numbered skill
+// list, reads a selection, and installs the chosen skills.
 //
-// isTTY must be true for the prompt to run. When false (non-interactive
-// terminal, piped output, CI), the function returns immediately without
-// fetching or installing anything. Pass cbterm.IsTerminal(os.Stdout.Fd())
-// in production; pass false in tests that cover the non-TTY path.
-//
-// Input parsing:
-//   - "all"         → install every listed skill
-//   - "1,3,5"       → install skills at those 1-based positions
-//   - ""  (Enter)   → skip, install nothing
-//   - invalid token → warn on w, skip that token only
-//
-// Install errors are non-fatal: a warning is printed and setup continues.
+// Sub-skills declared in any atom's depends_on are hidden — selecting the
+// parent skill installs them automatically.
 func runSkillSelectionPrompt(
 	w io.Writer,
 	r io.Reader,
@@ -52,68 +36,56 @@ func runSkillSelectionPrompt(
 	install installFn,
 	cmd *cobra.Command,
 ) error {
-	// TTY guard: skip entirely when not an interactive terminal.
 	if !isTTY {
 		return nil
 	}
 
-	// Fetch directory listing.
 	entries, err := fetchDir()
 	if err != nil {
-		fmt.Fprintf(w, "\nNote: could not fetch available skills (%v). Skipping skill selection.\n", err)
+		fmt.Fprintf(w, "\nNote: could not fetch available skills (%v). Skipping.\n", err)
 		return nil
 	}
 
-	// Hydrate each entry into a display row, skipping deprecated/retired.
-	var rows []skillRow
-	for _, e := range entries {
-		atom, fetchErr := fetchAtom(e.DownloadURL)
-		if fetchErr != nil || atom == nil {
-			continue
-		}
-		lc := strings.ToLower(atom.Lifecycle)
-		if lc == "deprecated" || lc == "retired" {
-			continue
-		}
-		slug := strings.TrimSuffix(e.Name, ".json")
-		name := atom.Name
-		if name == "" {
-			name = slug
-		}
-		rows = append(rows, skillRow{slug: slug, name: name, description: atom.Description})
-	}
+	rows, all := buildSkillRows(entries, fetchAtom)
 
 	if len(rows) == 0 {
-		fmt.Fprintln(w, "\n(no skills available — skipping skill selection)")
+		fmt.Fprintln(w, "\n(no skills available)")
 		return nil
 	}
 
-	// Print the selection UI.
-	fmt.Fprintln(w)
-	fmt.Fprintln(w, "┌─────────────────────────────────────────────────────────┐")
-	fmt.Fprintln(w, "│  Available skills (press Enter to skip, or type numbers)│")
-	fmt.Fprintln(w, "└─────────────────────────────────────────────────────────┘")
-	for i, row := range rows {
-		desc := row.description
-		if desc == "" {
-			desc = "(no description)"
-		}
-		fmt.Fprintf(w, " %2d. %-20s %-20s — %s\n", i+1, row.slug, row.name, desc)
-	}
-	fmt.Fprintln(w)
-	fmt.Fprint(w, `Install which? (e.g. 1,3,5 or "all" or Enter to skip): `)
+	// Clear screen so the list is always visible from the top.
+	fmt.Fprint(w, "\033[2J\033[H")
 
-	// Read one line from r.
+	fmt.Fprintln(w, "╔══════════════════════════════════════════════════════════════╗")
+	fmt.Fprintln(w, "║  Install skills                                              ║")
+	fmt.Fprintln(w, "║  Sub-skills install automatically with their parent.         ║")
+	fmt.Fprintln(w, "╚══════════════════════════════════════════════════════════════╝")
+	fmt.Fprintln(w)
+
+	for i, row := range rows {
+		deps := ""
+		// Find depends_on for this slug to show sub-skill count
+		for _, e := range all {
+			if e.slug == row.slug && len(e.atom.DependsOn) > 0 {
+				deps = fmt.Sprintf(" (+%d sub-skills)", len(e.atom.DependsOn))
+				break
+			}
+		}
+		fmt.Fprintf(w, "  %2d. %-18s%s\n      %s\n", i+1, row.slug+deps, "", row.description)
+	}
+
+	fmt.Fprintln(w)
+	fmt.Fprintf(w, `Install which? (e.g. 1,3,5 or "all" or Enter to skip): `)
+
 	scanner := bufio.NewScanner(r)
 	scanner.Scan()
 	line := strings.TrimSpace(scanner.Text())
 
 	if line == "" {
-		fmt.Fprintln(w, "Skipping skill installation.")
+		fmt.Fprintln(w, "\nSkipping skill installation.")
 		return nil
 	}
 
-	// Determine which slugs to install.
 	var toInstall []string
 	if strings.EqualFold(line, "all") {
 		for _, row := range rows {
@@ -134,10 +106,9 @@ func runSkillSelectionPrompt(
 		}
 	}
 
-	// Install each selected skill. Errors are non-fatal.
 	fmt.Fprintln(w)
 	for _, slug := range toInstall {
-		fmt.Fprintf(w, "  Installing %s... ", slug)  // slug is install name
+		fmt.Fprintf(w, "  Installing %-20s ", slug+"...")
 		if installErr := install(cmd, slug); installErr != nil {
 			fmt.Fprintf(w, "warning: %v\n", installErr)
 		} else {
@@ -148,12 +119,52 @@ func runSkillSelectionPrompt(
 	return nil
 }
 
-// runSkillSelectionPromptReal is the production entry point for the skill
-// selection step. It checks whether stdout is a real terminal and wires the
-// concrete fetch and install functions into runSkillSelectionPrompt.
-//
-// Called from runSetupTUI after the wizard completes successfully.
-// Errors are non-fatal: the caller should warn but not abort setup.
+
+type hydratedEntry struct {
+	slug string
+	atom *skillAtom
+}
+
+// buildSkillRows hydrates entries, collects sub-skills, and returns display rows
+// with sub-skills (those listed in any depends_on) excluded.
+func buildSkillRows(entries []skillAtomDirEntry, fetchAtom fetchAtomFn) ([]skillRow, []hydratedEntry) {
+	var all []hydratedEntry
+	subSkills := map[string]bool{}
+
+	for _, e := range entries {
+		atom, fetchErr := fetchAtom(e.DownloadURL)
+		if fetchErr != nil || atom == nil {
+			continue
+		}
+		lc := strings.ToLower(atom.Lifecycle)
+		if lc == "deprecated" || lc == "retired" {
+			continue
+		}
+		slug := strings.TrimSuffix(e.Name, ".json")
+		all = append(all, hydratedEntry{slug: slug, atom: atom})
+		for _, dep := range atom.DependsOn {
+			subSkills[dep] = true
+		}
+	}
+
+	var rows []skillRow
+	for _, e := range all {
+		if subSkills[e.slug] {
+			continue
+		}
+		name := e.atom.Name
+		if name == "" {
+			name = e.slug
+		}
+		desc := e.atom.Description
+		if len(desc) > 60 {
+			desc = desc[:57] + "..."
+		}
+		rows = append(rows, skillRow{slug: e.slug, name: name, description: desc})
+	}
+	return rows, all
+}
+
 func runSkillSelectionPromptReal(cmd *cobra.Command) error {
 	isTTY := cbterm.IsTerminal(os.Stdout.Fd())
 	return runSkillSelectionPrompt(
