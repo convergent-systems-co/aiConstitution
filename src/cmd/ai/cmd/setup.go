@@ -145,6 +145,15 @@ func runSetupTUI(cmd *cobra.Command, noHooks bool) error {
 		return nil
 	}
 
+	// Hook selection — shown when stdout is a TTY; no-op otherwise.
+	// runSetupPostWizard still calls ExtractAllHooks(overwrite=false) so any
+	// hooks the user skipped here are installed automatically afterward.
+	if !noHooks {
+		if selErr := runHookSelectionPromptReal(); selErr != nil {
+			fmt.Fprintf(os.Stderr, "setup: hook selection: %v (continuing)\n", selErr)
+		}
+	}
+
 	// Offer skill selection before wiring constitution files. Non-fatal: if the
 	// fetch or any install fails, setup continues to runSetupPostWizard.
 	// runSkillSelectionPromptReal is a no-op when stdout is not a terminal.
