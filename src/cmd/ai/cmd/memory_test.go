@@ -274,3 +274,109 @@ func TestMemoryCodify_MissingViolationFile_ReturnsError(t *testing.T) {
 		t.Fatalf("memory codify returned stub error: %v", err)
 	}
 }
+
+// ---- memory retire (#384) ----
+
+func TestMemoryRetire_HappyPath(t *testing.T) {
+	aiRoot := helperMemoryAIRoot(t)
+	memDir := filepath.Join(aiRoot, "memory")
+	_ = os.MkdirAll(memDir, 0o755)
+
+	content := "---\nname: retireable\ndescription: retire this\nmetadata:\n  type: feedback\n---\n"
+	_ = os.WriteFile(filepath.Join(memDir, "retireable.md"), []byte(content), 0o644)
+	writeMemoryMD(t, aiRoot, "# Memory Index\n\n## Feedback\n- [retireable](retireable.md) — retire this\n- [keeper](keeper.md) — keep this\n")
+
+	out, err := runMemoryCmd(t, "retire", "retireable")
+	if err != nil {
+		t.Fatalf("memory retire returned error: %v\nout: %s", err, out)
+	}
+	if strings.Contains(out, "not yet implemented") {
+		t.Fatalf("memory retire returned stub output: %s", out)
+	}
+
+	// Original file should be gone
+	origPath := filepath.Join(memDir, "retireable.md")
+	if _, statErr := os.Stat(origPath); !os.IsNotExist(statErr) {
+		t.Errorf("expected original file %s to be removed", origPath)
+	}
+
+	// Retired file should exist in retired/ dir with timestamp prefix
+	retiredDir := filepath.Join(memDir, "retired")
+	entries, err := os.ReadDir(retiredDir)
+	if err != nil {
+		t.Fatalf("retired dir not found: %v", err)
+	}
+	found := false
+	for _, e := range entries {
+		if strings.Contains(e.Name(), "retireable") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected a retired file containing 'retireable' in %s", retiredDir)
+	}
+
+	// Output should include the move information
+	if !strings.Contains(out, "Retired") {
+		t.Errorf("expected 'Retired' in output, got: %s", out)
+	}
+}
+
+func TestMemoryRetire_MissingFile_ReturnsError(t *testing.T) {
+	aiRoot := helperMemoryAIRoot(t)
+	writeMemoryMD(t, aiRoot, "# Memory Index\n")
+
+	_, err := runMemoryCmd(t, "retire", "nonexistent-memory")
+	if err == nil {
+		t.Error("expected error for nonexistent memory file, got nil")
+	}
+	if err != nil && strings.Contains(err.Error(), "not yet implemented") {
+		t.Fatalf("memory retire returned stub error: %v", err)
+	}
+}
+
+func TestMemoryRetire_RemovesMEMORYMDLine(t *testing.T) {
+	aiRoot := helperMemoryAIRoot(t)
+	memDir := filepath.Join(aiRoot, "memory")
+	_ = os.MkdirAll(memDir, 0o755)
+
+	content := "---\nname: bye\ndescription: goodbye\nmetadata:\n  type: feedback\n---\n"
+	_ = os.WriteFile(filepath.Join(memDir, "bye.md"), []byte(content), 0o644)
+	writeMemoryMD(t, aiRoot, "# Memory Index\n\n## Feedback\n- [bye](bye.md) — goodbye\n- [stay](stay.md) — stays\n")
+
+	_, err := runMemoryCmd(t, "retire", "bye")
+	if err != nil {
+		t.Fatalf("memory retire failed: %v", err)
+	}
+
+	memContent, _ := os.ReadFile(filepath.Join(memDir, "MEMORY.md"))
+	if strings.Contains(string(memContent), "bye.md") {
+		t.Errorf("expected 'bye.md' line removed from MEMORY.md\n%s", string(memContent))
+	}
+	if !strings.Contains(string(memContent), "stay") {
+		t.Errorf("expected 'stay' line to remain in MEMORY.md\n%s", string(memContent))
+	}
+}
+
+func TestMemoryRetire_CreatesRetiredDir(t *testing.T) {
+	aiRoot := t.TempDir()
+	t.Setenv("AI_ROOT", aiRoot)
+	memDir := filepath.Join(aiRoot, "memory")
+	_ = os.MkdirAll(memDir, 0o755)
+	// Do NOT pre-create retired/ dir
+
+	content := "---\nname: createdir\ndescription: test\nmetadata:\n  type: feedback\n---\n"
+	_ = os.WriteFile(filepath.Join(memDir, "createdir.md"), []byte(content), 0o644)
+	// No MEMORY.md — that's ok, pruning is best-effort
+
+	_, err := runMemoryCmd(t, "retire", "createdir")
+	if err != nil {
+		t.Fatalf("memory retire failed: %v", err)
+	}
+
+	retiredDir := filepath.Join(memDir, "retired")
+	if _, statErr := os.Stat(retiredDir); os.IsNotExist(statErr) {
+		t.Errorf("expected retired dir to be created at %s", retiredDir)
+	}
+}

@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/convergent-systems-co/aiConstitution/src/internal/memory"
 	"github.com/convergent-systems-co/aiConstitution/src/internal/paths"
@@ -283,16 +284,54 @@ Flags override extracted values when provided.`,
 	return c
 }
 
-// newMemoryRetireCmd is reserved for the §6 codification workflow.
-// Retained as a stub here so the surface matches what the spec lists.
+// newMemoryRetireCmd implements `ai memory retire <name>`.
+// Resolves ~/.ai/memory/<name>.md, moves it to ~/.ai/memory/retired/<UTC>-<name>.md,
+// removes the matching MEMORY.md pointer line, and prints the move.
 func newMemoryRetireCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "retire <slug>",
-		Short: "Retire (remove) a memory entry",
-		Args:  cobra.ExactArgs(1),
+		Use:   "retire <name>",
+		Short: "Retire (remove) a memory entry permanently",
+		Long: `retire moves a memory file into ~/.ai/memory/retired/ with a UTC timestamp
+prefix and removes its pointer from MEMORY.md. Unlike archive, retire does not
+preserve the entry in a recoverable location — use it after the memory has been
+codified into the constitution or confirmed as no longer needed.`,
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			notice("memory retire:", args[0])
-			return stub("memory retire", "§6")
+			name := args[0]
+			// Strip .md suffix if the caller provided it — normalise to bare name.
+			name = strings.TrimSuffix(name, ".md")
+
+			memDir := paths.MemoryDir()
+			srcPath := filepath.Join(memDir, name+".md")
+			if _, err := os.Stat(srcPath); err != nil {
+				if errors.Is(err, os.ErrNotExist) {
+					return fmt.Errorf("memory retire: %q not found in %s", name+".md", memDir)
+				}
+				return fmt.Errorf("memory retire: stat %q: %w", srcPath, err)
+			}
+
+			retiredDir := filepath.Join(memDir, "retired")
+			if err := os.MkdirAll(retiredDir, 0o750); err != nil {
+				return fmt.Errorf("memory retire: mkdir retired: %w", err)
+			}
+
+			ts := time.Now().UTC().Format("20060102T150405Z")
+			dstName := ts + "-" + name + ".md"
+			dstPath := filepath.Join(retiredDir, dstName)
+
+			if err := os.Rename(srcPath, dstPath); err != nil {
+				return fmt.Errorf("memory retire: move: %w", err)
+			}
+
+			// Best-effort: prune the MEMORY.md pointer (absence is not an error).
+			_ = prunePointer(memDir, name)
+
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(),
+				"Retired: %s → retired/%s\n",
+				filepath.Join(memDir, name+".md"),
+				dstName,
+			)
+			return nil
 		},
 	}
 }

@@ -239,3 +239,237 @@ func TestAuditRotate_DryRun(t *testing.T) {
 		t.Errorf("dry-run should not delete file %s", oldFile)
 	}
 }
+
+// ---- audit override (#382) ----
+
+func TestAuditOverride_WritesFile(t *testing.T) {
+	aiRoot := helperAuditAIRoot(t)
+	_ = aiRoot
+
+	out, err := runAuditCmd(t, "override",
+		"--tool", "Claude Code",
+		"--section", "§3.2",
+		"--scope", "task",
+		"--strict", "Would have required explicit approval before destructive action.",
+		"--relaxed", "Proceeding without approval because artifact is throwaway.",
+		"--risk", "Potential data loss if artifact was not actually throwaway.",
+		"--confirmation", "yes",
+		"--artifacts", "tmp/scratch.md",
+	)
+	if err != nil {
+		t.Fatalf("audit override returned error: %v\nout: %s", err, out)
+	}
+	if strings.Contains(out, "not yet implemented") {
+		t.Fatalf("audit override returned stub output: %s", out)
+	}
+
+	// Output should contain the path written
+	if !strings.Contains(out, "overrides") {
+		t.Errorf("expected output to contain 'overrides' path, got: %s", out)
+	}
+
+	// The written path should exist and contain the correct content
+	writtenPath := strings.TrimSpace(out)
+	data, err := os.ReadFile(writtenPath)
+	if err != nil {
+		t.Fatalf("could not read written file %q: %v", writtenPath, err)
+	}
+	body := string(data)
+	if !strings.Contains(body, "# Override —") {
+		t.Errorf("expected '# Override —' header\n%s", body)
+	}
+	if !strings.Contains(body, "**Tool / Agent:** Claude Code") {
+		t.Errorf("expected tool field\n%s", body)
+	}
+	if !strings.Contains(body, "**Section / Rule relaxed:** §3.2") {
+		t.Errorf("expected section field\n%s", body)
+	}
+	if !strings.Contains(body, "**Scope:** task") {
+		t.Errorf("expected scope field\n%s", body)
+	}
+	if !strings.Contains(body, "**Strict behavior:** Would have required explicit approval") {
+		t.Errorf("expected strict field\n%s", body)
+	}
+	if !strings.Contains(body, "**Relaxed behavior:** Proceeding without approval") {
+		t.Errorf("expected relaxed field\n%s", body)
+	}
+	if !strings.Contains(body, "**Risk acknowledged:** Potential data loss") {
+		t.Errorf("expected risk field\n%s", body)
+	}
+	if !strings.Contains(body, "**Principal confirmation:** yes") {
+		t.Errorf("expected confirmation field\n%s", body)
+	}
+	if !strings.Contains(body, "**Artifacts affected:** tmp/scratch.md") {
+		t.Errorf("expected artifacts field\n%s", body)
+	}
+}
+
+func TestAuditOverride_CreatesDir(t *testing.T) {
+	aiRoot := t.TempDir()
+	t.Setenv("AI_ROOT", aiRoot)
+	// Do NOT pre-create audit/overrides/ — test that the command creates it
+
+	_, err := runAuditCmd(t, "override",
+		"--tool", "Claude Code",
+		"--section", "§3.2",
+		"--scope", "task",
+		"--strict", "strict behavior",
+		"--relaxed", "relaxed behavior",
+		"--risk", "risk description",
+		"--confirmation", "yes",
+		"--artifacts", "none",
+	)
+	if err != nil {
+		t.Fatalf("audit override failed: %v", err)
+	}
+
+	overridesDir := filepath.Join(aiRoot, "audit", "overrides")
+	entries, err := os.ReadDir(overridesDir)
+	if err != nil {
+		t.Fatalf("overrides dir not created: %v", err)
+	}
+	if len(entries) == 0 {
+		t.Error("expected at least one file in overrides dir")
+	}
+}
+
+func TestAuditOverride_MissingRequiredFlag_ReturnsError(t *testing.T) {
+	aiRoot := helperAuditAIRoot(t)
+	_ = aiRoot
+
+	// Missing --section
+	_, err := runAuditCmd(t, "override",
+		"--tool", "Claude Code",
+		"--scope", "task",
+		"--strict", "strict",
+		"--relaxed", "relaxed",
+		"--risk", "risk",
+		"--confirmation", "yes",
+		"--artifacts", "none",
+	)
+	if err == nil {
+		t.Error("expected error for missing --section flag, got nil")
+	}
+	if err != nil && strings.Contains(err.Error(), "not yet implemented") {
+		t.Fatalf("audit override returned stub error: %v", err)
+	}
+}
+
+// ---- audit violation (#382) ----
+
+func TestAuditViolation_WritesFile(t *testing.T) {
+	aiRoot := helperAuditAIRoot(t)
+	_ = aiRoot
+
+	out, err := runAuditCmd(t, "violation",
+		"--section", "§3.1.P2",
+		"--what", "Fabricated an API method that does not exist.",
+		"--noticed", "user-flagged",
+		"--remediation", "Replaced with verified call from official docs.",
+		"--amendment", "none",
+	)
+	if err != nil {
+		t.Fatalf("audit violation returned error: %v\nout: %s", err, out)
+	}
+	if strings.Contains(out, "not yet implemented") {
+		t.Fatalf("audit violation returned stub output: %s", out)
+	}
+
+	// Output should contain the path written
+	if !strings.Contains(out, "violations") {
+		t.Errorf("expected output to contain 'violations' path, got: %s", out)
+	}
+
+	// The written path should exist and contain correct content
+	writtenPath := strings.TrimSpace(out)
+	data, err := os.ReadFile(writtenPath)
+	if err != nil {
+		t.Fatalf("could not read written file %q: %v", writtenPath, err)
+	}
+	body := string(data)
+	if !strings.Contains(body, "# Violation —") {
+		t.Errorf("expected '# Violation —' header\n%s", body)
+	}
+	if !strings.Contains(body, "**Section / Rule violated:** §3.1.P2") {
+		t.Errorf("expected section field\n%s", body)
+	}
+	if !strings.Contains(body, "**What happened:** Fabricated an API method") {
+		t.Errorf("expected what field\n%s", body)
+	}
+	if !strings.Contains(body, "**How noticed:** user-flagged") {
+		t.Errorf("expected noticed field\n%s", body)
+	}
+	if !strings.Contains(body, "**Remediation:** Replaced with verified call") {
+		t.Errorf("expected remediation field\n%s", body)
+	}
+	if !strings.Contains(body, "**Proposed amendment (if any):** none") {
+		t.Errorf("expected amendment field\n%s", body)
+	}
+}
+
+func TestAuditViolation_CreatesDir(t *testing.T) {
+	aiRoot := t.TempDir()
+	t.Setenv("AI_ROOT", aiRoot)
+	// Do NOT pre-create audit/violations/ — test that the command creates it
+
+	_, err := runAuditCmd(t, "violation",
+		"--section", "§3.1.P2",
+		"--what", "something happened",
+		"--noticed", "self-detected",
+		"--remediation", "fixed it",
+	)
+	if err != nil {
+		t.Fatalf("audit violation failed: %v", err)
+	}
+
+	violationsDir := filepath.Join(aiRoot, "audit", "violations")
+	entries, err := os.ReadDir(violationsDir)
+	if err != nil {
+		t.Fatalf("violations dir not created: %v", err)
+	}
+	if len(entries) == 0 {
+		t.Error("expected at least one file in violations dir")
+	}
+}
+
+func TestAuditViolation_MissingRequiredFlag_ReturnsError(t *testing.T) {
+	aiRoot := helperAuditAIRoot(t)
+	_ = aiRoot
+
+	// Missing --section
+	_, err := runAuditCmd(t, "violation",
+		"--what", "something happened",
+		"--noticed", "self-detected",
+		"--remediation", "fixed it",
+	)
+	if err == nil {
+		t.Error("expected error for missing --section flag, got nil")
+	}
+	if err != nil && strings.Contains(err.Error(), "not yet implemented") {
+		t.Fatalf("audit violation returned stub error: %v", err)
+	}
+}
+
+func TestAuditViolation_OptionalAmendment(t *testing.T) {
+	aiRoot := helperAuditAIRoot(t)
+	_ = aiRoot
+
+	// amendment is optional — should succeed without it
+	out, err := runAuditCmd(t, "violation",
+		"--section", "§3.1.P2",
+		"--what", "something happened",
+		"--noticed", "self-detected",
+		"--remediation", "fixed it",
+	)
+	if err != nil {
+		t.Fatalf("audit violation without --amendment failed: %v\nout: %s", err, out)
+	}
+	writtenPath := strings.TrimSpace(out)
+	data, readErr := os.ReadFile(writtenPath)
+	if readErr != nil {
+		t.Fatalf("could not read file: %v", readErr)
+	}
+	if !strings.Contains(string(data), "**Proposed amendment (if any):**") {
+		t.Errorf("expected amendment field present even when empty\n%s", string(data))
+	}
+}
