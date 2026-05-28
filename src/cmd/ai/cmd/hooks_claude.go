@@ -93,11 +93,11 @@ func installClaudeHooks(repoRoot, hooksDir string) (int, error) {
 		if !ok {
 			continue
 		}
-		absHook, err := filepath.Abs(filepath.Join(hooksDir, name))
-		if err != nil {
-			return added, err
-		}
-		cmd := "python3 " + absHook
+		// Use "ai hooks run <slug>" instead of a hardcoded absolute path so that
+		// settings.json entries work on Windows, Linux, and macOS without change.
+		// The ai binary discovers the correct Python and hook path at runtime.
+		slug := strings.TrimSuffix(name, filepath.Ext(name))
+		cmd := "ai hooks run " + slug
 		for _, ev := range events {
 			if addClaudeEntry(settings, ev, cmd) {
 				added++

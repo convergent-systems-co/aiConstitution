@@ -21,16 +21,17 @@ import (
 )
 
 // expectedHookMapping is the authoritative event→hook mapping per stories #84+#96.
+// Commands are now written as "ai hooks run <slug>" (portable across platforms).
 // PreToolUse has two entries: one for all tools (audit, worktree-guard, secret-block)
 // and one Bash-only matcher entry (branch-guard).
 var expectedHookMapping = map[string][]string{
-	"SessionStart":     {"audit.py"},
-	"UserPromptSubmit": {"audit.py"},
-	"PostToolUse":      {"audit.py"},
-	"Stop":             {"audit.py", "checkpoint-tick.py"},
-	"SessionEnd":       {"audit.py"},
-	"SubagentStop":     {"audit.py"},
-	"PreCompact":       {"audit.py"},
+	"SessionStart":     {"ai hooks run audit"},
+	"UserPromptSubmit": {"ai hooks run audit"},
+	"PostToolUse":      {"ai hooks run audit"},
+	"Stop":             {"ai hooks run audit", "ai hooks run checkpoint-tick"},
+	"SessionEnd":       {"ai hooks run audit"},
+	"SubagentStop":     {"ai hooks run audit"},
+	"PreCompact":       {"ai hooks run audit"},
 	// PreToolUse has two hook groups; tested separately below
 }
 
@@ -122,10 +123,10 @@ func TestHooksInstallSessionStartWiring(t *testing.T) {
 	if !ok {
 		t.Fatal("SessionStart key missing from hooks")
 	}
-	// Must contain at least one hook group with audit.py
+	// Must contain at least one hook group with ai hooks run audit
 	raw, _ := json.Marshal(sessionStart)
-	if !strings.Contains(string(raw), "audit.py") {
-		t.Errorf("SessionStart hooks do not contain audit.py\ncontent: %s", raw)
+	if !strings.Contains(string(raw), "ai hooks run audit") {
+		t.Errorf("SessionStart hooks do not contain 'ai hooks run audit'\ncontent: %s", raw)
 	}
 }
 
@@ -150,10 +151,15 @@ func TestHooksInstallPreToolUseWiring(t *testing.T) {
 	raw, _ := json.Marshal(preToolUse)
 	rawStr := string(raw)
 
-	requiredHooks := []string{"audit.py", "secret-block.py", "worktree-guard.py", "branch-guard.py"}
+	requiredHooks := []string{
+		"ai hooks run audit",
+		"ai hooks run secret-block",
+		"ai hooks run worktree-guard",
+		"ai hooks run branch-guard",
+	}
 	for _, required := range requiredHooks {
 		if !strings.Contains(rawStr, required) {
-			t.Errorf("PreToolUse hooks missing %s\ncontent: %s", required, rawStr)
+			t.Errorf("PreToolUse hooks missing %q\ncontent: %s", required, rawStr)
 		}
 	}
 }
@@ -191,11 +197,11 @@ func TestHooksInstallStopWiring(t *testing.T) {
 	stop := hooks["Stop"]
 	raw, _ := json.Marshal(stop)
 	rawStr := string(raw)
-	if !strings.Contains(rawStr, "audit.py") {
-		t.Errorf("Stop hooks missing audit.py: %s", rawStr)
+	if !strings.Contains(rawStr, "ai hooks run audit") {
+		t.Errorf("Stop hooks missing 'ai hooks run audit': %s", rawStr)
 	}
-	if !strings.Contains(rawStr, "checkpoint-tick.py") {
-		t.Errorf("Stop hooks missing checkpoint-tick.py: %s", rawStr)
+	if !strings.Contains(rawStr, "ai hooks run checkpoint-tick") {
+		t.Errorf("Stop hooks missing 'ai hooks run checkpoint-tick': %s", rawStr)
 	}
 }
 
