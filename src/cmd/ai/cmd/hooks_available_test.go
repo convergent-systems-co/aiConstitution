@@ -1,83 +1,48 @@
 package cmd_test
 
 import (
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 )
 
-// fakeHookAtom builds a minimal ai-hook atom JSON payload for testing.
-func fakeHookAtom(slug, description, lifecycle string, events []string) []byte {
-	payload := map[string]interface{}{
-		"type":        "ai-hook",
-		"id":          "ai-hook/" + slug,
-		"name":        slug,
-		"description": description,
-		"lifecycle":   lifecycle,
-		"events":      events,
-	}
-	b, _ := json.Marshal(payload)
-	return b
-}
-
-// startHookAtomsServer starts an httptest.Server that mimics the GitHub
-// Contents API for the skills/ai-hook directory. entries maps slug → atom
-// JSON body. The directory listing is synthesised from the keys.
-func startHookAtomsServer(t *testing.T, entries map[string][]byte) *httptest.Server {
-	t.Helper()
-	var srv *httptest.Server
-	srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-
-		// Directory listing endpoint: /skills/ai-hook
-		if r.URL.Path == "/skills/ai-hook" {
-			var listing []map[string]interface{}
-			for slug := range entries {
-				listing = append(listing, map[string]interface{}{
-					"name":         slug + ".json",
-					"download_url": srv.URL + "/atoms/" + slug + ".json",
-				})
-			}
-			b, _ := json.Marshal(listing)
-			_, _ = w.Write(b)
-			return
-		}
-
-		// Individual atom endpoint: /atoms/<slug>.json
-		if strings.HasPrefix(r.URL.Path, "/atoms/") {
-			slug := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/atoms/"), ".json")
-			if body, ok := entries[slug]; ok {
-				_, _ = w.Write(body)
-				return
-			}
-		}
-
-		// Anything else → 404.
-		w.WriteHeader(http.StatusNotFound)
-		_, _ = w.Write([]byte(`{"message":"Not Found"}`))
-	}))
-	t.Cleanup(srv.Close)
-	return srv
-}
-
 // ---------------------------------------------------------------------------
-// #398 — ai hooks available registry integration
+// #398 / #415 — ai hooks available registry integration (ai-atoms.com catalog)
 // ---------------------------------------------------------------------------
 
-// TestHooksAvailable_RegistryFetched verifies that when the registry is
-// reachable and returns ai-hook atoms, the output includes a "Registry hooks"
+// TestHooksAvailable_RegistryFetched verifies that when the catalog is
+// reachable and returns hook atoms, the output includes a "Registry hooks"
 // section with the atom's slug and description.
 func TestHooksAvailable_RegistryFetched(t *testing.T) {
-	root := t.TempDir()
-	entries := map[string][]byte{
-		"audit":        fakeHookAtom("audit", "Append JSONL interaction records to ~/.ai/audit.", "stable", []string{"PostToolUse", "PreToolUse"}),
-		"branch-guard": fakeHookAtom("branch-guard", "Block direct commits to protected branches.", "stable", []string{"PreToolUse"}),
+	atoms := []map[string]interface{}{
+		{
+			"type":        "hook",
+			"id":          "hook/audit",
+			"name":        "Audit",
+			"description": "Append JSONL interaction records to ~/.ai/audit.",
+			"lifecycle":   "stable",
+			"event":       "PostToolUse",
+			"version":     "1.0.0",
+		},
+		{
+			"type":        "hook",
+			"id":          "hook/branch-guard",
+			"name":        "Branch Guard",
+			"description": "Block direct commits to protected branches.",
+			"lifecycle":   "stable",
+			"event":       "PreToolUse",
+			"version":     "1.0.0",
+		},
 	}
-	srv := startHookAtomsServer(t, entries)
-	setSkillAtomBaseURL(t, srv.URL)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(buildCatalogPayload(atoms))
+	}))
+	t.Cleanup(srv.Close)
+	setAiAtomsCatalogURL(t, srv.URL+"/catalog.json")
 
+	root := t.TempDir()
 	out, _, err := runSkillsCmd(t, root, "hooks", "available")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -98,18 +63,17 @@ func TestHooksAvailable_RegistryFetched(t *testing.T) {
 	}
 }
 
-// TestHooksAvailable_RegistryUnreachable verifies that when the registry
+// TestHooksAvailable_RegistryUnreachable verifies that when the catalog
 // returns an error, the embedded hooks are still listed and a warning is shown.
 func TestHooksAvailable_RegistryUnreachable(t *testing.T) {
-	root := t.TempDir()
-	// Serve 500 for every request to simulate an unreachable registry.
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 		_, _ = w.Write([]byte(`{"message":"Internal Server Error"}`))
 	}))
 	t.Cleanup(srv.Close)
-	setSkillAtomBaseURL(t, srv.URL)
+	setAiAtomsCatalogURL(t, srv.URL+"/catalog.json")
 
+	root := t.TempDir()
 	out, _, err := runSkillsCmd(t, root, "hooks", "available")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -129,14 +93,17 @@ func TestHooksAvailable_RegistryUnreachable(t *testing.T) {
 	}
 }
 
-// TestHooksAvailable_RegistryEmpty verifies that when the registry returns an
-// empty directory listing, the embedded hooks are shown and no registry section
-// is added.
+// TestHooksAvailable_RegistryEmpty verifies that when the catalog returns no
+// hook atoms, the embedded hooks are shown and no registry section is added.
 func TestHooksAvailable_RegistryEmpty(t *testing.T) {
-	root := t.TempDir()
-	srv := startHookAtomsServer(t, map[string][]byte{})
-	setSkillAtomBaseURL(t, srv.URL)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(buildCatalogPayload(nil))
+	}))
+	t.Cleanup(srv.Close)
+	setAiAtomsCatalogURL(t, srv.URL+"/catalog.json")
 
+	root := t.TempDir()
 	out, _, err := runSkillsCmd(t, root, "hooks", "available")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)

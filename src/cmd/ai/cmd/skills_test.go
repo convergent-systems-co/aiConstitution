@@ -573,51 +573,19 @@ func TestSkillsUpgradeAll_Empty(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// #365 — ai skills available
+// #365 / #415 — ai skills available (ai-atoms.com catalog)
 // ---------------------------------------------------------------------------
 
-// startSkillsAvailableServer starts a mock GitHub Contents API server that
-// serves a directory listing of skill entries and individual atom JSON payloads.
+// startSkillsCatalogServer starts a mock ai-atoms.com catalog server that
+// serves a catalog JSON document built from the given skill entries.
 //
-// entries maps slug → skillAtom JSON body. The directory listing is built
-// automatically from the keys. If a slug maps to nil bytes, the atom fetch
-// returns 404 for that entry (used to test resilience).
-func startSkillsAvailableServer(t *testing.T, entries map[string][]byte) *httptest.Server {
+// entries maps slug → (description, lifecycle). All entries are emitted as
+// "skill" type atoms in the catalog.
+func startSkillsCatalogServer(t *testing.T, atoms []map[string]interface{}) *httptest.Server {
 	t.Helper()
-	var srv *httptest.Server
-	srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-
-		// Directory listing endpoint: /skills/skill
-		if r.URL.Path == "/skills/skill" {
-			var listing []map[string]interface{}
-			for slug, body := range entries {
-				entry := map[string]interface{}{
-					"name":         slug + ".json",
-					"download_url": srv.URL + "/atoms/" + slug + ".json",
-				}
-				if body == nil {
-					entry["download_url"] = srv.URL + "/atoms/notfound/" + slug + ".json"
-				}
-				listing = append(listing, entry)
-			}
-			b, _ := json.Marshal(listing)
-			_, _ = w.Write(b)
-			return
-		}
-
-		// Individual atom endpoint: /atoms/<slug>.json
-		if strings.HasPrefix(r.URL.Path, "/atoms/") && !strings.Contains(r.URL.Path, "/notfound/") {
-			slug := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/atoms/"), ".json")
-			if body, ok := entries[slug]; ok && body != nil {
-				_, _ = w.Write(body)
-				return
-			}
-		}
-
-		// Anything else → 404.
-		w.WriteHeader(http.StatusNotFound)
-		_, _ = w.Write([]byte(`{"message":"Not Found"}`))
+		_, _ = w.Write(buildCatalogPayload(atoms))
 	}))
 	t.Cleanup(srv.Close)
 	return srv
@@ -625,12 +593,12 @@ func startSkillsAvailableServer(t *testing.T, entries map[string][]byte) *httpte
 
 func TestSkillsAvailable_Success(t *testing.T) {
 	root := t.TempDir()
-	entries := map[string][]byte{
-		"commit": fakeSkillAtomWithLifecycle("commit", "1.2.0", "Generate commit messages.", ""),
-		"review": fakeSkillAtomWithLifecycle("review", "0.5.1", "AI code review assistant.", ""),
+	atoms := []map[string]interface{}{
+		{"type": "skill", "id": "skill/commit", "name": "commit", "description": "Generate commit messages.", "lifecycle": "stable", "version": "1.2.0"},
+		{"type": "skill", "id": "skill/review", "name": "review", "description": "AI code review assistant.", "lifecycle": "stable", "version": "0.5.1"},
 	}
-	srv := startSkillsAvailableServer(t, entries)
-	setSkillAtomBaseURL(t, srv.URL)
+	srv := startSkillsCatalogServer(t, atoms)
+	setAiAtomsCatalogURL(t, srv.URL+"/catalog.json")
 
 	out, _, err := runSkillsCmd(t, root, "skills", "available")
 	if err != nil {
@@ -651,8 +619,8 @@ func TestSkillsAvailable_Success(t *testing.T) {
 
 func TestSkillsAvailable_Empty(t *testing.T) {
 	root := t.TempDir()
-	srv := startSkillsAvailableServer(t, map[string][]byte{})
-	setSkillAtomBaseURL(t, srv.URL)
+	srv := startSkillsCatalogServer(t, nil)
+	setAiAtomsCatalogURL(t, srv.URL+"/catalog.json")
 
 	out, _, err := runSkillsCmd(t, root, "skills", "available")
 	if err != nil {
@@ -665,13 +633,13 @@ func TestSkillsAvailable_Empty(t *testing.T) {
 
 func TestSkillsAvailable_FiltersDeprecated(t *testing.T) {
 	root := t.TempDir()
-	entries := map[string][]byte{
-		"active":     fakeSkillAtomWithLifecycle("active", "1.0.0", "Active skill.", ""),
-		"deprecated": fakeSkillAtomWithLifecycle("deprecated", "0.9.0", "Old skill.", "deprecated"),
-		"retired":    fakeSkillAtomWithLifecycle("retired", "0.1.0", "Retired skill.", "retired"),
+	atoms := []map[string]interface{}{
+		{"type": "skill", "id": "skill/active", "name": "active", "description": "Active skill.", "lifecycle": "stable", "version": "1.0.0"},
+		{"type": "skill", "id": "skill/deprecated", "name": "deprecated", "description": "Old skill.", "lifecycle": "deprecated", "version": "0.9.0"},
+		{"type": "skill", "id": "skill/retired", "name": "retired", "description": "Retired skill.", "lifecycle": "retired", "version": "0.1.0"},
 	}
-	srv := startSkillsAvailableServer(t, entries)
-	setSkillAtomBaseURL(t, srv.URL)
+	srv := startSkillsCatalogServer(t, atoms)
+	setAiAtomsCatalogURL(t, srv.URL+"/catalog.json")
 
 	out, _, err := runSkillsCmd(t, root, "skills", "available")
 	if err != nil {
@@ -689,7 +657,8 @@ func TestSkillsAvailable_FiltersDeprecated(t *testing.T) {
 	}
 }
 
-// fakeSkillAtomWithLifecycle is like fakeSkillAtom but also sets the lifecycle field.
+// fakeSkillAtomWithLifecycle is kept for use in install/upgrade tests which
+// still rely on SkillAtomsBaseURL and the per-atom GitHub API endpoint.
 func fakeSkillAtomWithLifecycle(slug, version, description, lifecycle string) []byte {
 	payload := map[string]interface{}{
 		"id":                     "skill/" + slug,
@@ -903,11 +872,11 @@ func fakeSkillAtomWithDeps(slug, version, description string, deps []string) []b
 
 func TestSkillsAvailable_ShowsSlugColumn(t *testing.T) {
 	root := t.TempDir()
-	entries := map[string][]byte{
-		"commit": fakeSkillAtomWithLifecycle("commit", "1.0.0", "Generate commit messages.", ""),
+	atoms := []map[string]interface{}{
+		{"type": "skill", "id": "skill/commit", "name": "commit", "description": "Generate commit messages.", "lifecycle": "stable", "version": "1.0.0"},
 	}
-	srv := startSkillsAvailableServer(t, entries)
-	setSkillAtomBaseURL(t, srv.URL)
+	srv := startSkillsCatalogServer(t, atoms)
+	setAiAtomsCatalogURL(t, srv.URL+"/catalog.json")
 
 	out, _, err := runSkillsCmd(t, root, "skills", "available")
 	if err != nil {

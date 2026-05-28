@@ -285,7 +285,7 @@ Per SPEC.md §3.10 + §10.2 + §14.1.`,
 
 // runHooksAvailable implements `ai hooks available`. It lists:
 //  1. Embedded hooks (built-in, installable via `ai hooks install`).
-//  2. Registry hooks from skill-atoms.com (type: "ai-hook", non-deprecated).
+//  2. Registry hooks from ai-atoms.com (type: "hook", non-deprecated).
 //
 // Registry fetch failures are non-fatal: a warning line is printed and the
 // command still exits 0 with the embedded hooks shown.
@@ -304,33 +304,44 @@ func runHooksAvailable(cmd *cobra.Command, _ []string) error {
 	}
 	fmt.Fprintln(out)
 
-	// Fetch registry hooks from skill-atoms.com. Non-fatal on failure.
-	atoms, registryErr := fetchHookAtoms()
+	// Fetch registry hooks from ai-atoms.com. Non-fatal on failure.
+	catalog, registryErr := fetchAiAtomsCatalog()
 	if registryErr != nil {
 		fmt.Fprintf(out, "(could not reach skill-atoms.com: %v)\n", registryErr)
 		return nil
 	}
-	if len(atoms) == 0 {
+
+	// Filter to active hook atoms only.
+	var hookAtoms []aiAtomEntry
+	for _, a := range catalog {
+		lc := strings.ToLower(a.Lifecycle)
+		if a.Type == "hook" && lc != "deprecated" && lc != "retired" {
+			hookAtoms = append(hookAtoms, a)
+		}
+	}
+	if len(hookAtoms) == 0 {
 		return nil
 	}
 
-	fmt.Fprintln(out, "Registry hooks from skill-atoms.com:")
+	fmt.Fprintln(out, "Registry hooks from ai-atoms.com:")
 
 	// Compute column width for the slug column.
 	maxSlug := 4 // len("SLUG")
-	for _, a := range atoms {
-		if len(a.slug) > maxSlug {
-			maxSlug = len(a.slug)
+	for _, a := range hookAtoms {
+		slug := strings.TrimPrefix(a.ID, "hook/")
+		if len(slug) > maxSlug {
+			maxSlug = len(slug)
 		}
 	}
 	fmt.Fprintf(out, "  %-*s  %s\n", maxSlug, "SLUG", "DESCRIPTION")
 	fmt.Fprintf(out, "  %-*s  %s\n", maxSlug, strings.Repeat("─", maxSlug), strings.Repeat("─", 50))
-	for _, a := range atoms {
-		desc := a.description
+	for _, a := range hookAtoms {
+		slug := strings.TrimPrefix(a.ID, "hook/")
+		desc := a.Description
 		if len(desc) > 70 {
 			desc = desc[:67] + "..."
 		}
-		fmt.Fprintf(out, "  %-*s  %s\n", maxSlug, a.slug, desc)
+		fmt.Fprintf(out, "  %-*s  %s\n", maxSlug, slug, desc)
 	}
 	return nil
 }

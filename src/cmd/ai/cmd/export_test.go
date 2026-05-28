@@ -39,3 +39,7 @@ func PurgeOldHookEntriesForTest(settings map[string]any) {
 func InstallClaudeHooksForTest(repoRoot, hooksDir string) (int, error) {
 	return installClaudeHooks(repoRoot, hooksDir)
 }
+
+// AiAtomsCatalogURLForTest exposes AiAtomsCatalogURL to the external _test
+// package so tests can point the catalog fetch at a local httptest server.
+var AiAtomsCatalogURLForTest = &AiAtomsCatalogURL
