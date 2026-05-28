@@ -1,5 +1,0 @@
-name: memory-curator
-version: 1.0.0
-description: Guided workflow for reviewing, curating, and archiving AI memory entries. Identifies patterns across memories and optionally proposes governance amendments.
-skills:
-  - memory-curator

@@ -1,5 +1,0 @@
-name: review-panel
-version: 1.0.0
-description: Guided workflow for running multi-panel reviews of code, prose, or governance artifacts. Selects panels, runs passes, aggregates scores, and produces a structured report.
-skills:
-  - review-panel

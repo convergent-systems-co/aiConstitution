@@ -1,5 +1,0 @@
-name: hook-author
-version: 1.0.0
-description: Guided workflow for authoring and installing governance hooks. Covers the full lifecycle from behavior description to installed and tested hook.
-skills:
-  - hook-author

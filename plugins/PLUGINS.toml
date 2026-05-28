@@ -1,0 +1,45 @@
+# PLUGINS.toml — canonical plugin registry pointer
+#
+# The plugin source directories that previously lived here have been removed.
+# ai-atoms.com is now the single source of truth for all AI governance plugins.
+#
+# Each plugin is published as a skill atom at ai-atoms.com. Fetch via:
+#   ai atoms fetch skill/<name>
+#
+# To install a plugin manually, download the atom JSON from the URL below
+# and pass it to: ai plugins install <path-or-url>
+
+[[plugins]]
+name    = "amendment-author"
+atom    = "skill/amendment-author"
+catalog = "https://ai-atoms.com"
+atom_url = "https://ai-atoms.com/atoms/skill/amendment-author.json"
+description = "Guided workflow for authoring governance amendments"
+
+[[plugins]]
+name    = "atom-publisher"
+atom    = "skill/atom-publisher"
+catalog = "https://ai-atoms.com"
+atom_url = "https://ai-atoms.com/atoms/skill/atom-publisher.json"
+description = "5-step workflow for publishing atoms to *-atoms catalogs"
+
+[[plugins]]
+name    = "hook-author"
+atom    = "skill/hook-author"
+catalog = "https://ai-atoms.com"
+atom_url = "https://ai-atoms.com/atoms/skill/hook-author.json"
+description = "Guided workflow for authoring and installing governance hooks"
+
+[[plugins]]
+name    = "memory-curator"
+atom    = "skill/memory-curator"
+catalog = "https://ai-atoms.com"
+atom_url = "https://ai-atoms.com/atoms/skill/memory-curator.json"
+description = "Guided workflow for reviewing, curating, and archiving AI memory"
+
+[[plugins]]
+name    = "review-panel"
+atom    = "skill/review-panel"
+catalog = "https://ai-atoms.com"
+atom_url = "https://ai-atoms.com/atoms/skill/review-panel.json"
+description = "Multi-panel review aggregator — select panels, run passes, score"
