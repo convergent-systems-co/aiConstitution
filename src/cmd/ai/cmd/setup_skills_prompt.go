@@ -46,47 +46,7 @@ func runSkillSelectionPrompt(
 		return nil
 	}
 
-	// First pass: hydrate all atoms, collect sub-skill slugs from depends_on.
-	type entry struct {
-		slug string
-		atom *skillAtom
-	}
-	var all []entry
-	subSkills := map[string]bool{}
-
-	for _, e := range entries {
-		atom, fetchErr := fetchAtom(e.DownloadURL)
-		if fetchErr != nil || atom == nil {
-			continue
-		}
-		lc := strings.ToLower(atom.Lifecycle)
-		if lc == "deprecated" || lc == "retired" {
-			continue
-		}
-		slug := strings.TrimSuffix(e.Name, ".json")
-		all = append(all, entry{slug: slug, atom: atom})
-		for _, dep := range atom.DependsOn {
-			subSkills[dep] = true
-		}
-	}
-
-	// Second pass: build display rows, excluding sub-skills.
-	var rows []skillRow
-	for _, e := range all {
-		if subSkills[e.slug] {
-			continue // hidden — installed as part of a parent skill
-		}
-		name := e.atom.Name
-		if name == "" {
-			name = e.slug
-		}
-		desc := e.atom.Description
-		// Truncate description to 60 chars for display.
-		if len(desc) > 60 {
-			desc = desc[:57] + "..."
-		}
-		rows = append(rows, skillRow{slug: e.slug, name: name, description: desc})
-	}
+	rows, all := buildSkillRows(entries, fetchAtom)
 
 	if len(rows) == 0 {
 		fmt.Fprintln(w, "\n(no skills available)")
@@ -157,6 +117,52 @@ func runSkillSelectionPrompt(
 	}
 
 	return nil
+}
+
+
+type hydratedEntry struct {
+	slug string
+	atom *skillAtom
+}
+
+// buildSkillRows hydrates entries, collects sub-skills, and returns display rows
+// with sub-skills (those listed in any depends_on) excluded.
+func buildSkillRows(entries []skillAtomDirEntry, fetchAtom fetchAtomFn) ([]skillRow, []hydratedEntry) {
+	var all []hydratedEntry
+	subSkills := map[string]bool{}
+
+	for _, e := range entries {
+		atom, fetchErr := fetchAtom(e.DownloadURL)
+		if fetchErr != nil || atom == nil {
+			continue
+		}
+		lc := strings.ToLower(atom.Lifecycle)
+		if lc == "deprecated" || lc == "retired" {
+			continue
+		}
+		slug := strings.TrimSuffix(e.Name, ".json")
+		all = append(all, hydratedEntry{slug: slug, atom: atom})
+		for _, dep := range atom.DependsOn {
+			subSkills[dep] = true
+		}
+	}
+
+	var rows []skillRow
+	for _, e := range all {
+		if subSkills[e.slug] {
+			continue
+		}
+		name := e.atom.Name
+		if name == "" {
+			name = e.slug
+		}
+		desc := e.atom.Description
+		if len(desc) > 60 {
+			desc = desc[:57] + "..."
+		}
+		rows = append(rows, skillRow{slug: e.slug, name: name, description: desc})
+	}
+	return rows, all
 }
 
 func runSkillSelectionPromptReal(cmd *cobra.Command) error {
