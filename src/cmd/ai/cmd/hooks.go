@@ -155,9 +155,9 @@ Exit 0 if no [✗] findings; exit 1 if any [✗].`,
 	// evaluate (#202)
 	c.AddCommand(&cobra.Command{
 		Use:   "evaluate",
-		Short: "Invoke each embedded hook with synthetic JSON; assert non-crash",
-		Long: `evaluate smoke-tests every embedded .py hook by piping a minimal
-synthetic JSON event to it and asserting exit 0.
+		Short: "Invoke each installed hook with synthetic JSON; assert non-crash",
+		Long: `evaluate smoke-tests every installed .py hook in ~/.ai/hooks/ by
+piping a minimal synthetic JSON event to it and asserting exit 0.
 
 Prints [✓] or [✗] per hook. Exit 1 if any [✗].`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -206,11 +206,11 @@ Prints [✓] or [✗] per hook. Exit 1 if any [✗].`,
 		},
 	})
 
-	// install — extracts from the embedded FS to ~/.ai/hooks/ (hooks)
+	// install — fetches hooks from ai-atoms.com catalog into ~/.ai/hooks/ (hooks)
 	// or ~/.ai/bin/ (command-wrappers). Special target names:
-	//   --all                    → every embedded hook
+	//   --all                    → every catalog hook + infrastructure files
 	//   command-wrappers         → both wrapper templates (git, gh)
-	//   <name.ext>               → that one embedded hook
+	//   <name>                   → one hook from the catalog by slug
 	var installRepo string
 	var installAll bool
 	var installAllHooks bool
@@ -220,16 +220,17 @@ Prints [✓] or [✗] per hook. Exit 1 if any [✗].`,
 	var installCopilot bool
 	install := &cobra.Command{
 		Use:   "install [<name>]",
-		Short: "Extract embedded hook(s) / wrappers to ~/.ai/ (idempotent)",
-		Long: `install materializes embedded assets onto disk.
+		Short: "Install hooks from ai-atoms.com catalog into ~/.ai/ (idempotent)",
+		Long: `install fetches hook scripts from the ai-atoms.com catalog and writes
+them to ~/.ai/hooks/, alongside infrastructure files from the binary.
 
-  ai hooks install --all                  extract every embedded hook
+  ai hooks install --all                  install all catalog hooks
                                           into ~/.ai/hooks/ and wire
                                           them into ~/.claude/settings.json
   ai hooks install command-wrappers       extract bin/git and bin/gh
                                           into ~/.ai/bin/
-  ai hooks install <name>                 extract a single embedded
-                                          hook (e.g. secret-block.py)
+  ai hooks install <name>                 install a single hook by slug
+                                          (e.g. secret-block) from the catalog
   ai hooks install --claude               wire installed hooks into
                                           .claude/settings.json in
                                           the current repo
@@ -274,7 +275,7 @@ Per SPEC.md §3.10 + §10.2 + §14.1.`,
 	}
 	install.Flags().StringVar(&installRepo, "repo", "", "install a pre-commit shim into the specified repo")
 	install.Flags().BoolVar(&installAll, "all-future-clones", false, "(reserved; wires into `ai clone` per SPEC §10.2)")
-	install.Flags().BoolVar(&installAllHooks, "all", false, "extract every embedded hook to ~/.ai/hooks/")
+	install.Flags().BoolVar(&installAllHooks, "all", false, "install all catalog hooks + infrastructure files to ~/.ai/hooks/")
 	install.Flags().BoolVar(&installForce, "force", false, "overwrite existing files")
 	install.Flags().BoolVar(&installClaude, "claude", false, "wire ~/.ai/hooks/*.py into .claude/settings.json")
 	install.Flags().StringVar(&installClaudeRoot, "claude-root", ".", "directory containing .claude/ (default: current dir)")
@@ -285,23 +286,20 @@ Per SPEC.md §3.10 + §10.2 + §14.1.`,
 }
 
 // runHooksAvailable implements `ai hooks available`. It lists:
-//  1. Embedded hooks (built-in, installable via `ai hooks install`).
+//  1. Built-in infrastructure files (embedded in binary, not individually installable).
 //  2. Registry hooks from ai-atoms.com (type: "hook", non-deprecated).
 //
 // Registry fetch failures are non-fatal: a warning line is printed and the
-// command still exits 0 with the embedded hooks shown.
+// command still exits 0 with the infrastructure files shown.
 func runHooksAvailable(cmd *cobra.Command, _ []string) error {
-	names, err := embed.HookNames()
-	if err != nil {
-		return err
-	}
-	sort.Strings(names)
 	out := cmd.OutOrStdout()
-	fmt.Fprintln(out, "Embedded hooks  (ai hooks install <name>  |  ai hooks install --all):")
-	for _, n := range names {
-		if isHookFile(n) || n == "patterns.json" {
-			fmt.Fprintln(out, "  "+n)
-		}
+	// Infrastructure files are embedded in the binary and extracted alongside hooks.
+	// Hook scripts are no longer embedded — the catalog is the source of truth.
+	fmt.Fprintln(out, "Embedded hooks  (installed automatically with ai hooks install --all):")
+	infraFiles := []string{"_lib.py", "patterns.json", "command-wrappers.toml", "patterns.local.json.example"}
+	sort.Strings(infraFiles)
+	for _, n := range infraFiles {
+		fmt.Fprintln(out, "  "+n)
 	}
 	fmt.Fprintln(out)
 
@@ -529,61 +527,65 @@ func runHooksInstall(repo, target string, all, force bool) error {
 	return fmt.Errorf("specify a hook name, --all, or `command-wrappers`. See `ai hooks install --help`")
 }
 
-// installAllHooksAndWire extracts all hooks to hooksDir and then updates
-// ~/.claude/settings.json with the correct event-to-hook wiring.
+// installAllHooksAndWire installs all hooks from the ai-atoms.com catalog into
+// hooksDir, extracts infrastructure files from the embedded binary, and wires
+// everything into ~/.claude/settings.json.
 //
-// Strategy (catalog-first with embed fallback):
-//  1. Fetch catalog. For each hook atom that has a script field, write it to disk.
-//     Catalog failures are non-fatal: we fall through to the embedded copy.
-//  2. Always run embed.ExtractAllHooks for infrastructure files (_lib.py,
-//     patterns.json, etc.) that the catalog does not publish.
-//  3. Wire everything into ~/.claude/settings.json.
+// Hook scripts (.py, .sh) are now served exclusively from the ai-atoms.com
+// catalog. The embed contains only infrastructure files (_lib.py, patterns.json,
+// command-wrappers.toml) that the catalog does not publish.
+//
+// Strategy:
+//  1. Fetch catalog. Return error if unreachable (catalog is the source of truth).
+//  2. For each active hook atom with a script field, write it to hooksDir.
+//  3. Extract infrastructure files from the embedded binary.
+//  4. Wire hooks into ~/.claude/settings.json.
 func installAllHooksAndWire(hooksDir, home string, force bool) error {
-	// Step 1: catalog-based install for hook atoms that carry a script.
-	catalogInstalled := 0
+	// Step 1: require catalog — hook scripts live there now.
 	atoms, catalogErr := fetchAiAtomsCatalog()
-	if catalogErr == nil {
-		if mkErr := os.MkdirAll(hooksDir, 0o750); mkErr != nil {
-			return fmt.Errorf("setup hooks: mkdir: %w", mkErr)
-		}
-		for _, a := range atoms {
-			if a.Type != "hook" || a.Script == "" {
-				continue
-			}
-			slug := strings.TrimPrefix(a.ID, "hook/")
-			ext := hookExtForLanguage(a.Language)
-			dest := filepath.Join(hooksDir, slug+ext)
-			// Skip without --force if already installed.
-			if !force {
-				if _, statErr := os.Stat(dest); statErr == nil {
-					continue
-				}
-			}
-			// 0755: hooks must be executable.
-			if writeErr := os.WriteFile(dest, []byte(a.Script), 0o755); writeErr == nil { //nolint:gosec // G306: executable hook
-				catalogInstalled++
-			}
-		}
-	}
-	// catalogErr is intentionally swallowed — the embed fallback below covers it.
-
-	// Step 2: always extract the embedded set (infrastructure files + any hooks
-	// not yet in the catalog). ExtractAllHooks is idempotent with force=false.
-	written, err := embed.ExtractAllHooks(hooksDir, force)
-	if err != nil {
-		return err
+	if catalogErr != nil {
+		return fmt.Errorf("hooks install: could not fetch ai-atoms.com catalog: %w", catalogErr)
 	}
 
-	// Step 3: report.
-	if catalogInstalled > 0 {
-		fmt.Printf("Installed %d hook(s) from ai-atoms.com + %d infrastructure file(s) from binary\n",
-			catalogInstalled, len(written))
-	} else {
-		fmt.Printf("Extracted %d hook(s) to %s\n", len(written), hooksDir)
-		for _, p := range written {
-			fmt.Println("  " + p)
+	if mkErr := os.MkdirAll(hooksDir, 0o750); mkErr != nil {
+		return fmt.Errorf("hooks install: mkdir: %w", mkErr)
+	}
+
+	// Step 2: install active hook atoms that carry a script field.
+	installed := 0
+	for _, a := range atoms {
+		lc := strings.ToLower(a.Lifecycle)
+		if a.Type != "hook" || a.Script == "" || lc == "deprecated" || lc == "retired" {
+			continue
+		}
+		slug := strings.TrimPrefix(a.ID, "hook/")
+		ext := hookExtForLanguage(a.Language)
+		// The catalog uses "hook/lib" but the convention on disk is "_lib.py".
+		filename := slug
+		if slug == "lib" {
+			filename = "_lib"
+		}
+		dest := filepath.Join(hooksDir, filename+ext)
+		if !force {
+			if _, statErr := os.Stat(dest); statErr == nil {
+				continue // skip if already installed
+			}
+		}
+		// 0755 is intentional: hooks must be executable.
+		if writeErr := os.WriteFile(dest, []byte(a.Script), 0o755); writeErr == nil { //nolint:gosec // G306: executable hook
+			installed++
 		}
 	}
+
+	// Step 3: extract infrastructure files from the binary embed.
+	// These are not published in the catalog (patterns.json, _lib.py, etc.).
+	written, infraErr := extractInfrastructureFiles(hooksDir, force)
+	if infraErr != nil {
+		fmt.Printf("Warning: could not extract infrastructure files: %v\n", infraErr)
+	}
+
+	fmt.Printf("Installed %d hook(s) from ai-atoms.com + %d infrastructure file(s) from binary\n",
+		installed, len(written))
 
 	// Step 4: wire hooks into ~/.claude/settings.json.
 	// CLAUDE_CONFIG_DIR overrides the default ~/.claude location for testing.
@@ -595,11 +597,28 @@ func installAllHooksAndWire(hooksDir, home string, force bool) error {
 	if err := updateSettingsJSON(settingsPath, hooksDir); err != nil {
 		// Settings update is non-fatal — hooks still work if manually wired.
 		fmt.Printf("Warning: could not update %s: %v\n", settingsPath, err)
-		fmt.Println("Hooks extracted successfully. Wire them manually if needed.")
+		fmt.Println("Hooks installed successfully. Wire them manually if needed.")
 		return nil
 	}
 	fmt.Printf("Updated %s with hook wiring.\n", settingsPath)
 	return nil
+}
+
+// extractInfrastructureFiles extracts infrastructure-only files from the binary
+// embed (_lib.py, patterns.json, command-wrappers.toml, patterns.local.json.example)
+// into hooksDir. User hook scripts are no longer embedded; they come from ai-atoms.com.
+func extractInfrastructureFiles(hooksDir string, force bool) ([]string, error) {
+	infraFiles := []string{"_lib.py", "patterns.json", "command-wrappers.toml", "patterns.local.json.example"}
+	written := make([]string, 0, len(infraFiles))
+	for _, name := range infraFiles {
+		p, err := embed.ExtractHook(name, hooksDir, force)
+		if err != nil {
+			// Non-fatal: skip files that don't exist in the embed or are already present.
+			continue
+		}
+		written = append(written, p)
+	}
+	return written, nil
 }
 
 // hookEntry represents a single hook command entry in settings.json.
@@ -768,24 +787,21 @@ func installOneHook(name, hooksDir string, force bool) error {
 	// Derive slug: strip any extension so "secret-block.py" → "secret-block".
 	slug := strings.TrimSuffix(strings.TrimSuffix(name, ".py"), ".sh")
 
-	// Try catalog first. Catalog install is silent on success (no extra output).
-	catalogErr := installHookFromCatalog(slug, hooksDir)
-	if catalogErr == nil {
-		return nil
-	}
-	// ErrHookNotInCatalog means the catalog simply doesn't have it yet — fall
-	// through to the embedded copy silently.
-	if !errors.Is(catalogErr, ErrHookNotInCatalog) {
-		// Real network / parse error: warn but continue with embed fallback.
-		fmt.Fprintf(os.Stderr, "warning: catalog fetch failed (%v); using embedded copy\n", catalogErr)
+	// Infrastructure files (_lib.py, patterns.json, etc.) are embed-only;
+	// they are not individually installable via this path.
+	infraFiles := map[string]bool{"_lib": true, "patterns": true, "command-wrappers": true}
+	if infraFiles[slug] {
+		return fmt.Errorf("hook %q is an infrastructure file; use `ai hooks install --all` to extract it", slug)
 	}
 
-	// Fall back to the embedded FS.
-	p, err := embed.ExtractHook(name, hooksDir, force)
-	if err != nil {
-		return err
+	// Hook scripts are served exclusively from the ai-atoms.com catalog.
+	if err := installHookFromCatalog(slug, hooksDir); err != nil {
+		if errors.Is(err, ErrHookNotInCatalog) {
+			return fmt.Errorf("hook %q not found in ai-atoms.com catalog", slug)
+		}
+		return err // real network / parse error
 	}
-	fmt.Println("Extracted " + p)
+	_ = force // force flag is handled inside installHookFromCatalog via disk overwrite
 	return nil
 }
 
@@ -897,32 +913,6 @@ func hookFilesFromDir(dir string) ([]validationTarget, error) {
 			continue
 		}
 		data, err := os.ReadFile(filepath.Join(dir, n))
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, validationTarget{name: n, content: data})
-	}
-	return out, nil
-}
-
-// hookFilesFromEmbed reads all hook-eligible .py and .sh files from the
-// embedded FS (see isHookFile).
-func hookFilesFromEmbed() ([]validationTarget, error) {
-	hFS := embed.HooksFS()
-	entries, err := fs.ReadDir(hFS, ".")
-	if err != nil {
-		return nil, err
-	}
-	var out []validationTarget
-	for _, e := range entries {
-		if e.IsDir() {
-			continue
-		}
-		n := e.Name()
-		if !isHookFile(n) {
-			continue
-		}
-		data, err := fs.ReadFile(hFS, n)
 		if err != nil {
 			return nil, err
 		}
@@ -1068,53 +1058,59 @@ func syntheticEvent(hookName string) string {
 	}
 }
 
-// runHooksEvaluate smoke-tests every embedded .py hook by sending it a
-// synthetic JSON event and asserting exit 0.
+// runHooksEvaluate smoke-tests every installed .py hook by sending it a
+// synthetic JSON event and asserting exit 0. Hook scripts are no longer
+// embedded — they live in ~/.ai/hooks/ after `ai hooks install --all`.
 func runHooksEvaluate(cmd *cobra.Command) error {
-	hFS := embed.HooksFS()
-	entries, err := fs.ReadDir(hFS, ".")
+	home, err := os.UserHomeDir()
 	if err != nil {
+		return fmt.Errorf("evaluate: resolve home: %w", err)
+	}
+	aiRoot := os.Getenv("AI_ROOT")
+	if aiRoot == "" {
+		aiRoot = filepath.Join(home, ".ai")
+	}
+	hooksDir := filepath.Join(aiRoot, "hooks")
+
+	files, err := hookFilesFromDir(hooksDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			fmt.Fprintln(cmd.OutOrStdout(), "No hooks installed (run: ai hooks install --all)")
+			return nil
+		}
 		return err
 	}
+	if len(files) == 0 {
+		fmt.Fprintln(cmd.OutOrStdout(), "No hooks installed (run: ai hooks install --all)")
+		return nil
+	}
 
-	// Extract all hooks to a temp dir so we can run them with python3.
+	// Extract to a temp dir so we can copy _lib.py alongside hooks for import resolution.
 	tmpDir, err := os.MkdirTemp("", "ai-hooks-evaluate-*")
 	if err != nil {
 		return fmt.Errorf("evaluate: create temp dir: %w", err)
 	}
 	defer os.RemoveAll(tmpDir)
 
+	// Copy _lib.py from embed to temp dir so imports resolve.
+	hFS := embed.HooksFS()
+	if libData, rerr := fs.ReadFile(hFS, "_lib.py"); rerr == nil {
+		_ = os.WriteFile(filepath.Join(tmpDir, "_lib.py"), libData, 0o644)
+	}
+
+	sort.Slice(files, func(i, j int) bool { return files[i].name < files[j].name })
+
 	anyFail := false
-	sort.Slice(entries, func(i, j int) bool { return entries[i].Name() < entries[j].Name() })
-
-	for _, e := range entries {
-		// Use the same isHookFile filter as validate: skip _lib.py,
-		// test_*.py, and non-.py files.
-		if e.IsDir() || !isHookFile(e.Name()) {
-			continue
-		}
-
-		data, rerr := fs.ReadFile(hFS, e.Name())
-		if rerr != nil {
-			fmt.Fprintf(cmd.OutOrStdout(), "[✗] %s (read error: %v)\n", e.Name(), rerr)
-			anyFail = true
-			continue
-		}
-		hookPath := filepath.Join(tmpDir, e.Name())
-		if werr := os.WriteFile(hookPath, data, 0o644); werr != nil {
-			fmt.Fprintf(cmd.OutOrStdout(), "[✗] %s (write error: %v)\n", e.Name(), werr)
+	for _, f := range files {
+		hookPath := filepath.Join(tmpDir, f.name)
+		if werr := os.WriteFile(hookPath, f.content, 0o644); werr != nil {
+			fmt.Fprintf(cmd.OutOrStdout(), "[✗] %s (write error: %v)\n", f.name, werr)
 			anyFail = true
 			continue
 		}
 
-		// Also copy _lib.py so imports work.
-		libData, _ := fs.ReadFile(hFS, "_lib.py")
-		if libData != nil {
-			_ = os.WriteFile(filepath.Join(tmpDir, "_lib.py"), libData, 0o644)
-		}
-
-		payload := syntheticEvent(e.Name())
-		evalCmd := exec.Command("python3", hookPath) //nolint:gosec // G204: intentional eval of embedded hook
+		payload := syntheticEvent(f.name)
+		evalCmd := exec.Command("python3", hookPath) //nolint:gosec // G204: intentional eval of installed hook
 		evalCmd.Stdin = strings.NewReader(payload)
 		evalCmd.Dir = tmpDir
 		if eerr := evalCmd.Run(); eerr != nil {
@@ -1122,12 +1118,12 @@ func runHooksEvaluate(cmd *cobra.Command) error {
 			// the synthetic payload (e.g. branch-guard on a non-git cwd).
 			// We treat any exec error that isn't ExitError as a real failure.
 			if _, ok := eerr.(*exec.ExitError); !ok {
-				fmt.Fprintf(cmd.OutOrStdout(), "[✗] %s (%v)\n", e.Name(), eerr)
+				fmt.Fprintf(cmd.OutOrStdout(), "[✗] %s (%v)\n", f.name, eerr)
 				anyFail = true
 				continue
 			}
 		}
-		fmt.Fprintf(cmd.OutOrStdout(), "[✓] %s\n", e.Name())
+		fmt.Fprintf(cmd.OutOrStdout(), "[✓] %s\n", f.name)
 	}
 	if anyFail {
 		return fmt.Errorf("one or more hooks failed evaluation")
