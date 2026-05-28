@@ -329,7 +329,14 @@ func runSkillsInstall(cmd *cobra.Command, slug string) error {
 
 	atom, err := fetchSkillAtomFromCatalog(slug)
 	if err != nil {
-		return err
+		// Not in ai-atoms.com catalog yet — fall back to skill-atoms GitHub API.
+		// This covers the 18+ skills that exist in skill-atoms.com but haven't
+		// been migrated to ai-atoms.com.
+		var fallbackErr error
+		atom, fallbackErr = fetchSkillAtomJSON(slug)
+		if fallbackErr != nil {
+			return err // return the original catalog error, not the fallback error
+		}
 	}
 
 	skillsDir := skillsManifestDir()
