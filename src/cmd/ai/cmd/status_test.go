@@ -65,7 +65,7 @@ func TestStatus_HooksSection(t *testing.T) {
 	t.Setenv("AI_ROOT", aiRoot)
 	hooksDir := filepath.Join(aiRoot, "hooks")
 	_ = os.MkdirAll(hooksDir, 0o755)
-	_ = os.WriteFile(filepath.Join(hooksDir, "audit.py"), []byte("# hook"), 0o644)
+	_ = os.WriteFile(filepath.Join(hooksDir, "audit-logger.py"), []byte("# hook"), 0o644)
 	_ = os.WriteFile(filepath.Join(hooksDir, "branch-guard.py"), []byte("# hook"), 0o644)
 
 	out := runStatusCmd(t)

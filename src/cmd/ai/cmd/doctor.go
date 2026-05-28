@@ -162,7 +162,7 @@ func readWiredHookNames(settingsPath string) map[string]bool {
 // hooks directory is also wired in ~/.claude/settings.json.
 func checkHookWiring(w io.Writer, aiRoot, home string) {
 	requiredHooks := []string{
-		"audit.py",
+		"audit-logger.py",
 		"branch-guard.py",
 		"secret-block.py",
 		"worktree-guard.py",

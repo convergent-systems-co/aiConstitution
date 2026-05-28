@@ -25,13 +25,13 @@ import (
 // PreToolUse has two entries: one for all tools (audit, worktree-guard, secret-block)
 // and one Bash-only matcher entry (branch-guard).
 var expectedHookMapping = map[string][]string{
-	"SessionStart":     {"ai hooks run audit"},
-	"UserPromptSubmit": {"ai hooks run audit"},
-	"PostToolUse":      {"ai hooks run audit"},
-	"Stop":             {"ai hooks run audit", "ai hooks run checkpoint-tick"},
-	"SessionEnd":       {"ai hooks run audit"},
-	"SubagentStop":     {"ai hooks run audit"},
-	"PreCompact":       {"ai hooks run audit"},
+	"SessionStart":     {"ai hooks run audit-logger"},
+	"UserPromptSubmit": {"ai hooks run audit-logger"},
+	"PostToolUse":      {"ai hooks run audit-logger"},
+	"Stop":             {"ai hooks run audit-logger", "ai hooks run checkpoint-tick"},
+	"SessionEnd":       {"ai hooks run audit-logger"},
+	"SubagentStop":     {"ai hooks run audit-logger"},
+	"PreCompact":       {"ai hooks run audit-logger"},
 	// PreToolUse has two hook groups; tested separately below
 }
 
@@ -125,7 +125,7 @@ func TestHooksInstallSessionStartWiring(t *testing.T) {
 	}
 	// Must contain at least one hook group with ai hooks run audit
 	raw, _ := json.Marshal(sessionStart)
-	if !strings.Contains(string(raw), "ai hooks run audit") {
+	if !strings.Contains(string(raw), "ai hooks run audit-logger") {
 		t.Errorf("SessionStart hooks do not contain 'ai hooks run audit'\ncontent: %s", raw)
 	}
 }
@@ -152,7 +152,7 @@ func TestHooksInstallPreToolUseWiring(t *testing.T) {
 	rawStr := string(raw)
 
 	requiredHooks := []string{
-		"ai hooks run audit",
+		"ai hooks run audit-logger",
 		"ai hooks run secret-block",
 		"ai hooks run worktree-guard",
 		"ai hooks run branch-guard",
@@ -197,7 +197,7 @@ func TestHooksInstallStopWiring(t *testing.T) {
 	stop := hooks["Stop"]
 	raw, _ := json.Marshal(stop)
 	rawStr := string(raw)
-	if !strings.Contains(rawStr, "ai hooks run audit") {
+	if !strings.Contains(rawStr, "ai hooks run audit-logger") {
 		t.Errorf("Stop hooks missing 'ai hooks run audit': %s", rawStr)
 	}
 	if !strings.Contains(rawStr, "ai hooks run checkpoint-tick") {
