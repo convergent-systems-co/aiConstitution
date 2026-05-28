@@ -108,8 +108,16 @@ func readWiredHookNames(settingsPath string) map[string]bool {
 
 	wired := make(map[string]bool)
 	extractHookBase := func(cmd string) {
+		// Portable format (v1.3+): "ai hooks run <slug>"
+		if strings.HasPrefix(cmd, "ai hooks run ") {
+			slug := strings.TrimPrefix(cmd, "ai hooks run ")
+			slug = strings.TrimSpace(strings.Fields(slug)[0])
+			// slug has no extension; try .py first (most hooks are Python)
+			wired[slug+".py"] = true
+			return
+		}
+		// Legacy absolute-path format: "python3 /abs/.ai/hooks/audit.py" or bare path
 		if strings.Contains(cmd, "/.ai/hooks/") {
-			// Strip leading "python3 " or similar interpreter prefix.
 			parts := strings.Fields(cmd)
 			for _, p := range parts {
 				if strings.Contains(p, "/.ai/hooks/") {
