@@ -7,11 +7,19 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/convergent-systems-co/aiConstitution/src/internal/paths"
 
 	"github.com/spf13/cobra"
 )
+
+// auditTimestamp formats a UTC time as a compact ISO-8601 filename prefix
+// matching the canonical pattern used across the audit subsystem:
+// 20060102T150405Z (no colons, no dashes, terminating Z).
+func auditTimestamp(t time.Time) string {
+	return t.UTC().Format("20060102T150405Z")
+}
 
 // newAuditCmd implements `ai audit {override,violation,list,show,rotate}`.
 // Mentioned in SPEC.md §11.2 as part of the existing/stays-in-CLI set.
@@ -27,26 +35,182 @@ and §5.2 (violations).`,
 	}
 
 	c.AddCommand(
-		&cobra.Command{
-			Use:   "override",
-			Short: "Record an override (writes audit/overrides/<UTC>.md)",
-			RunE: func(cmd *cobra.Command, _ []string) error {
-				notice("audit override:", "would prompt for the canonical override fields")
-				return stub("audit override", "Constitution.md §5.1")
-			},
-		},
-		&cobra.Command{
-			Use:   "violation",
-			Short: "Record a self-noticed violation (writes audit/violations/<UTC>.md)",
-			RunE: func(cmd *cobra.Command, _ []string) error {
-				notice("audit violation:", "would prompt for the canonical violation fields")
-				return stub("audit violation", "Constitution.md §5.2")
-			},
-		},
+		newAuditOverrideCmd(),
+		newAuditViolationCmd(),
 		newAuditListCmd(),
 		newAuditShowCmd(),
 		newAuditRotateCmd(),
 	)
+	return c
+}
+
+// newAuditOverrideCmd implements `ai audit override`.
+// Writes a Constitution.md §1.5.1 override record to
+// ~/.ai/audit/overrides/<UTC>.md.
+func newAuditOverrideCmd() *cobra.Command {
+	var (
+		tool         string
+		section      string
+		scope        string
+		strict       string
+		relaxed      string
+		risk         string
+		confirmation string
+		artifacts    string
+	)
+
+	c := &cobra.Command{
+		Use:   "override",
+		Short: "Record an override (writes audit/overrides/<UTC>.md)",
+		Long: `override writes a Constitution.md §1.5.1 override record to
+~/.ai/audit/overrides/<UTC-ISO8601>.md. All flags are required.`,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			// Validate required flags.
+			if section == "" {
+				return fmt.Errorf("audit override: --section is required")
+			}
+			if scope == "" {
+				return fmt.Errorf("audit override: --scope is required")
+			}
+			if strict == "" {
+				return fmt.Errorf("audit override: --strict is required")
+			}
+			if relaxed == "" {
+				return fmt.Errorf("audit override: --relaxed is required")
+			}
+			if risk == "" {
+				return fmt.Errorf("audit override: --risk is required")
+			}
+			if confirmation == "" {
+				return fmt.Errorf("audit override: --confirmation is required")
+			}
+
+			now := time.Now().UTC()
+			ts := auditTimestamp(now)
+			humanTS := now.Format(time.RFC3339)
+
+			overridesDir := filepath.Join(paths.AuditDir(), "overrides")
+			if err := os.MkdirAll(overridesDir, 0o750); err != nil {
+				return fmt.Errorf("audit override: mkdir overrides: %w", err)
+			}
+
+			outPath := filepath.Join(overridesDir, ts+".md")
+			body := fmt.Sprintf("# Override — %s\n\n"+
+				"- **Tool / Agent:** %s\n"+
+				"- **Section / Rule relaxed:** %s\n"+
+				"- **Scope:** %s\n"+
+				"- **Strict behavior:** %s\n"+
+				"- **Relaxed behavior:** %s\n"+
+				"- **Risk acknowledged:** %s\n"+
+				"- **Reasoning (AI):** %s\n"+
+				"- **Principal confirmation:** %s\n"+
+				"- **Artifacts affected:** %s\n",
+				humanTS,
+				tool,
+				section,
+				scope,
+				strict,
+				relaxed,
+				risk,
+				confirmation,
+				confirmation,
+				artifacts,
+			)
+
+			//nolint:gosec // G306: audit record (user config dir); 0o600 is intentional
+			if err := os.WriteFile(outPath, []byte(body), 0o600); err != nil {
+				return fmt.Errorf("audit override: write file: %w", err)
+			}
+			_, _ = fmt.Fprintln(cmd.OutOrStdout(), outPath)
+			return nil
+		},
+	}
+
+	c.Flags().StringVar(&tool, "tool", "Claude Code", "tool or agent name (e.g. Claude Code)")
+	c.Flags().StringVar(&section, "section", "", "section / rule relaxed (e.g. §3.2) [required]")
+	c.Flags().StringVar(&scope, "scope", "", "scope: task|session|project|global [required]")
+	c.Flags().StringVar(&strict, "strict", "", "one sentence: what strict behavior would have been [required]")
+	c.Flags().StringVar(&relaxed, "relaxed", "", "one sentence: what will be done instead [required]")
+	c.Flags().StringVar(&risk, "risk", "", "one sentence: concrete failure modes [required]")
+	c.Flags().StringVar(&confirmation, "confirmation", "", "verbatim principal confirmation [required]")
+	c.Flags().StringVar(&artifacts, "artifacts", "", "comma-separated affected paths or descriptions")
+
+	return c
+}
+
+// newAuditViolationCmd implements `ai audit violation`.
+// Writes a Constitution.md §1.5.2 violation record to
+// ~/.ai/audit/violations/<UTC>.md.
+func newAuditViolationCmd() *cobra.Command {
+	var (
+		section     string
+		what        string
+		noticed     string
+		remediation string
+		amendment   string
+	)
+
+	c := &cobra.Command{
+		Use:   "violation",
+		Short: "Record a self-noticed violation (writes audit/violations/<UTC>.md)",
+		Long: `violation writes a Constitution.md §1.5.2 violation record to
+~/.ai/audit/violations/<UTC-ISO8601>.md.
+--section, --what, --noticed, and --remediation are required.
+--amendment is optional.`,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			// Validate required flags.
+			if section == "" {
+				return fmt.Errorf("audit violation: --section is required")
+			}
+			if what == "" {
+				return fmt.Errorf("audit violation: --what is required")
+			}
+			if noticed == "" {
+				return fmt.Errorf("audit violation: --noticed is required")
+			}
+			if remediation == "" {
+				return fmt.Errorf("audit violation: --remediation is required")
+			}
+
+			now := time.Now().UTC()
+			ts := auditTimestamp(now)
+			humanTS := now.Format(time.RFC3339)
+
+			violationsDir := filepath.Join(paths.AuditDir(), "violations")
+			if err := os.MkdirAll(violationsDir, 0o750); err != nil {
+				return fmt.Errorf("audit violation: mkdir violations: %w", err)
+			}
+
+			outPath := filepath.Join(violationsDir, ts+".md")
+			body := fmt.Sprintf("# Violation — %s\n\n"+
+				"- **Section / Rule violated:** %s\n"+
+				"- **What happened:** %s\n"+
+				"- **How noticed:** %s\n"+
+				"- **Remediation:** %s\n"+
+				"- **Proposed amendment (if any):** %s\n",
+				humanTS,
+				section,
+				what,
+				noticed,
+				remediation,
+				amendment,
+			)
+
+			//nolint:gosec // G306: audit record (user config dir); 0o600 is intentional
+			if err := os.WriteFile(outPath, []byte(body), 0o600); err != nil {
+				return fmt.Errorf("audit violation: write file: %w", err)
+			}
+			_, _ = fmt.Fprintln(cmd.OutOrStdout(), outPath)
+			return nil
+		},
+	}
+
+	c.Flags().StringVar(&section, "section", "", "section / rule violated (e.g. §3.1.P2) [required]")
+	c.Flags().StringVar(&what, "what", "", "one paragraph: what happened [required]")
+	c.Flags().StringVar(&noticed, "noticed", "", "how noticed: self-detected|user-flagged|tool-flagged [required]")
+	c.Flags().StringVar(&remediation, "remediation", "", "what was done about it [required]")
+	c.Flags().StringVar(&amendment, "amendment", "", "proposed amendment link or text (optional)")
+
 	return c
 }
 
