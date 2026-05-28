@@ -552,10 +552,22 @@ func canonicalWiring(hooksDir string) []eventHookSpec {
 	return []eventHookSpec{
 		{event: "SessionStart", hooks: h("audit.py")},
 		{event: "UserPromptSubmit", hooks: h("audit.py")},
-		// PreToolUse: all-tools group
-		{event: "PreToolUse", matcher: "", hooks: h("audit.py", "secret-block.py", "worktree-guard.py")},
-		// PreToolUse: Bash-only group for branch-guard
-		{event: "PreToolUse", matcher: "Bash", hooks: h("branch-guard.py")},
+		// PreToolUse: all-tools group (governance + secret + worktree + redaction + no-verify)
+		{event: "PreToolUse", matcher: "", hooks: h(
+			"audit.py",
+			"audit-command.py",
+			"secret-block.py",
+			"worktree-guard.py",
+			"no-verify-strip.py",
+			"op-redact.py",
+		)},
+		// PreToolUse: Bash-only group (branch guard + destructive guards)
+		{event: "PreToolUse", matcher: "Bash", hooks: h(
+			"branch-guard.py",
+			"destructive-gh-guard.py",
+			"destructive-kubectl-guard.py",
+			"destructive-terraform-guard.py",
+		)},
 		{event: "PostToolUse", hooks: h("audit.py")},
 		{event: "Stop", hooks: h("audit.py", "checkpoint-tick.py")},
 		{event: "SessionEnd", hooks: h("audit.py")},

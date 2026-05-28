@@ -28,10 +28,12 @@ var claudeEventMap = map[string][]string{
 	"worktree-guard.py":              {"PreToolUse"},
 	"secret-block.py":                {"PreToolUse"},
 	"no-verify-strip.py":             {"PreToolUse"},
+	"op-redact.py":                   {"PostToolUse"},
 	"destructive-gh-guard.py":        {"PreToolUse"},
 	"destructive-kubectl-guard.py":   {"PreToolUse"},
 	"destructive-terraform-guard.py": {"PreToolUse"},
 	"checkpoint-tick.py":             {"Stop"},
+	// secret-precommit.py is a git pre-commit hook, not a Claude Code event hook.
 }
 
 // claudeSettings is the minimal in-memory shape of .claude/settings.json
