@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -530,17 +531,61 @@ func runHooksInstall(repo, target string, all, force bool) error {
 
 // installAllHooksAndWire extracts all hooks to hooksDir and then updates
 // ~/.claude/settings.json with the correct event-to-hook wiring.
+//
+// Strategy (catalog-first with embed fallback):
+//  1. Fetch catalog. For each hook atom that has a script field, write it to disk.
+//     Catalog failures are non-fatal: we fall through to the embedded copy.
+//  2. Always run embed.ExtractAllHooks for infrastructure files (_lib.py,
+//     patterns.json, etc.) that the catalog does not publish.
+//  3. Wire everything into ~/.claude/settings.json.
 func installAllHooksAndWire(hooksDir, home string, force bool) error {
+	// Step 1: catalog-based install for hook atoms that carry a script.
+	catalogInstalled := 0
+	atoms, catalogErr := fetchAiAtomsCatalog()
+	if catalogErr == nil {
+		if mkErr := os.MkdirAll(hooksDir, 0o750); mkErr != nil {
+			return fmt.Errorf("setup hooks: mkdir: %w", mkErr)
+		}
+		for _, a := range atoms {
+			if a.Type != "hook" || a.Script == "" {
+				continue
+			}
+			slug := strings.TrimPrefix(a.ID, "hook/")
+			ext := hookExtForLanguage(a.Language)
+			dest := filepath.Join(hooksDir, slug+ext)
+			// Skip without --force if already installed.
+			if !force {
+				if _, statErr := os.Stat(dest); statErr == nil {
+					continue
+				}
+			}
+			// 0755: hooks must be executable.
+			if writeErr := os.WriteFile(dest, []byte(a.Script), 0o755); writeErr == nil { //nolint:gosec // G306: executable hook
+				catalogInstalled++
+			}
+		}
+	}
+	// catalogErr is intentionally swallowed — the embed fallback below covers it.
+
+	// Step 2: always extract the embedded set (infrastructure files + any hooks
+	// not yet in the catalog). ExtractAllHooks is idempotent with force=false.
 	written, err := embed.ExtractAllHooks(hooksDir, force)
 	if err != nil {
 		return err
 	}
-	fmt.Printf("Extracted %d hook(s) to %s\n", len(written), hooksDir)
-	for _, p := range written {
-		fmt.Println("  " + p)
+
+	// Step 3: report.
+	if catalogInstalled > 0 {
+		fmt.Printf("Installed %d hook(s) from ai-atoms.com + %d infrastructure file(s) from binary\n",
+			catalogInstalled, len(written))
+	} else {
+		fmt.Printf("Extracted %d hook(s) to %s\n", len(written), hooksDir)
+		for _, p := range written {
+			fmt.Println("  " + p)
+		}
 	}
 
-	// Wire hooks into ~/.claude/settings.json.
+	// Step 4: wire hooks into ~/.claude/settings.json.
 	// CLAUDE_CONFIG_DIR overrides the default ~/.claude location for testing.
 	claudeConfigDir := os.Getenv("CLAUDE_CONFIG_DIR")
 	if claudeConfigDir == "" {
@@ -720,6 +765,22 @@ func installWrappers(binDir string, force bool) error {
 }
 
 func installOneHook(name, hooksDir string, force bool) error {
+	// Derive slug: strip any extension so "secret-block.py" → "secret-block".
+	slug := strings.TrimSuffix(strings.TrimSuffix(name, ".py"), ".sh")
+
+	// Try catalog first. Catalog install is silent on success (no extra output).
+	catalogErr := installHookFromCatalog(slug, hooksDir)
+	if catalogErr == nil {
+		return nil
+	}
+	// ErrHookNotInCatalog means the catalog simply doesn't have it yet — fall
+	// through to the embedded copy silently.
+	if !errors.Is(catalogErr, ErrHookNotInCatalog) {
+		// Real network / parse error: warn but continue with embed fallback.
+		fmt.Fprintf(os.Stderr, "warning: catalog fetch failed (%v); using embedded copy\n", catalogErr)
+	}
+
+	// Fall back to the embedded FS.
 	p, err := embed.ExtractHook(name, hooksDir, force)
 	if err != nil {
 		return err
