@@ -10,6 +10,40 @@ Spec version (separate cadence from binary): see
 binary version independently — the binary tracks `SemVer` over the
 **implemented** surface; the spec tracks decisions and architecture.
 
+## [1.3.0] — 2026-05-28
+
+### Added
+
+- `ai clone` identity routing: reads `~/.config/aiConstitution/metadata/projects.json` and applies `git config user.name/email` per URL-pattern match; `--identity <name>` forces a named entry (#394)
+- `ai hooks available`: lists hooks from both the embedded library and the `ai-hook` atom registry on skill-atoms.com (#397, #399)
+- `ai hooks list`: per-client wiring columns — INSTALLED / CLAUDE (global|project|-) / COPILOT (#400)
+- `ai hooks install --copilot`: wires `Constitution.runtime.md` into `~/.copilot/instructions/` (#400)
+- `ai hooks propose`: scaffolds `.py` or `.sh` hook files from a description or `--from-violation` audit log (#389)
+- `ai audit override` / `ai audit violation`: write structured markdown records to `~/.ai/audit/` (#386)
+- `ai memory retire`: archives a named memory entry and removes it from MEMORY.md (#386)
+- `ai issue file`: creates GitHub issues from description, body, or `--from-audit` log files (#387)
+- `ai hooks share`, `ai mode share`, `ai persona share`, `ai profile share`, `ai skills share`: file upstream contribution issues on the atom registries (#387)
+- `ai skills available`: deduplication hides sub-skills listed in `depends_on`; shows parent with `(+N)` count (#375, #379)
+- `ai skills install`: resolves `depends_on` and installs all sub-skills automatically (#375)
+- `ai skills link`: symlinks installed skills into `~/.claude/skills/` and `~/.copilot/instructions/` (#373)
+- `ai setup`: skill selection step after wizard; idempotent `~/.claude/CLAUDE.md` rewrite (#368, #370, #376)
+- `ai doctor`: hook wiring completeness check; `checkPersonasBlock` only warns when persona sections exist (#391, #404)
+- `ai status`: unified vs 4-file constitution detection; correct wired hook count (#390, #402)
+- skill-atoms: `type: "ai-hook"` added to schema; 13 governance hooks published as atoms (#55 in skill-atoms)
+
+### Fixed
+
+- `ai update --migrate` now calls the real migration pipeline (`runMigrateFlatten`, `runMigrateAddBehavioral`, `runMigrateGenerateRuntime`) instead of printing placeholder text (#396)
+- `ai hooks install --all`: hook wiring now covers all 11 event hooks, not just 5; `readWiredHookNames` handles both group and flat settings.json formats (#401)
+- `ai setup`: no longer produces misleading migration warning on fresh TTY install; creates `audit/`, `memory/`, `governance/` directories on first run (#361, #368)
+- `ai doctor` and `ai status` no longer false-positive on missing `Common.md`/`Code.md`/`Writing.md` for unified-model installs (#390)
+- `ai hooks list`: `__init__.py`, `_lib.py`, `test_*.py`, `*.example`, `*.toml` filtered from display (#381, #400)
+
+### Changed
+
+- `ai atoms` group removed; atom management delegated to the `atoms` binary from `convergent-systems/atoms` (#363)
+- `ai brand`, `ai sync status`, `ai plan list/new/show` implemented (#354, #355)
+
 ## [Unreleased]
 
 ### Spec — v0.10: GitHub Actions trinity
