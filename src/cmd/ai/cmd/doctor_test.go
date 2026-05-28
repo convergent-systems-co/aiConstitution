@@ -284,3 +284,148 @@ func TestDoctorLinkedSkills_NoWarn(t *testing.T) {
 		t.Errorf("unexpected 'ai skills link' hint when all skills are linked; got:\n%s", got)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// #391 — checkHookWiring
+// ---------------------------------------------------------------------------
+
+// writeSettingsJSON writes a minimal settings.json that wires the given hook
+// basenames via a PreToolUse event.
+func writeSettingsJSON(t *testing.T, path string, hookedBasenames []string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("mkdir settings dir: %v", err)
+	}
+	// Build the hooks array entries.
+	hookEntries := ""
+	for i, name := range hookedBasenames {
+		if i > 0 {
+			hookEntries += ","
+		}
+		hookEntries += `{"command": "/Users/x/.ai/hooks/` + name + `"}`
+	}
+	content := `{
+  "hooks": {
+    "PreToolUse": [
+      {"hooks": [` + hookEntries + `]}
+    ]
+  }
+}`
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("write settings.json: %v", err)
+	}
+}
+
+func TestCheckHookWiring_AllWired(t *testing.T) {
+	aiRoot := t.TempDir()
+	home := t.TempDir()
+
+	// Install all 5 required hooks.
+	hooksDir := filepath.Join(aiRoot, "hooks")
+	if err := os.MkdirAll(hooksDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	required := []string{"audit.py", "branch-guard.py", "secret-block.py", "worktree-guard.py", "checkpoint-tick.py"}
+	for _, h := range required {
+		_ = os.WriteFile(filepath.Join(hooksDir, h), []byte("# hook"), 0o644)
+	}
+
+	// Wire all 5 in settings.json.
+	settingsPath := filepath.Join(home, ".claude", "settings.json")
+	writeSettingsJSON(t, settingsPath, required)
+
+	var out bytes.Buffer
+	checkHookWiring(&out, aiRoot, home)
+
+	got := out.String()
+	if !strings.Contains(got, "[✓] Hook wiring complete") {
+		t.Errorf("expected all-wired success line; got:\n%s", got)
+	}
+	if strings.Contains(got, "[⚠]") {
+		t.Errorf("unexpected warning when all hooks are wired; got:\n%s", got)
+	}
+}
+
+func TestCheckHookWiring_PartiallyWired(t *testing.T) {
+	aiRoot := t.TempDir()
+	home := t.TempDir()
+
+	// Install audit.py and branch-guard.py.
+	hooksDir := filepath.Join(aiRoot, "hooks")
+	if err := os.MkdirAll(hooksDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, h := range []string{"audit.py", "branch-guard.py"} {
+		_ = os.WriteFile(filepath.Join(hooksDir, h), []byte("# hook"), 0o644)
+	}
+
+	// Wire only audit.py; branch-guard.py is installed but not wired.
+	settingsPath := filepath.Join(home, ".claude", "settings.json")
+	writeSettingsJSON(t, settingsPath, []string{"audit.py"})
+
+	var out bytes.Buffer
+	checkHookWiring(&out, aiRoot, home)
+
+	got := out.String()
+	if !strings.Contains(got, "[⚠]") || !strings.Contains(got, "branch-guard.py") {
+		t.Errorf("expected warning about branch-guard.py not wired; got:\n%s", got)
+	}
+	if strings.Contains(got, "audit.py installed but not wired") {
+		t.Errorf("audit.py is wired, should not appear in warnings; got:\n%s", got)
+	}
+}
+
+func TestCheckHookWiring_NotInstalled(t *testing.T) {
+	aiRoot := t.TempDir()
+	home := t.TempDir()
+
+	// hooksDir exists but is empty (nothing installed).
+	hooksDir := filepath.Join(aiRoot, "hooks")
+	if err := os.MkdirAll(hooksDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Wire nothing (empty hooks array).
+	settingsPath := filepath.Join(home, ".claude", "settings.json")
+	writeSettingsJSON(t, settingsPath, nil)
+
+	var out bytes.Buffer
+	checkHookWiring(&out, aiRoot, home)
+
+	got := out.String()
+	// No hooks installed → no "not wired" warnings (not installed is a separate concern).
+	if strings.Contains(got, "installed but not wired") {
+		t.Errorf("got unexpected 'installed but not wired' warning when nothing is installed; got:\n%s", got)
+	}
+	// Should report all-OK since there's nothing installed to check wiring for.
+	if !strings.Contains(got, "[✓] Hook wiring complete") {
+		t.Errorf("expected wiring-complete when nothing is installed; got:\n%s", got)
+	}
+}
+
+func TestCheckHookWiring_NoSettings(t *testing.T) {
+	aiRoot := t.TempDir()
+	home := t.TempDir()
+
+	// Install all required hooks but no settings.json.
+	hooksDir := filepath.Join(aiRoot, "hooks")
+	if err := os.MkdirAll(hooksDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	required := []string{"audit.py", "branch-guard.py", "secret-block.py", "worktree-guard.py", "checkpoint-tick.py"}
+	for _, h := range required {
+		_ = os.WriteFile(filepath.Join(hooksDir, h), []byte("# hook"), 0o644)
+	}
+	// settings.json is intentionally absent.
+
+	var out bytes.Buffer
+	checkHookWiring(&out, aiRoot, home)
+
+	got := out.String()
+	// All installed hooks should appear as not wired.
+	for _, h := range required {
+		if !strings.Contains(got, h) {
+			t.Errorf("expected warning mentioning %s when settings.json absent; got:\n%s", h, got)
+		}
+	}
+}

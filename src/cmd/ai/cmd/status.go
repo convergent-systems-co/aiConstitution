@@ -36,6 +36,22 @@ See SPEC.md §3.2 + §3.3.`,
 	}
 }
 
+// isUnifiedConstitution returns true when the AI root contains Constitution.md
+// but none of the legacy sibling files (Common.md, Code.md, Writing.md). Users
+// who have run `ai migrate` or set up fresh with the unified model will have
+// only Constitution.md.
+func isUnifiedConstitution(root string) bool {
+	if _, err := os.Stat(filepath.Join(root, "Constitution.md")); err != nil {
+		return false // Constitution.md doesn't exist at all
+	}
+	for _, name := range []string{"Common.md", "Code.md", "Writing.md"} {
+		if _, err := os.Stat(filepath.Join(root, name)); err == nil {
+			return false // at least one sibling exists — four-file model
+		}
+	}
+	return true
+}
+
 // aiRootForStatus resolves the ~/.ai/ root, honoring AI_ROOT env var.
 func aiRootForStatus() string {
 	if env := os.Getenv("AI_ROOT"); env != "" {
@@ -76,7 +92,12 @@ func runStatus(cmd *cobra.Command) error {
 
 	// --- Constitution files ---
 	fmt.Fprintln(out, "Constitution files:")
-	proseFiles := []string{"Constitution.md", "Common.md", "Code.md", "Writing.md"}
+	var proseFiles []string
+	if isUnifiedConstitution(root) {
+		proseFiles = []string{"Constitution.md"}
+	} else {
+		proseFiles = []string{"Constitution.md", "Common.md", "Code.md", "Writing.md"}
+	}
 	for _, name := range proseFiles {
 		path := filepath.Join(root, name)
 		info, err := os.Stat(path)
@@ -334,8 +355,14 @@ func countRecentViolations(violDir string, days int) int {
 func criticalDoctorChecks(root, home string) []string {
 	var warnings []string
 
-	// Checks 1-4: prose files
-	for _, name := range []string{"Constitution.md", "Common.md", "Code.md", "Writing.md"} {
+	// Checks 1-4: prose files (unified model has only Constitution.md)
+	var constitutionFiles []string
+	if isUnifiedConstitution(root) {
+		constitutionFiles = []string{"Constitution.md"}
+	} else {
+		constitutionFiles = []string{"Constitution.md", "Common.md", "Code.md", "Writing.md"}
+	}
+	for _, name := range constitutionFiles {
 		if _, err := os.Stat(filepath.Join(root, name)); os.IsNotExist(err) {
 			warnings = append(warnings, name+" missing")
 		}

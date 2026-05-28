@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bufio"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -71,9 +72,101 @@ func runDoctor(w io.Writer, fix bool, resetHead string) error {
 	checkTerminalNotifier(w)
 	checkPersonasBlock(w)
 	checkDerivativeFiles(w)
+	checkHookWiring(w, paths.AIRoot(), homeDir())
 	_ = checkInstalledSkills(w)
 
 	return nil
+}
+
+// homeDir returns the current user's home directory, or empty string on failure.
+func homeDir() string {
+	h, _ := os.UserHomeDir()
+	return h
+}
+
+// fileExists returns true if path exists and is accessible.
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
+}
+
+// readWiredHookNames parses settings.json and returns the set of hook basenames
+// that appear in any hooks.<event> array with a command referencing /.ai/hooks/.
+func readWiredHookNames(settingsPath string) map[string]bool {
+	data, err := os.ReadFile(filepath.Clean(settingsPath))
+	if err != nil {
+		return map[string]bool{}
+	}
+	var settings map[string]any
+	if err := json.Unmarshal(data, &settings); err != nil {
+		return map[string]bool{}
+	}
+	hooks, ok := settings["hooks"].(map[string]any)
+	if !ok {
+		return map[string]bool{}
+	}
+
+	wired := make(map[string]bool)
+	for _, val := range hooks {
+		matchers, ok := val.([]any)
+		if !ok {
+			continue
+		}
+		for _, m := range matchers {
+			matcher, ok := m.(map[string]any)
+			if !ok {
+				continue
+			}
+			hookList, ok := matcher["hooks"].([]any)
+			if !ok {
+				continue
+			}
+			for _, h := range hookList {
+				hookMap, ok := h.(map[string]any)
+				if !ok {
+					continue
+				}
+				cmd, _ := hookMap["command"].(string)
+				if strings.Contains(cmd, "/.ai/hooks/") {
+					base := filepath.Base(strings.Fields(cmd)[0])
+					wired[base] = true
+				}
+			}
+		}
+	}
+	return wired
+}
+
+// checkHookWiring verifies that each required hook that is installed in the
+// hooks directory is also wired in ~/.claude/settings.json.
+func checkHookWiring(w io.Writer, aiRoot, home string) {
+	requiredHooks := []string{
+		"audit.py",
+		"branch-guard.py",
+		"secret-block.py",
+		"worktree-guard.py",
+		"checkpoint-tick.py",
+	}
+
+	hooksDir := filepath.Join(aiRoot, "hooks")
+	settingsPath := filepath.Join(home, ".claude", "settings.json")
+
+	wiredSet := readWiredHookNames(settingsPath)
+
+	allOK := true
+	for _, hook := range requiredHooks {
+		hookPath := filepath.Join(hooksDir, hook)
+		if !fileExists(hookPath) {
+			continue // not installed — separate warning handles this
+		}
+		if !wiredSet[hook] {
+			fmt.Fprintf(w, "[⚠] %s installed but not wired — run: ai hooks install --claude\n", hook)
+			allOK = false
+		}
+	}
+	if allOK {
+		fmt.Fprintln(w, "[✓] Hook wiring complete")
+	}
 }
 
 // checkInstalledSkills reports whether any skills are installed under the
