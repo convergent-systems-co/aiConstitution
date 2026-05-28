@@ -33,6 +33,96 @@ type skillAtom struct {
 	SystemPromptFragment string   `json:"system_prompt_fragment"`
 	Lifecycle            string   `json:"lifecycle"`
 	DependsOn            []string `json:"depends_on,omitempty"`
+	// Events is populated for ai-hook atoms (type: "ai-hook") and lists the
+	// Claude hook events the hook attaches to (e.g. "PreToolUse", "PostToolUse").
+	Events []string `json:"events,omitempty"`
+}
+
+// hookAtomEntry holds the display fields for a single ai-hook atom fetched
+// from the skill-atoms registry.
+type hookAtomEntry struct {
+	slug        string
+	name        string
+	description string
+	events      []string
+	lifecycle   string
+}
+
+// fetchHookAtomsDirectory fetches the GitHub Contents API directory listing
+// for the skills/ai-hook path and returns the raw entries. Only entries whose
+// name ends with ".json" are included.
+func fetchHookAtomsDirectory() ([]skillAtomDirEntry, error) {
+	url := SkillAtomsBaseURL + "/skills/ai-hook"
+	req, err := http.NewRequest(http.MethodGet, url, nil) //nolint:noctx // CLI tool
+	if err != nil {
+		return nil, fmt.Errorf("hooks: build directory request: %w", err)
+	}
+	req.Header.Set("Accept", "application/vnd.github+json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("hooks: fetch directory: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("hooks: fetch directory: HTTP %d", resp.StatusCode)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("hooks: read directory response: %w", err)
+	}
+
+	var entries []skillAtomDirEntry
+	if err := json.Unmarshal(body, &entries); err != nil {
+		return nil, fmt.Errorf("hooks: parse directory JSON: %w", err)
+	}
+
+	// Filter to .json files only.
+	filtered := entries[:0]
+	for _, e := range entries {
+		if strings.HasSuffix(e.Name, ".json") {
+			filtered = append(filtered, e)
+		}
+	}
+	return filtered, nil
+}
+
+// fetchHookAtoms fetches all non-deprecated, non-retired ai-hook atoms from
+// the skill-atoms registry. Returns the list of hydrated entries and any error
+// encountered when fetching the directory listing.
+func fetchHookAtoms() ([]hookAtomEntry, error) {
+	dirEntries, err := fetchHookAtomsDirectory()
+	if err != nil {
+		return nil, err
+	}
+
+	var atoms []hookAtomEntry
+	for _, e := range dirEntries {
+		atom, fetchErr := fetchSkillAtomFromURL(e.DownloadURL)
+		if fetchErr != nil {
+			// Non-fatal: skip entries that fail to fetch.
+			continue
+		}
+		lc := strings.ToLower(atom.Lifecycle)
+		if lc == "deprecated" || lc == "retired" {
+			continue
+		}
+		slug := strings.TrimSuffix(e.Name, ".json")
+		name := atom.Name
+		if name == "" {
+			name = slug
+		}
+		atoms = append(atoms, hookAtomEntry{
+			slug:        slug,
+			name:        name,
+			description: atom.Description,
+			events:      atom.Events,
+			lifecycle:   atom.Lifecycle,
+		})
+	}
+	return atoms, nil
 }
 
 // skillAtomDirEntry is a single entry in the GitHub Contents API directory
