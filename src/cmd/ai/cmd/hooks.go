@@ -31,10 +31,10 @@ hooks/command-wrappers.toml.
 See SPEC.md §3.10 + §9.`,
 	}
 
-	// list
+	// available — hooks in the embedded library (installable)
 	c.AddCommand(&cobra.Command{
-		Use:   "list",
-		Short: "All installed hooks + wiring status",
+		Use:   "available",
+		Short: "List hooks available to install from the embedded library",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			names, err := embed.HookNames()
 			if err != nil {
@@ -51,6 +51,52 @@ See SPEC.md §3.10 + §9.`,
 			fmt.Fprintln(out)
 			fmt.Fprintln(out, "Wrappers  (ai hooks install command-wrappers):")
 			fmt.Fprintln(out, "  git, gh")
+			return nil
+		},
+	})
+
+	// list — hooks installed on disk in ~/.ai/hooks/ with wiring status
+	c.AddCommand(&cobra.Command{
+		Use:   "list",
+		Short: "List installed hooks and their wiring status",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			home, _ := os.UserHomeDir()
+			aiRoot := os.Getenv("AI_ROOT")
+			if aiRoot == "" {
+				aiRoot = filepath.Join(home, ".ai")
+			}
+			hooksDir := filepath.Join(aiRoot, "hooks")
+			settingsPath := filepath.Join(home, ".claude", "settings.json")
+
+			entries, err := os.ReadDir(hooksDir)
+			if err != nil {
+				if os.IsNotExist(err) {
+					fmt.Fprintf(cmd.OutOrStdout(), "No hooks installed (run: ai hooks install --all)\n")
+					return nil
+				}
+				return err
+			}
+
+			wired := readWiredHookNames(settingsPath)
+
+			out := cmd.OutOrStdout()
+			fmt.Fprintf(out, "  %-32s  %s\n", "HOOK", "STATUS")
+			fmt.Fprintf(out, "  %-32s  %s\n", strings.Repeat("─", 32), strings.Repeat("─", 10))
+			count := 0
+			for _, e := range entries {
+				if e.IsDir() || !isHookFile(e.Name()) {
+					continue
+				}
+				status := "installed"
+				if wired[e.Name()] {
+					status = "wired"
+				}
+				fmt.Fprintf(out, "  %-32s  %s\n", e.Name(), status)
+				count++
+			}
+			if count == 0 {
+				fmt.Fprintln(out, "  (no hooks installed — run: ai hooks install --all)")
+			}
 			return nil
 		},
 	})
@@ -632,7 +678,7 @@ func isHookFile(name string) bool {
 	if !strings.HasSuffix(name, ".py") && !strings.HasSuffix(name, ".sh") {
 		return false
 	}
-	if name == "_lib.py" {
+	if name == "_lib.py" || name == "__init__.py" {
 		return false
 	}
 	if strings.HasPrefix(name, "test_") && strings.HasSuffix(name, ".py") {
