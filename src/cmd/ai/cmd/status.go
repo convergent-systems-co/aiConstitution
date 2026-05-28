@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"bufio"
-	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -238,53 +237,14 @@ func countInstalledHooks(hooksDir string) int {
 // countWiredHooks parses settings.json and returns the count and names of
 // distinct hook filenames referenced in any event's hooks array.
 func countWiredHooks(settingsPath string) (int, []string) {
-	data, err := os.ReadFile(filepath.Clean(settingsPath))
-	if err != nil {
-		return 0, nil
-	}
-	var settings map[string]any
-	if err := json.Unmarshal(data, &settings); err != nil {
-		return 0, nil
-	}
-	hooks, ok := settings["hooks"].(map[string]any)
-	if !ok {
-		return 0, nil
-	}
-
-	seen := make(map[string]bool)
-	for _, val := range hooks {
-		matchers, ok := val.([]any)
-		if !ok {
-			continue
-		}
-		for _, m := range matchers {
-			matcher, ok := m.(map[string]any)
-			if !ok {
-				continue
-			}
-			hookList, ok := matcher["hooks"].([]any)
-			if !ok {
-				continue
-			}
-			for _, h := range hookList {
-				hookMap, ok := h.(map[string]any)
-				if !ok {
-					continue
-				}
-				cmd, _ := hookMap["command"].(string)
-				if cmd != "" {
-					base := filepath.Base(cmd)
-					seen[base] = true
-				}
-			}
-		}
-	}
-
-	names := make([]string, 0, len(seen))
-	for name := range seen {
+	// Delegate to the shared parser in doctor.go (readWiredHookNames) which
+	// handles both group format and the flat format written by hooks_claude.go.
+	wired := readWiredHookNames(settingsPath)
+	names := make([]string, 0, len(wired))
+	for name := range wired {
 		names = append(names, name)
 	}
-	return len(seen), names
+	return len(wired), names
 }
 
 // countMemoryEntries counts lines matching "- [" in MEMORY.md.
