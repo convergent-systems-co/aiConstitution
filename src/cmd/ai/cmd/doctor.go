@@ -107,30 +107,43 @@ func readWiredHookNames(settingsPath string) map[string]bool {
 	}
 
 	wired := make(map[string]bool)
+	extractHookBase := func(cmd string) {
+		if strings.Contains(cmd, "/.ai/hooks/") {
+			// Strip leading "python3 " or similar interpreter prefix.
+			parts := strings.Fields(cmd)
+			for _, p := range parts {
+				if strings.Contains(p, "/.ai/hooks/") {
+					wired[filepath.Base(p)] = true
+					return
+				}
+			}
+		}
+	}
+
 	for _, val := range hooks {
-		matchers, ok := val.([]any)
+		entries, ok := val.([]any)
 		if !ok {
 			continue
 		}
-		for _, m := range matchers {
-			matcher, ok := m.(map[string]any)
+		for _, entry := range entries {
+			m, ok := entry.(map[string]any)
 			if !ok {
 				continue
 			}
-			hookList, ok := matcher["hooks"].([]any)
-			if !ok {
+			// Group format: {"hooks": [{"command": "..."}]}
+			if hookList, ok := m["hooks"].([]any); ok {
+				for _, h := range hookList {
+					if hm, ok := h.(map[string]any); ok {
+						if cmd, _ := hm["command"].(string); cmd != "" {
+							extractHookBase(cmd)
+						}
+					}
+				}
 				continue
 			}
-			for _, h := range hookList {
-				hookMap, ok := h.(map[string]any)
-				if !ok {
-					continue
-				}
-				cmd, _ := hookMap["command"].(string)
-				if strings.Contains(cmd, "/.ai/hooks/") {
-					base := filepath.Base(strings.Fields(cmd)[0])
-					wired[base] = true
-				}
+			// Flat format: {"type": "...", "command": "python3 ..."}
+			if cmd, _ := m["command"].(string); cmd != "" {
+				extractHookBase(cmd)
 			}
 		}
 	}
