@@ -24,6 +24,7 @@ type installFn func(cmd *cobra.Command, slug string) error
 // skillRow holds a display-ready entry for the skill selection prompt.
 type skillRow struct {
 	slug        string
+	name        string
 	description string
 }
 
@@ -74,11 +75,12 @@ func runSkillSelectionPrompt(
 		if lc == "deprecated" || lc == "retired" {
 			continue
 		}
-		slug := atom.Name
-		if slug == "" {
-			slug = strings.TrimSuffix(e.Name, ".json")
+		slug := strings.TrimSuffix(e.Name, ".json")
+		name := atom.Name
+		if name == "" {
+			name = slug
 		}
-		rows = append(rows, skillRow{slug: slug, description: atom.Description})
+		rows = append(rows, skillRow{slug: slug, name: name, description: atom.Description})
 	}
 
 	if len(rows) == 0 {
@@ -96,7 +98,7 @@ func runSkillSelectionPrompt(
 		if desc == "" {
 			desc = "(no description)"
 		}
-		fmt.Fprintf(w, " %2d. %-16s — %s\n", i+1, row.slug, desc)
+		fmt.Fprintf(w, " %2d. %-20s %-20s — %s\n", i+1, row.slug, row.name, desc)
 	}
 	fmt.Fprintln(w)
 	fmt.Fprint(w, `Install which? (e.g. 1,3,5 or "all" or Enter to skip): `)
@@ -135,7 +137,7 @@ func runSkillSelectionPrompt(
 	// Install each selected skill. Errors are non-fatal.
 	fmt.Fprintln(w)
 	for _, slug := range toInstall {
-		fmt.Fprintf(w, "  Installing %s... ", slug)
+		fmt.Fprintf(w, "  Installing %s... ", slug)  // slug is install name
 		if installErr := install(cmd, slug); installErr != nil {
 			fmt.Fprintf(w, "warning: %v\n", installErr)
 		} else {
