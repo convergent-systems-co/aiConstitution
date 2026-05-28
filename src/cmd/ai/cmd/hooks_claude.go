@@ -56,6 +56,69 @@ type claudeHookEntry struct {
 	Command string `json:"command"`
 }
 
+// purgeOldHookEntries removes settings.hooks entries that use the old absolute-path
+// format (pre-v1.3 wiring). These are replaced by the portable "ai hooks run <slug>"
+// format. Must be called before addClaudeEntry to avoid duplicates.
+func purgeOldHookEntries(settings map[string]any) {
+	hooks, ok := settings["hooks"].(map[string]any)
+	if !ok {
+		return
+	}
+	for event, val := range hooks {
+		entries, ok := val.([]any)
+		if !ok {
+			continue
+		}
+		kept := entries[:0]
+		for _, entry := range entries {
+			m, ok := entry.(map[string]any)
+			if !ok {
+				kept = append(kept, entry)
+				continue
+			}
+			if isOldHookEntry(m) {
+				continue // drop it
+			}
+			kept = append(kept, entry)
+		}
+		hooks[event] = kept
+	}
+}
+
+// isOldHookEntry returns true for entries written by the pre-v1.3 wiring code:
+//   - flat: {"command": "python3 /abs/path/to/.ai/hooks/foo.py"}
+//   - flat: {"command": "/abs/path/to/.ai/hooks/foo.py"}  (no python3 prefix)
+//   - group: {"hooks": [{"command": "/abs/path/to/.ai/hooks/foo.py"}]}
+func isOldHookEntry(m map[string]any) bool {
+	// Flat format: top-level "command" field.
+	if hookCmd, ok := m["command"].(string); ok && isAbsoluteHookCmd(hookCmd) {
+		return true
+	}
+	// Group format: "hooks" array with command entries.
+	if hookList, ok := m["hooks"].([]any); ok {
+		for _, h := range hookList {
+			hm, ok := h.(map[string]any)
+			if !ok {
+				continue
+			}
+			if hookCmd, ok := hm["command"].(string); ok && isAbsoluteHookCmd(hookCmd) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// isAbsoluteHookCmd reports whether cmd looks like a pre-v1.3 absolute-path
+// hook invocation. Both patterns are matched:
+//
+//	python3 /some/path/.ai/hooks/foo.py   (with python3 prefix)
+//	/some/path/.ai/hooks/foo.py           (bare path, no interpreter)
+func isAbsoluteHookCmd(cmd string) bool {
+	return strings.Contains(cmd, "/.ai/hooks/") ||
+		(strings.HasPrefix(cmd, "python3 ") && strings.Contains(cmd, "/hooks/"))
+}
+
 // installClaudeHooks reads .claude/settings.json under repoRoot (creating
 // {} if absent), wires every hook in hooksDir that has a known Claude
 // event mapping, and writes the file back atomically. Idempotent.
@@ -72,6 +135,11 @@ func installClaudeHooks(repoRoot, hooksDir string) (int, error) {
 	if err != nil {
 		return 0, err
 	}
+
+	// Purge entries written by the pre-v1.3 wiring that used absolute paths.
+	// This prevents duplicate hook invocations when the user re-wires after
+	// upgrading to the portable "ai hooks run <slug>" format.
+	purgeOldHookEntries(settings)
 
 	// Walk hooksDir.
 	entries, err := os.ReadDir(hooksDir)

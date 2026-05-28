@@ -152,3 +152,198 @@ func TestHooksInstallClaudePreservesExistingKeys(t *testing.T) {
 		t.Errorf("theme was clobbered: %v", s["theme"])
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Tests for purgeOldHookEntries (via PurgeOldHookEntriesForTest export)
+// ---------------------------------------------------------------------------
+
+func TestPurgeOldHookEntries_RemovesFlatAbsolutePath(t *testing.T) {
+	settings := map[string]any{
+		"hooks": map[string]any{
+			"PreToolUse": []any{
+				map[string]any{"type": "PreToolUse", "command": "python3 /home/user/.ai/hooks/audit.py"},
+				map[string]any{"type": "PreToolUse", "command": "ai hooks run audit"},
+			},
+		},
+	}
+	cmd.PurgeOldHookEntriesForTest(settings)
+
+	hooks, ok := settings["hooks"].(map[string]any)
+	if !ok {
+		t.Fatal("hooks key missing after purge")
+	}
+	entries, ok := hooks["PreToolUse"].([]any)
+	if !ok {
+		t.Fatal("PreToolUse key missing after purge")
+	}
+	if len(entries) != 1 {
+		t.Fatalf("expected 1 entry after purge, got %d: %v", len(entries), entries)
+	}
+	m, ok := entries[0].(map[string]any)
+	if !ok {
+		t.Fatal("entry is not a map")
+	}
+	if m["command"] != "ai hooks run audit" {
+		t.Errorf("wrong entry preserved: %v", m["command"])
+	}
+}
+
+func TestPurgeOldHookEntries_RemovesGroupFormat(t *testing.T) {
+	settings := map[string]any{
+		"hooks": map[string]any{
+			"PreToolUse": []any{
+				// Group format: "hooks" array inside the entry
+				map[string]any{
+					"hooks": []any{
+						map[string]any{"command": "/home/user/.ai/hooks/branch-guard.py"},
+					},
+				},
+				map[string]any{"type": "PreToolUse", "command": "ai hooks run branch-guard"},
+			},
+		},
+	}
+	cmd.PurgeOldHookEntriesForTest(settings)
+
+	hooks := settings["hooks"].(map[string]any)
+	entries := hooks["PreToolUse"].([]any)
+	if len(entries) != 1 {
+		t.Fatalf("expected 1 entry after purge, got %d: %v", len(entries), entries)
+	}
+	m := entries[0].(map[string]any)
+	if m["command"] != "ai hooks run branch-guard" {
+		t.Errorf("wrong entry preserved: %v", m["command"])
+	}
+}
+
+func TestPurgeOldHookEntries_PreservesPortableEntries(t *testing.T) {
+	settings := map[string]any{
+		"hooks": map[string]any{
+			"PreToolUse": []any{
+				map[string]any{"type": "PreToolUse", "command": "ai hooks run audit"},
+				map[string]any{"type": "PreToolUse", "command": "ai hooks run branch-guard"},
+			},
+		},
+	}
+	cmd.PurgeOldHookEntriesForTest(settings)
+
+	hooks := settings["hooks"].(map[string]any)
+	entries := hooks["PreToolUse"].([]any)
+	if len(entries) != 2 {
+		t.Fatalf("expected 2 entries preserved, got %d: %v", len(entries), entries)
+	}
+}
+
+func TestPurgeOldHookEntries_EmptySettings(t *testing.T) {
+	// No "hooks" key — must not panic.
+	settings := map[string]any{}
+	cmd.PurgeOldHookEntriesForTest(settings)
+
+	// Settings unchanged (no hooks key added).
+	if _, ok := settings["hooks"]; ok {
+		t.Error("purge should not add a hooks key when none existed")
+	}
+}
+
+func TestInstallClaudeHooks_PurgesAndRewires(t *testing.T) {
+	aiRoot := t.TempDir()
+	repoRoot := t.TempDir()
+	t.Setenv("AI_ROOT", aiRoot)
+
+	hooksDir := writeStubHooks(t, aiRoot, "audit.py", "branch-guard.py")
+
+	// Seed settings.json with old absolute-path entries so we simulate a
+	// pre-v1.3 installation.
+	settingsDir := filepath.Join(repoRoot, ".claude")
+	if err := os.MkdirAll(settingsDir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	oldSettings := map[string]any{
+		"hooks": map[string]any{
+			"PreToolUse": []any{
+				map[string]any{"type": "PreToolUse", "command": "python3 /home/user/.ai/hooks/audit.py"},
+				map[string]any{"type": "PreToolUse", "command": "python3 /home/user/.ai/hooks/branch-guard.py"},
+			},
+			"Stop": []any{
+				map[string]any{"type": "Stop", "command": "python3 /home/user/.ai/hooks/audit.py"},
+			},
+		},
+	}
+	data, err := json.Marshal(oldSettings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(settingsDir, "settings.json"), data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	// Call installClaudeHooks directly via the exported wrapper.
+	added, err := cmd.InstallClaudeHooksForTest(repoRoot, hooksDir)
+	if err != nil {
+		t.Fatalf("installClaudeHooks error: %v", err)
+	}
+	if added == 0 {
+		t.Error("expected at least one entry added (old entries should have been purged first)")
+	}
+
+	// Read result and verify.
+	result, err := os.ReadFile(filepath.Join(settingsDir, "settings.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var s struct {
+		Hooks map[string][]map[string]string `json:"hooks"`
+	}
+	if err := json.Unmarshal(result, &s); err != nil {
+		t.Fatalf("decode: %v\nraw: %s", err, result)
+	}
+
+	// Old absolute-path entries must be gone; new portable entries must be present.
+	for ev, entries := range s.Hooks {
+		seen := map[string]int{}
+		for _, e := range entries {
+			cmd := e["command"]
+			seen[cmd]++
+			// No old absolute-path format should survive.
+			if len(cmd) > 0 && (contains(cmd, "/.ai/hooks/") || (hasPrefix(cmd, "python3 ") && contains(cmd, "/hooks/"))) {
+				t.Errorf("event %s: old entry not purged: %q", ev, cmd)
+			}
+			// No duplicates.
+			if seen[cmd] > 1 {
+				t.Errorf("event %s: duplicate entry %q", ev, cmd)
+			}
+		}
+	}
+
+	// Portable entries must exist.
+	foundPortable := false
+	for _, entries := range s.Hooks {
+		for _, e := range entries {
+			if hasPrefix(e["command"], "ai hooks run ") {
+				foundPortable = true
+			}
+		}
+	}
+	if !foundPortable {
+		t.Errorf("no portable 'ai hooks run' entries found after re-wiring:\n%s", result)
+	}
+}
+
+// contains and hasPrefix are thin string helpers used only in this test file
+// to avoid importing strings in the _test package (it's already imported by
+// the package under test, not the external test package).
+func contains(s, sub string) bool {
+	return len(s) >= len(sub) && (s == sub || len(sub) == 0 || stringIndex(s, sub) >= 0)
+}
+
+func hasPrefix(s, prefix string) bool {
+	return len(s) >= len(prefix) && s[:len(prefix)] == prefix
+}
+
+func stringIndex(s, sub string) int {
+	for i := 0; i <= len(s)-len(sub); i++ {
+		if s[i:i+len(sub)] == sub {
+			return i
+		}
+	}
+	return -1
+}
