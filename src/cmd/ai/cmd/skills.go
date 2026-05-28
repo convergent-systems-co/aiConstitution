@@ -205,9 +205,7 @@ func newSkillsAvailableCmd() *cobra.Command {
 	}
 }
 
-// fetchSkillAtomJSON fetches the skill atom JSON for slug from the configured
-// SkillAtomsBaseURL. Returns a clear error on 404 (skill not found) and other
-// non-200 responses.
+// Deprecated: fetchSkillAtomJSON uses the GitHub API. Use fetchSkillAtomFromCatalog instead.
 func fetchSkillAtomJSON(slug string) (*skillAtom, error) {
 	url := SkillAtomsBaseURL + "/skills/skill/" + slug + ".json"
 	req, err := http.NewRequest(http.MethodGet, url, nil) //nolint:noctx // CLI tool
@@ -329,7 +327,7 @@ func runSkillsInstall(cmd *cobra.Command, slug string) error {
 	// Strip any @version suffix — v1 always fetches latest.
 	slug, _, _ = strings.Cut(slug, "@")
 
-	atom, err := fetchSkillAtomJSON(slug)
+	atom, err := fetchSkillAtomFromCatalog(slug)
 	if err != nil {
 		return err
 	}

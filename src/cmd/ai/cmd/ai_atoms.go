@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 )
 
 // AiAtomsCatalogURL is the canonical catalog endpoint for ai-atoms.com.
@@ -13,15 +14,16 @@ var AiAtomsCatalogURL = "https://ai-atoms.com/exports/catalog.json"
 // aiAtomEntry represents a single atom in the ai-atoms.com catalog. Fields are
 // populated differently depending on the atom type ("skill" vs "hook").
 type aiAtomEntry struct {
-	Type        string   `json:"type"`
-	ID          string   `json:"id"`
-	Version     string   `json:"version"`
-	Name        string   `json:"name"`
-	Description string   `json:"description"`
-	Lifecycle   string   `json:"lifecycle"`
-	DependsOn   []string `json:"depends_on,omitempty"`
-	Event       string   `json:"event,omitempty"`
-	Language    string   `json:"language,omitempty"`
+	Type                 string   `json:"type"`
+	ID                   string   `json:"id"`
+	Version              string   `json:"version"`
+	Name                 string   `json:"name"`
+	Description          string   `json:"description"`
+	Lifecycle            string   `json:"lifecycle"`
+	DependsOn            []string `json:"depends_on,omitempty"`
+	Event                string   `json:"event,omitempty"`
+	Language             string   `json:"language,omitempty"`
+	SystemPromptFragment string   `json:"system_prompt_fragment,omitempty"`
 }
 
 // aiAtomsCatalog is the top-level document returned by the ai-atoms.com catalog
@@ -59,4 +61,35 @@ func fetchAiAtomsCatalog() ([]aiAtomEntry, error) {
 		return nil, fmt.Errorf("ai-atoms: decode catalog: %w", err)
 	}
 	return catalog.Atoms, nil
+}
+
+// aiAtomEntryToSkillAtom converts a catalog entry to the skillAtom shape used
+// by install. The "skill/" prefix is stripped from the ID to produce the slug.
+func aiAtomEntryToSkillAtom(e aiAtomEntry) *skillAtom {
+	return &skillAtom{
+		ID:                   strings.TrimPrefix(e.ID, "skill/"),
+		Name:                 e.Name,
+		Description:          e.Description,
+		Version:              e.Version,
+		Lifecycle:            e.Lifecycle,
+		DependsOn:            e.DependsOn,
+		SystemPromptFragment: e.SystemPromptFragment,
+	}
+}
+
+// fetchSkillAtomFromCatalog fetches the ai-atoms.com catalog and returns the
+// atom matching the given slug. Returns an error if the catalog cannot be
+// fetched or if no matching skill is found.
+func fetchSkillAtomFromCatalog(slug string) (*skillAtom, error) {
+	atoms, err := fetchAiAtomsCatalog()
+	if err != nil {
+		return nil, fmt.Errorf("skills: fetch catalog: %w", err)
+	}
+	for _, a := range atoms {
+		if a.Type == "skill" && a.ID == "skill/"+slug {
+			atom := aiAtomEntryToSkillAtom(a)
+			return atom, nil
+		}
+	}
+	return nil, fmt.Errorf("skills: skill %q not found in ai-atoms.com catalog", slug)
 }

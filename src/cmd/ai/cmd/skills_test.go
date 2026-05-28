@@ -404,9 +404,19 @@ func setSkillAtomBaseURL(t *testing.T, baseURL string) {
 
 func TestSkillsInstall_Success(t *testing.T) {
 	root := t.TempDir()
-	payload := fakeSkillAtom("commit", "1.2.0", "Generate a conventional commit message.", "You are a commit message assistant.")
-	srv := startSkillAtomServer(t, http.StatusOK, payload)
-	setSkillAtomBaseURL(t, srv.URL)
+	atoms := []map[string]interface{}{
+		{
+			"type":                   "skill",
+			"id":                     "skill/commit",
+			"version":                "1.2.0",
+			"name":                   "commit",
+			"description":            "Generate a conventional commit message.",
+			"system_prompt_fragment": "You are a commit message assistant.",
+			"lifecycle":              "stable",
+		},
+	}
+	srv := startSkillsCatalogServer(t, atoms)
+	setAiAtomsCatalogURL(t, srv.URL+"/catalog.json")
 
 	out, _, err := runSkillsCmd(t, root, "skills", "install", "commit")
 	if err != nil {
@@ -441,16 +451,20 @@ func TestSkillsInstall_Success(t *testing.T) {
 
 func TestSkillsInstall_NotFound(t *testing.T) {
 	root := t.TempDir()
-	srv := startSkillAtomServer(t, http.StatusNotFound, []byte(`{"message":"Not Found"}`))
-	setSkillAtomBaseURL(t, srv.URL)
+	// Catalog is empty — "nonexistent-skill" will not be found.
+	srv := startSkillsCatalogServer(t, nil)
+	setAiAtomsCatalogURL(t, srv.URL+"/catalog.json")
 
 	_, errStr, err := runSkillsCmd(t, root, "skills", "install", "nonexistent-skill")
 	if err == nil {
-		t.Fatal("expected error for 404, got nil")
+		t.Fatal("expected error when skill is not in catalog, got nil")
 	}
 	combined := errStr + err.Error()
 	if !strings.Contains(combined, "nonexistent-skill") {
 		t.Errorf("error should mention the skill name; got: %s", combined)
+	}
+	if !strings.Contains(combined, "not found") {
+		t.Errorf("error should say 'not found'; got: %s", combined)
 	}
 }
 
@@ -789,9 +803,19 @@ func TestCopilotWiringOnInstall(t *testing.T) {
 	root := t.TempDir()
 	copilotDir := t.TempDir()
 
-	payload := fakeSkillAtom("commit", "1.2.0", "Generate a commit message.", "You are a commit assistant.")
-	srv := startSkillAtomServer(t, http.StatusOK, payload)
-	setSkillAtomBaseURL(t, srv.URL)
+	atoms := []map[string]interface{}{
+		{
+			"type":                   "skill",
+			"id":                     "skill/commit",
+			"version":                "1.2.0",
+			"name":                   "commit",
+			"description":            "Generate a commit message.",
+			"system_prompt_fragment": "You are a commit assistant.",
+			"lifecycle":              "stable",
+		},
+	}
+	srv := startSkillsCatalogServer(t, atoms)
+	setAiAtomsCatalogURL(t, srv.URL+"/catalog.json")
 
 	t.Setenv("AI_ROOT", root)
 	t.Setenv("COPILOT_INSTRUCTIONS_DIR", copilotDir)
@@ -908,31 +932,36 @@ func TestSkillsAvailable_ShowsSlugColumn(t *testing.T) {
 func TestSkillsInstall_InstallsDependencies(t *testing.T) {
 	root := t.TempDir()
 
-	// "make" depends on "make-commit" and "make-review".
-	makePayload := fakeSkillAtomWithDeps("make", "1.0.0", "Run make tasks.", []string{"make-commit", "make-review"})
-	makeCommitPayload := fakeSkillAtom("make-commit", "1.0.0", "make commit sub-skill.", "")
-	makeReviewPayload := fakeSkillAtom("make-review", "1.0.0", "make review sub-skill.", "")
-
-	// Build a multi-slug server: serve each atom at /skills/skill/<slug>.json.
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		switch r.URL.Path {
-		case "/skills/skill/make.json":
-			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write(makePayload)
-		case "/skills/skill/make-commit.json":
-			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write(makeCommitPayload)
-		case "/skills/skill/make-review.json":
-			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write(makeReviewPayload)
-		default:
-			w.WriteHeader(http.StatusNotFound)
-			_, _ = w.Write([]byte(`{"message":"Not Found"}`))
-		}
-	}))
-	t.Cleanup(srv.Close)
-	setSkillAtomBaseURL(t, srv.URL)
+	// "make" depends on "make-commit" and "make-review"; all in the catalog.
+	atoms := []map[string]interface{}{
+		{
+			"type":        "skill",
+			"id":          "skill/make",
+			"version":     "1.0.0",
+			"name":        "make",
+			"description": "Run make tasks.",
+			"lifecycle":   "stable",
+			"depends_on":  []string{"make-commit", "make-review"},
+		},
+		{
+			"type":        "skill",
+			"id":          "skill/make-commit",
+			"version":     "1.0.0",
+			"name":        "make-commit",
+			"description": "make commit sub-skill.",
+			"lifecycle":   "stable",
+		},
+		{
+			"type":        "skill",
+			"id":          "skill/make-review",
+			"version":     "1.0.0",
+			"name":        "make-review",
+			"description": "make review sub-skill.",
+			"lifecycle":   "stable",
+		},
+	}
+	srv := startSkillsCatalogServer(t, atoms)
+	setAiAtomsCatalogURL(t, srv.URL+"/catalog.json")
 
 	// stdout is not a TTY in test (non-interactive) → deps installed automatically.
 	out, _, err := runSkillsCmd(t, root, "skills", "install", "make")
@@ -958,9 +987,18 @@ func TestSkillsInstall_InstallsDependencies(t *testing.T) {
 // does not emit any dependency-related output.
 func TestSkillsInstall_NoDependencies(t *testing.T) {
 	root := t.TempDir()
-	payload := fakeSkillAtom("commit", "1.0.0", "Generate commit messages.", "")
-	srv := startSkillAtomServer(t, http.StatusOK, payload)
-	setSkillAtomBaseURL(t, srv.URL)
+	atoms := []map[string]interface{}{
+		{
+			"type":        "skill",
+			"id":          "skill/commit",
+			"version":     "1.0.0",
+			"name":        "commit",
+			"description": "Generate commit messages.",
+			"lifecycle":   "stable",
+		},
+	}
+	srv := startSkillsCatalogServer(t, atoms)
+	setAiAtomsCatalogURL(t, srv.URL+"/catalog.json")
 
 	out, _, err := runSkillsCmd(t, root, "skills", "install", "commit")
 	if err != nil {
