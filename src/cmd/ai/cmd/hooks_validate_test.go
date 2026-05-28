@@ -164,8 +164,39 @@ func TestEvaluateDoesNotReturnStubError(t *testing.T) {
 }
 
 // TestEvaluateProducesPerHookOutput verifies that evaluate emits at least one
-// [✓] or [✗] line, confirming it iterates over embedded hooks.
+// [✓] or [✗] line when hooks are installed. It pre-creates a temp hooks dir
+// with a minimal valid hook and points AI_ROOT at it so the test is hermetic
+// in CI where ~/.ai/hooks/ does not exist.
 func TestEvaluateProducesPerHookOutput(t *testing.T) {
+	// Build a temporary AI_ROOT with a hooks sub-directory.
+	aiRoot := t.TempDir()
+	hooksDir := filepath.Join(aiRoot, "hooks")
+	if err := os.MkdirAll(hooksDir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+
+	// Write a minimal _lib.py so import resolution does not fail.
+	libContent := "#!/usr/bin/env python3\n# minimal _lib stub\n"
+	if err := os.WriteFile(filepath.Join(hooksDir, "_lib.py"), []byte(libContent), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Write one minimal valid hook that evaluate will exercise.
+	hookContent := `#!/usr/bin/env python3
+"""Minimal test hook for evaluate smoke-test."""
+import sys
+import json
+
+if __name__ == "__main__":
+    json.load(sys.stdin)
+    sys.exit(0)
+`
+	if err := os.WriteFile(filepath.Join(hooksDir, "test-eval.py"), []byte(hookContent), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv("AI_ROOT", aiRoot)
+
 	out, _ := runHooksCmd(t, "evaluate")
 	if !strings.Contains(out, "[✓]") && !strings.Contains(out, "[✗]") {
 		t.Errorf("evaluate must emit [✓] or [✗] for at least one hook, got:\n%s", out)
