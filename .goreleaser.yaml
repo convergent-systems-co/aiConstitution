@@ -27,7 +27,7 @@ builds:
       - -X github.com/convergent-systems-co/aiConstitution/src/cmd/ai/internal/buildinfo.version=v{{.Version}}
       - -X github.com/convergent-systems-co/aiConstitution/src/cmd/ai/internal/buildinfo.commit={{.Commit}}
       - -X github.com/convergent-systems-co/aiConstitution/src/cmd/ai/internal/buildinfo.date={{.Date}}
-    goos: [linux, darwin]
+    goos: [linux, darwin, windows]
     goarch: [amd64, arm64]
 
 archives:
