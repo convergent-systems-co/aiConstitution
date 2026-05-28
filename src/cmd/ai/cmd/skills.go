@@ -123,13 +123,17 @@ func runSkillsAvailable(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 
-	// Hydrate each entry into a full atom.
-	type row struct{ slug, name, version, description string }
-	var rows []row
+	// First pass: hydrate all atoms and collect sub-skills from depends_on.
+	type hydrated struct {
+		slug, name, version, description string
+		dependsOn                        []string
+	}
+	var all []hydrated
+	subSkills := map[string]bool{}
+
 	for _, e := range entries {
 		atom, fetchErr := fetchSkillAtomFromURL(e.DownloadURL)
 		if fetchErr != nil {
-			// Non-fatal: skip entries that fail to hydrate.
 			fmt.Fprintf(cmd.ErrOrStderr(), "warning: could not fetch %s: %v\n", e.Name, fetchErr)
 			continue
 		}
@@ -142,7 +146,24 @@ func runSkillsAvailable(cmd *cobra.Command, _ []string) error {
 		if name == "" {
 			name = slug
 		}
-		rows = append(rows, row{slug, name, atom.Version, atom.Description})
+		all = append(all, hydrated{slug, name, atom.Version, atom.Description, atom.DependsOn})
+		for _, dep := range atom.DependsOn {
+			subSkills[dep] = true
+		}
+	}
+
+	// Second pass: exclude sub-skills.
+	type row struct{ slug, name, version, description string }
+	var rows []row
+	for _, h := range all {
+		if subSkills[h.slug] {
+			continue
+		}
+		dep := ""
+		if len(h.dependsOn) > 0 {
+			dep = fmt.Sprintf(" (+%d)", len(h.dependsOn))
+		}
+		rows = append(rows, row{h.slug + dep, h.name, h.version, h.description})
 	}
 
 	if len(rows) == 0 {
