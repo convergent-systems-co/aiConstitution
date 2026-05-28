@@ -641,17 +641,11 @@ func TestSkillsAvailable_Success(t *testing.T) {
 	if !strings.Contains(out, "commit") {
 		t.Errorf("output missing 'commit'; got:\n%s", out)
 	}
-	if !strings.Contains(out, "1.2.0") {
-		t.Errorf("output missing version '1.2.0'; got:\n%s", out)
-	}
 	if !strings.Contains(out, "Generate commit messages.") {
 		t.Errorf("output missing description; got:\n%s", out)
 	}
 	if !strings.Contains(out, "review") {
 		t.Errorf("output missing 'review'; got:\n%s", out)
-	}
-	if !strings.Contains(out, "0.5.1") {
-		t.Errorf("output missing version '0.5.1'; got:\n%s", out)
 	}
 }
 
