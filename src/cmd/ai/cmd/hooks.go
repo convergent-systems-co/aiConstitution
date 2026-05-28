@@ -658,13 +658,17 @@ func canonicalWiring(_ string) []eventHookSpec {
 		}
 		return cmds
 	}
+	// audit-logger.py is the per-event interaction logger (formerly published
+	// as audit.py; the ai-atoms.com catalog now ships it as audit-logger).
+	// audit-command.py is intentionally *not* wired here — it is a wrapper
+	// postHook invoked by ~/.ai/bin/{git,gh,...} via WRAPPED_* env vars, not
+	// a Claude Code event hook.
 	return []eventHookSpec{
-		{event: "SessionStart", hooks: h("audit.py")},
-		{event: "UserPromptSubmit", hooks: h("audit.py")},
+		{event: "SessionStart", hooks: h("audit-logger.py")},
+		{event: "UserPromptSubmit", hooks: h("audit-logger.py")},
 		// PreToolUse: all-tools group (governance + secret + worktree + redaction + no-verify)
 		{event: "PreToolUse", matcher: "", hooks: h(
-			"audit.py",
-			"audit-command.py",
+			"audit-logger.py",
 			"secret-block.py",
 			"worktree-guard.py",
 			"no-verify-strip.py",
@@ -677,11 +681,11 @@ func canonicalWiring(_ string) []eventHookSpec {
 			"destructive-kubectl-guard.py",
 			"destructive-terraform-guard.py",
 		)},
-		{event: "PostToolUse", hooks: h("audit.py")},
-		{event: "Stop", hooks: h("audit.py", "checkpoint-tick.py")},
-		{event: "SessionEnd", hooks: h("audit.py")},
-		{event: "SubagentStop", hooks: h("audit.py")},
-		{event: "PreCompact", hooks: h("audit.py")},
+		{event: "PostToolUse", hooks: h("audit-logger.py")},
+		{event: "Stop", hooks: h("audit-logger.py", "checkpoint-tick.py")},
+		{event: "SessionEnd", hooks: h("audit-logger.py")},
+		{event: "SubagentStop", hooks: h("audit-logger.py")},
+		{event: "PreCompact", hooks: h("audit-logger.py")},
 	}
 }
 

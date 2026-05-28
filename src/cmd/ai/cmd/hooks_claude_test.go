@@ -24,7 +24,7 @@ func TestPurgeMalformed_RemovesFlatAbsolutePath(t *testing.T) {
 				// Canonical group with a portable command.
 				map[string]any{
 					"hooks": []any{
-						map[string]any{"type": "command", "command": "ai hooks run audit"},
+						map[string]any{"type": "command", "command": "ai hooks run audit-logger"},
 					},
 				},
 			},
@@ -48,7 +48,7 @@ func TestPurgeMalformed_RemovesFlatPortableEntry(t *testing.T) {
 	settings := map[string]any{
 		"hooks": map[string]any{
 			"PreToolUse": []any{
-				map[string]any{"type": "PreToolUse", "command": "ai hooks run audit"},
+				map[string]any{"type": "PreToolUse", "command": "ai hooks run audit-logger"},
 				map[string]any{"type": "PreToolUse", "command": "ai hooks run branch-guard"},
 			},
 		},
@@ -71,7 +71,7 @@ func TestPurgeMalformed_RemovesNullHookStubs(t *testing.T) {
 				map[string]any{"hooks": []any{}},
 				map[string]any{
 					"hooks": []any{
-						map[string]any{"type": "command", "command": "ai hooks run audit"},
+						map[string]any{"type": "command", "command": "ai hooks run audit-logger"},
 					},
 				},
 			},
@@ -96,7 +96,7 @@ func TestPurgeMalformed_DropsBadNestedType(t *testing.T) {
 					"matcher": "Bash",
 					"hooks": []any{
 						map[string]any{"type": "PreToolUse", "command": "ai hooks run branch-guard"},
-						map[string]any{"type": "command", "command": "ai hooks run audit"},
+						map[string]any{"type": "command", "command": "ai hooks run audit-logger"},
 					},
 				},
 			},
@@ -117,7 +117,7 @@ func TestPurgeMalformed_DropsBadNestedType(t *testing.T) {
 		t.Fatalf("expected only the canonical nested entry; got %d: %v", len(inner), inner)
 	}
 	h := inner[0].(map[string]any)
-	if h["type"] != "command" || h["command"] != "ai hooks run audit" {
+	if h["type"] != "command" || h["command"] != "ai hooks run audit-logger" {
 		t.Errorf("nested entry wrong: %v", h)
 	}
 }
@@ -130,7 +130,7 @@ func TestPurgeMalformed_PreservesCanonicalGroups(t *testing.T) {
 			"PreToolUse": []any{
 				map[string]any{
 					"hooks": []any{
-						map[string]any{"type": "command", "command": "ai hooks run audit"},
+						map[string]any{"type": "command", "command": "ai hooks run audit-logger"},
 					},
 				},
 				map[string]any{
@@ -149,6 +149,51 @@ func TestPurgeMalformed_PreservesCanonicalGroups(t *testing.T) {
 	entries := settings["hooks"].(map[string]any)["PreToolUse"].([]any)
 	if len(entries) != 2 {
 		t.Fatalf("expected both canonical groups preserved; got %d: %v", len(entries), entries)
+	}
+}
+
+func TestPurgeMalformed_DropsRetiredCommands(t *testing.T) {
+	// Retired wiring (catalog renamed audit→audit-logger; audit-command is a
+	// wrapper post-hook, never a Claude event hook) must be scrubbed even when
+	// it appears inside an otherwise-canonical group.
+	settings := map[string]any{
+		"hooks": map[string]any{
+			"PreToolUse": []any{
+				map[string]any{
+					"hooks": []any{
+						map[string]any{"type": "command", "command": "ai hooks run audit"},          // retired
+						map[string]any{"type": "command", "command": "ai hooks run audit-command"},  // retired
+						map[string]any{"type": "command", "command": "ai hooks run audit-logger"},   // keep
+					},
+				},
+			},
+			"Stop": []any{
+				map[string]any{
+					"hooks": []any{
+						map[string]any{"type": "command", "command": "ai hooks run audit"}, // retired
+					},
+				},
+			},
+		},
+	}
+	cmd.PurgeMalformedHookEntriesForTest(settings)
+
+	pre := settings["hooks"].(map[string]any)["PreToolUse"].([]any)
+	if len(pre) != 1 {
+		t.Fatalf("PreToolUse: expected 1 surviving group, got %d: %v", len(pre), pre)
+	}
+	inner := pre[0].(map[string]any)["hooks"].([]any)
+	if len(inner) != 1 {
+		t.Fatalf("PreToolUse[0].hooks: expected 1 surviving entry, got %d: %v", len(inner), inner)
+	}
+	if inner[0].(map[string]any)["command"] != "ai hooks run audit-logger" {
+		t.Errorf("PreToolUse[0].hooks[0]: wrong survivor: %v", inner[0])
+	}
+
+	// Stop group had only retired entries — the whole group must be dropped.
+	stop := settings["hooks"].(map[string]any)["Stop"].([]any)
+	if len(stop) != 0 {
+		t.Errorf("Stop: expected 0 groups (only retired entries), got %d: %v", len(stop), stop)
 	}
 }
 
@@ -181,7 +226,7 @@ func TestUpdateSettingsJSON_RecoversFromCorruptedFile(t *testing.T) {
 			"PreToolUse": []any{
 				map[string]any{
 					"hooks": []any{
-						map[string]any{"type": "command", "command": "ai hooks run audit"},
+						map[string]any{"type": "command", "command": "ai hooks run audit-logger"},
 					},
 				},
 				map[string]any{"hooks": nil},
@@ -194,7 +239,7 @@ func TestUpdateSettingsJSON_RecoversFromCorruptedFile(t *testing.T) {
 				},
 				map[string]any{"hooks": nil},
 				map[string]any{"hooks": nil},
-				map[string]any{"command": "ai hooks run audit", "type": "PreToolUse"},
+				map[string]any{"command": "ai hooks run audit-logger", "type": "PreToolUse"},
 				map[string]any{"command": "ai hooks run branch-guard", "type": "PreToolUse"},
 			},
 		},
@@ -463,7 +508,7 @@ func TestSettingsJSON_ValidAfterRepairingCorruption(t *testing.T) {
 				// Canonical groups that should be preserved.
 				map[string]any{
 					"hooks": []any{
-						map[string]any{"type": "command", "command": "ai hooks run audit"},
+						map[string]any{"type": "command", "command": "ai hooks run audit-logger"},
 					},
 				},
 				map[string]any{
@@ -476,7 +521,7 @@ func TestSettingsJSON_ValidAfterRepairingCorruption(t *testing.T) {
 				map[string]any{"hooks": nil},
 				map[string]any{"hooks": []any{}},
 				// Flat wrong-shape entries (Bug A).
-				map[string]any{"command": "ai hooks run audit", "type": "PreToolUse"},
+				map[string]any{"command": "ai hooks run audit-logger", "type": "PreToolUse"},
 				map[string]any{"command": "ai hooks run worktree-guard", "type": "PreToolUse"},
 				// Pre-v1.3 absolute-path entry (both flat and embedded in a group).
 				map[string]any{"command": "python3 /Users/x/.ai/hooks/audit.py", "type": "PreToolUse"},
@@ -490,7 +535,7 @@ func TestSettingsJSON_ValidAfterRepairingCorruption(t *testing.T) {
 				// Mixed: one canonical, one null, one flat.
 				map[string]any{
 					"hooks": []any{
-						map[string]any{"type": "command", "command": "ai hooks run audit"},
+						map[string]any{"type": "command", "command": "ai hooks run audit-logger"},
 					},
 				},
 				map[string]any{"hooks": nil},

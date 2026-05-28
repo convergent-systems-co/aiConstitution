@@ -426,7 +426,7 @@ func TestCheckHookWiring_AllWired(t *testing.T) {
 	if err := os.MkdirAll(hooksDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	required := []string{"audit.py", "branch-guard.py", "secret-block.py", "worktree-guard.py", "checkpoint-tick.py"}
+	required := []string{"audit-logger.py", "branch-guard.py", "secret-block.py", "worktree-guard.py", "checkpoint-tick.py"}
 	for _, h := range required {
 		_ = os.WriteFile(filepath.Join(hooksDir, h), []byte("# hook"), 0o644)
 	}
@@ -451,18 +451,18 @@ func TestCheckHookWiring_PartiallyWired(t *testing.T) {
 	aiRoot := t.TempDir()
 	home := t.TempDir()
 
-	// Install audit.py and branch-guard.py.
+	// Install audit-logger.py and branch-guard.py.
 	hooksDir := filepath.Join(aiRoot, "hooks")
 	if err := os.MkdirAll(hooksDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	for _, h := range []string{"audit.py", "branch-guard.py"} {
+	for _, h := range []string{"audit-logger.py", "branch-guard.py"} {
 		_ = os.WriteFile(filepath.Join(hooksDir, h), []byte("# hook"), 0o644)
 	}
 
-	// Wire only audit.py; branch-guard.py is installed but not wired.
+	// Wire only audit-logger.py; branch-guard.py is installed but not wired.
 	settingsPath := filepath.Join(home, ".claude", "settings.json")
-	writeSettingsJSON(t, settingsPath, []string{"audit.py"})
+	writeSettingsJSON(t, settingsPath, []string{"audit-logger.py"})
 
 	var out bytes.Buffer
 	checkHookWiring(&out, aiRoot, home)
@@ -471,8 +471,8 @@ func TestCheckHookWiring_PartiallyWired(t *testing.T) {
 	if !strings.Contains(got, "[⚠]") || !strings.Contains(got, "branch-guard.py") {
 		t.Errorf("expected warning about branch-guard.py not wired; got:\n%s", got)
 	}
-	if strings.Contains(got, "audit.py installed but not wired") {
-		t.Errorf("audit.py is wired, should not appear in warnings; got:\n%s", got)
+	if strings.Contains(got, "audit-logger.py installed but not wired") {
+		t.Errorf("audit-logger.py is wired, should not appear in warnings; got:\n%s", got)
 	}
 }
 
@@ -513,7 +513,7 @@ func TestCheckHookWiring_NoSettings(t *testing.T) {
 	if err := os.MkdirAll(hooksDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	required := []string{"audit.py", "branch-guard.py", "secret-block.py", "worktree-guard.py", "checkpoint-tick.py"}
+	required := []string{"audit-logger.py", "branch-guard.py", "secret-block.py", "worktree-guard.py", "checkpoint-tick.py"}
 	for _, h := range required {
 		_ = os.WriteFile(filepath.Join(hooksDir, h), []byte("# hook"), 0o644)
 	}

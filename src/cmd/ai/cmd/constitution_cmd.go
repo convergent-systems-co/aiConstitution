@@ -526,34 +526,11 @@ func extractTarGzTo(archivePath, dst string) error {
 }
 
 // rewireHooks writes the canonical hooks block into ~/.claude/settings.json.
+// Delegates to updateSettingsJSON so the constitution-restore path and the
+// `ai hooks install --claude` path share a single canonical writer.
 func rewireHooks(settingsPath, aiRoot string) error {
 	hooksDir := filepath.Join(aiRoot, "hooks")
-	hookEntry := func(name string) map[string]any {
-		return map[string]any{"type": "command", "command": filepath.Join(hooksDir, name)}
-	}
-	hooksBlock := map[string]any{
-		"SessionStart":     []any{hookEntry("audit.py")},
-		"UserPromptSubmit": []any{hookEntry("audit.py")},
-		"PreToolUse":       []any{hookEntry("branch-guard.py"), hookEntry("secret-block.py"), hookEntry("worktree-guard.py")},
-		"PostToolUse":      []any{hookEntry("audit.py")},
-		"Stop":             []any{hookEntry("audit.py"), hookEntry("checkpoint-tick.py")},
-		"SessionEnd":       []any{hookEntry("audit.py")},
-		"SubagentStop":     []any{hookEntry("audit.py")},
-		"PreCompact":       []any{hookEntry("audit.py")},
-	}
-	var settings map[string]any
-	if data, err := os.ReadFile(settingsPath); err == nil { //nolint:gosec
-		_ = json.Unmarshal(data, &settings)
-	}
-	if settings == nil {
-		settings = make(map[string]any)
-	}
-	settings["hooks"] = hooksBlock
-	updated, err := json.MarshalIndent(settings, "", "  ")
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(settingsPath, updated, 0o600) //nolint:gosec
+	return updateSettingsJSON(settingsPath, hooksDir)
 }
 
 // copyFileSimple copies src to dst.
