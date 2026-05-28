@@ -111,8 +111,16 @@ Prints [✓] or [✗] per hook. Exit 1 if any [✗].`,
 		Short: "File the hook upstream as an issue (gated by settings.upstream.shareNewHooks)",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			notice("hooks share:", args[0])
-			return stub("hooks share", "§9.3")
+			home, err := os.UserHomeDir()
+			if err != nil {
+				return fmt.Errorf("hooks share: resolve home: %w", err)
+			}
+			aiRoot := os.Getenv("AI_ROOT")
+			if aiRoot == "" {
+				aiRoot = filepath.Join(home, ".ai")
+			}
+			filePath := filepath.Join(aiRoot, "hooks", args[0])
+			return runShareUpstream(args[0], filePath, "convergent-systems-co/aiConstitution", "", cmd.OutOrStdout())
 		},
 	})
 

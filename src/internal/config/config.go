@@ -55,6 +55,10 @@ type UpstreamSettings struct {
 	ShareMajorFindings bool   `toml:"shareMajorFindings"`
 	SkipReviewWindow   bool   `toml:"skipReviewWindow"`
 	UpstreamRepo       string `toml:"upstreamRepo"`
+	// ShareEnabled is the master switch for all `ai <cmd> share` subcommands.
+	// When false, share commands print a notice and exit 0 without contacting GitHub.
+	// Defaults to true.
+	ShareEnabled bool `toml:"shareEnabled"`
 }
 
 // ReviewSettings carries the [review] section — memory-review cadence
@@ -163,6 +167,7 @@ func Defaults() Settings {
 			ShareMajorFindings: false,
 			SkipReviewWindow:   false,
 			UpstreamRepo:       "convergent-systems-co/ai",
+			ShareEnabled:       true,
 		},
 		Review: ReviewSettings{
 			CadenceDays:            30,
