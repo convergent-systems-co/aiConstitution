@@ -31,28 +31,11 @@ hooks/command-wrappers.toml.
 See SPEC.md §3.10 + §9.`,
 	}
 
-	// available — hooks in the embedded library (installable)
+	// available — embedded hooks plus registry hooks from skill-atoms.com
 	c.AddCommand(&cobra.Command{
 		Use:   "available",
-		Short: "List hooks available to install from the embedded library",
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			names, err := embed.HookNames()
-			if err != nil {
-				return err
-			}
-			sort.Strings(names)
-			out := cmd.OutOrStdout()
-			fmt.Fprintln(out, "Installable hooks  (ai hooks install <name>  |  ai hooks install --all):")
-			for _, n := range names {
-				if isHookFile(n) || n == "patterns.json" {
-					fmt.Fprintln(out, "  "+n)
-				}
-			}
-			fmt.Fprintln(out)
-			fmt.Fprintln(out, "Wrappers  (ai hooks install command-wrappers):")
-			fmt.Fprintln(out, "  git, gh")
-			return nil
-		},
+		Short: "List hooks available to install (embedded + skill-atoms.com registry)",
+		RunE:  runHooksAvailable,
 	})
 
 	// list — hooks installed on disk in ~/.ai/hooks/ with wiring status
@@ -234,6 +217,58 @@ Per SPEC.md §3.10 + §10.2 + §14.1.`,
 
 	c.AddCommand(propose, install)
 	return c
+}
+
+// runHooksAvailable implements `ai hooks available`. It lists:
+//  1. Embedded hooks (built-in, installable via `ai hooks install`).
+//  2. Registry hooks from skill-atoms.com (type: "ai-hook", non-deprecated).
+//
+// Registry fetch failures are non-fatal: a warning line is printed and the
+// command still exits 0 with the embedded hooks shown.
+func runHooksAvailable(cmd *cobra.Command, _ []string) error {
+	names, err := embed.HookNames()
+	if err != nil {
+		return err
+	}
+	sort.Strings(names)
+	out := cmd.OutOrStdout()
+	fmt.Fprintln(out, "Embedded hooks  (ai hooks install <name>  |  ai hooks install --all):")
+	for _, n := range names {
+		if isHookFile(n) || n == "patterns.json" {
+			fmt.Fprintln(out, "  "+n)
+		}
+	}
+	fmt.Fprintln(out)
+
+	// Fetch registry hooks from skill-atoms.com. Non-fatal on failure.
+	atoms, registryErr := fetchHookAtoms()
+	if registryErr != nil {
+		fmt.Fprintf(out, "(could not reach skill-atoms.com: %v)\n", registryErr)
+		return nil
+	}
+	if len(atoms) == 0 {
+		return nil
+	}
+
+	fmt.Fprintln(out, "Registry hooks from skill-atoms.com:")
+
+	// Compute column width for the slug column.
+	maxSlug := 4 // len("SLUG")
+	for _, a := range atoms {
+		if len(a.slug) > maxSlug {
+			maxSlug = len(a.slug)
+		}
+	}
+	fmt.Fprintf(out, "  %-*s  %s\n", maxSlug, "SLUG", "DESCRIPTION")
+	fmt.Fprintf(out, "  %-*s  %s\n", maxSlug, strings.Repeat("─", maxSlug), strings.Repeat("─", 50))
+	for _, a := range atoms {
+		desc := a.description
+		if len(desc) > 70 {
+			desc = desc[:67] + "..."
+		}
+		fmt.Fprintf(out, "  %-*s  %s\n", maxSlug, a.slug, desc)
+	}
+	return nil
 }
 
 // runHooksPropose scaffolds a new hook file at <aiRoot>/hooks/<name>.<ext>.
