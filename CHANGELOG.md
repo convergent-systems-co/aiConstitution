@@ -43,6 +43,21 @@ binary version independently — the binary tracks `SemVer` over the
 
 - `ai atoms` group removed; atom management delegated to the `atoms` binary from `convergent-systems/atoms` (#363)
 - `ai brand`, `ai sync status`, `ai plan list/new/show` implemented (#354, #355)
+- **`ai skills available` + `ai hooks available`**: now fetch from `https://ai-atoms.com/exports/catalog.json` — single CDN fetch replaces GitHub API calls (#416)
+- **`ai skills install`**: fetches skill content from ai-atoms.com catalog (`system_prompt_fragment` field) instead of GitHub API (#418)
+- **`ai hooks install`**: fetches hook scripts from ai-atoms.com catalog (`script` field) with embed fallback for infrastructure files; 13 hooks shipped by catalog (#419)
+- **`ai hooks run <slug>`**: new portable cross-platform hook runner — settings.json entries now use `ai hooks run audit` instead of absolute `python3` paths (#411)
+- **`ai constitution setup`**: new subcommand bootstrapping a personal constitution via the guided TUI wizard (#408)
+- **`ai constitution restore --url <git-url>`**: restore `~/.ai/` from a personal git repo URL (#408)
+- **`ai setup` TUI**: hook selection step added before skill selection; users pick individual hooks interactively (#410)
+- **ai-atoms.com**: 14 governance hook atoms published (13 with Python scripts + `hook/lib`); `hook-v1.json` schema extended with `script` and `depends_on` fields
+
+### Fixed (post-initial entry)
+
+- `ai hooks install --claude`: purges old absolute-path entries before re-wiring so hooks don't fire twice after upgrading (#413)
+- `readWiredHookNames`: recognizes portable `ai hooks run <slug>` format alongside old `python3 /abs/path` format (#414)
+- `ai hooks list`: `lib.py` filtered (transition artifact); `audit-logger.py` wired to `PreToolUse` (#421)
+- `ai status`: wired hook count now reflects both group and flat settings.json formats (#402)
 
 ## [Unreleased]
 
