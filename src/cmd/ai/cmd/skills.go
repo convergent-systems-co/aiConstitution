@@ -10,7 +10,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
-	"text/tabwriter"
 
 	cbterm "github.com/charmbracelet/x/term"
 	"github.com/spf13/cobra"
@@ -171,12 +170,24 @@ func runSkillsAvailable(cmd *cobra.Command, _ []string) error {
 		return nil
 	}
 
-	w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "SLUG\tNAME\tVERSION\tDESCRIPTION")
+	out := cmd.OutOrStdout()
+	// Find longest slug for alignment.
+	maxSlug := 4 // len("SLUG")
 	for _, r := range rows {
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", r.slug, r.name, r.version, r.description)
+		if len(r.slug) > maxSlug {
+			maxSlug = len(r.slug)
+		}
 	}
-	return w.Flush()
+	fmt.Fprintf(out, "  %-*s  %s\n", maxSlug, "SLUG", "DESCRIPTION")
+	fmt.Fprintf(out, "  %-*s  %s\n", maxSlug, strings.Repeat("─", maxSlug), strings.Repeat("─", 50))
+	for _, r := range rows {
+		desc := r.description
+		if len(desc) > 70 {
+			desc = desc[:67] + "..."
+		}
+		fmt.Fprintf(out, "  %-*s  %s\n", maxSlug, r.slug, desc)
+	}
+	return nil
 }
 
 // newSkillsAvailableCmd returns the cobra command for `ai skills available`.
