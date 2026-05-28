@@ -24,6 +24,7 @@ type aiAtomEntry struct {
 	Event                string   `json:"event,omitempty"`
 	Language             string   `json:"language,omitempty"`
 	SystemPromptFragment string   `json:"system_prompt_fragment,omitempty"`
+	Script               string   `json:"script,omitempty"` // hook script content; absent during catalog transition
 }
 
 // aiAtomsCatalog is the top-level document returned by the ai-atoms.com catalog
