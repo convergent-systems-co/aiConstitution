@@ -24,6 +24,7 @@ var claudeEventMap = map[string][]string{
 		"Stop", "SessionEnd", "SubagentStop", "PreCompact",
 	},
 	"audit-command.py":              {"PostToolUse"},
+	"audit-logger.py":               {"PreToolUse"},
 	"branch-guard.py":               {"PreToolUse"},
 	"worktree-guard.py":              {"PreToolUse"},
 	"secret-block.py":                {"PreToolUse"},

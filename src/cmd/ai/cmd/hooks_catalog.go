@@ -54,7 +54,13 @@ func installHookFromCatalog(slug, hooksDir string) error {
 		}
 
 		ext := hookExtForLanguage(a.Language)
-		dest := filepath.Join(hooksDir, slug+ext)
+		// The catalog uses "hook/lib" but the convention on disk (and in Python
+		// imports) is "_lib.py". Map "lib" → "_lib" to match the import name.
+		filename := slug
+		if slug == "lib" {
+			filename = "_lib"
+		}
+		dest := filepath.Join(hooksDir, filename+ext)
 
 		if err := os.MkdirAll(hooksDir, 0o750); err != nil {
 			return fmt.Errorf("hooks catalog: mkdir: %w", err)

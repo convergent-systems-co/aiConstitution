@@ -868,7 +868,10 @@ func isHookFile(name string) bool {
 	if !strings.HasSuffix(name, ".py") && !strings.HasSuffix(name, ".sh") {
 		return false
 	}
-	if name == "_lib.py" || name == "__init__.py" {
+	// Infrastructure and library files — not standalone hooks.
+	// "lib.py" may appear as a transition artifact when the catalog's hook/lib
+	// atom was installed before the _lib naming fix; filter it alongside _lib.py.
+	if name == "_lib.py" || name == "__init__.py" || name == "lib.py" {
 		return false
 	}
 	if strings.HasPrefix(name, "test_") && strings.HasSuffix(name, ".py") {
