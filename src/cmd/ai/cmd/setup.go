@@ -296,18 +296,35 @@ func writeClaudeMD(claudeDir, _ string) error {
 
 	const primaryInclude = "@~/.ai/Constitution.md"
 
-	// Read existing content if the file already exists.
+	// Stale four-file includes from the pre-v2 layout. These reference files
+	// that no longer exist in a fresh install and cause silent context failures.
+	staleIncludes := map[string]bool{
+		"@~/.ai/Common.md":  true,
+		"@~/.ai/Code.md":    true,
+		"@~/.ai/Writing.md": true,
+	}
+
 	existing := ""
-	if data, err := os.ReadFile(path); err == nil { //nolint:gosec // G304: path is a controlled value derived from claudeDir
+	if data, err := os.ReadFile(path); err == nil { //nolint:gosec // G304: controlled path
 		existing = string(data)
 	}
 
-	if strings.Contains(existing, primaryInclude) {
-		// Already wired — nothing to do.
-		return nil
+	// Strip stale lines.
+	if existing != "" {
+		var cleaned []string
+		for _, line := range strings.Split(existing, "\n") {
+			if !staleIncludes[strings.TrimSpace(line)] {
+				cleaned = append(cleaned, line)
+			}
+		}
+		existing = strings.Join(cleaned, "\n")
 	}
 
-	// Append to existing content (preserving any user additions).
+	if strings.Contains(existing, primaryInclude) {
+		// Already wired; write back cleaned version to remove any stale lines.
+		return os.WriteFile(path, []byte(existing), 0o640) //nolint:gosec
+	}
+
 	var sb strings.Builder
 	if existing != "" {
 		sb.WriteString(strings.TrimRight(existing, "\n"))
@@ -316,7 +333,7 @@ func writeClaudeMD(claudeDir, _ string) error {
 	sb.WriteString(primaryInclude)
 	sb.WriteString("\n")
 
-	return os.WriteFile(path, []byte(sb.String()), 0o640) //nolint:gosec // G306: user config file, 0o640 intentional
+	return os.WriteFile(path, []byte(sb.String()), 0o640) //nolint:gosec // G306: 0o640 intentional
 }
 
 // installCopilotSymlink creates (or repairs) the symlink:
