@@ -10,7 +10,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
-	"text/tabwriter"
 
 	cbterm "github.com/charmbracelet/x/term"
 	"github.com/spf13/cobra"
