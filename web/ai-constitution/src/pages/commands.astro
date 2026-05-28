@@ -73,6 +73,14 @@ ai compress --output /tmp/c.md  # write to custom path</code></pre>
 <pre><code>ai constitution backup                # full archive
 ai constitution backup --clear-links  # archive + clear wiring</code></pre>
 
+    <h3><code>ai constitution setup</code></h3>
+    <p>
+      Bootstrap a personal AI Constitution via the guided TUI wizard.
+      Equivalent to <code>ai setup</code> — the discoverable entry point
+      from the <code>ai constitution</code> help page.
+    </p>
+<pre><code>ai constitution setup</code></pre>
+
     <h3><code>ai constitution restore [backup-id]</code></h3>
     <p>
       Removes current <code>~/.ai/</code> and extracts the latest (or
@@ -82,7 +90,8 @@ ai constitution backup --clear-links  # archive + clear wiring</code></pre>
       and regenerates <code>Constitution.runtime.md</code>.
     </p>
 <pre><code>ai constitution restore               # restore most recent backup
-ai constitution restore 20260525T120000Z  # restore specific backup</code></pre>
+ai constitution restore 20260525T120000Z  # restore specific backup
+ai constitution restore --url https://github.com/you/ai.git</code></pre>
 
     <h3><code>ai migrate</code></h3>
     <p>
@@ -154,6 +163,23 @@ ai amend show worktree-slug     # cat a specific draft</code></pre>
 <pre><code>ai hooks install               # install all hooks
 ai hooks install --copilot     # also wire Copilot CLI symlink</code></pre>
 
+    <h3><code>ai hooks available</code></h3>
+    <p>
+      List installable hooks from the embedded infrastructure and the
+      <a href="https://ai-atoms.com">ai-atoms.com</a> registry.
+      Sub-skills auto-install when their parent is selected.
+    </p>
+<pre><code>ai hooks available
+ai hooks list            # installed hooks + per-client wiring status</code></pre>
+
+    <h3><code>ai hooks run &lt;slug&gt;</code></h3>
+    <p>
+      Invoke an installed hook by slug name. The canonical hook invocation
+      written into <code>settings.json</code> — portable across macOS, Linux,
+      and Windows without hardcoded paths.
+    </p>
+<pre><code>ai hooks run branch-guard</code></pre>
+
     <h3><code>ai hooks validate</code> / <code>ai hooks evaluate</code></h3>
 <pre><code>ai hooks validate   # lint hook scripts (shebang, syntax, bare-except)
 ai hooks evaluate   # run each hook with a synthetic event; assert non-crash</code></pre>
@@ -164,9 +190,13 @@ ai hooks evaluate   # run each hook with a synthetic event; assert non-crash</co
     <h2>Skills, Plugins &amp; Atoms</h2>
 
     <h3><code>ai skills</code></h3>
-<pre><code>ai skills list                     # table of installed skills + descriptions
-ai skills show &lt;name&gt;              # cat a skill's SKILL.md
-ai skills validate                 # check each skill dir has valid SKILL.md
+<pre><code>ai skills available              # browse catalog from ai-atoms.com
+ai skills install &lt;slug&gt;         # install; auto-installs sub-skills
+ai skills install --all          # install every available skill
+ai skills link                   # symlink installed skills to ~/.claude/skills/
+ai skills list                   # installed skills + descriptions
+ai skills show &lt;name&gt;            # cat a skill's SKILL.md
+ai skills validate               # check each skill dir has valid SKILL.md
 ai skills templates list &lt;skill&gt;  # list template files
 ai skills templates show &lt;skill&gt; &lt;template&gt;  # render with variable substitution</code></pre>
 
@@ -200,6 +230,15 @@ ai op clip &lt;op://ref&gt;       # copy secret to clipboard (never prints value
   <section class="cs-prose" style="margin-block-start: var(--space-16);">
     <h2>Identity &amp; Mode</h2>
 
+    <h3><code>ai clone --identity &lt;name&gt;</code></h3>
+    <p>
+      Clone a repo and apply a git identity from
+      <code>~/.config/aiConstitution/metadata/projects.json</code>.
+      URL-pattern matching auto-selects the identity; <code>--identity</code>
+      forces a named entry.
+    </p>
+<pre><code>ai clone https://github.com/org/repo --identity work</code></pre>
+
 <pre><code>ai profile list/show/new/edit/remove  # manage persona profiles
 ai persona list [--type agentic|reviewer]  # list installed personas
 ai persona show &lt;name&gt;               # cat persona file
@@ -232,6 +271,40 @@ ai init --codex              # write AGENTS.md with @-include</code></pre>
 <pre><code>notify-me --title "Done" --message "Build finished" --level info
 notify-me --title "Failed" --message "Tests failed" --level urgent
 # --level urgent also pushes to ntfy.sh if ntfy_topic is set in settings.toml</code></pre>
+  </section>
+
+  <!-- ─── AUDIT & GOVERNANCE ─────────────────────────────────────── -->
+  <section class="cs-prose" style="margin-block-start: var(--space-16);">
+    <h2>Audit &amp; Governance</h2>
+
+    <h3><code>ai audit override</code> / <code>ai audit violation</code></h3>
+    <p>
+      Write structured markdown records to <code>~/.ai/audit/</code> per
+      Constitution.md §1.5 schema. Use <code>override</code> when relaxing
+      a rule with the principal's consent; <code>violation</code> when a
+      rule was broken.
+    </p>
+<pre><code>ai audit override --section "§3.2" --scope session \
+  --strict "would have blocked" --relaxed "allowed once" \
+  --risk "minimal" --confirmation "yes"
+
+ai audit violation --section "§3.1.P2" --what "..." \
+  --noticed self-detected --remediation "corrected output"</code></pre>
+
+    <h3><code>ai issue file</code></h3>
+    <p>
+      Create a GitHub issue on the current repo from a description or an
+      audit log file.
+    </p>
+<pre><code>ai issue file --title "Bug: X" --type finding
+ai issue file --from-audit ~/.ai/audit/violations/2026-05-28T...md</code></pre>
+
+    <h3><code>ai memory retire &lt;name&gt;</code></h3>
+    <p>
+      Archive a named memory entry from <code>~/.ai/memory/</code> and
+      remove it from MEMORY.md.
+    </p>
+<pre><code>ai memory retire user_role</code></pre>
   </section>
 
   <!-- ─── FULL REFERENCE ───────────────────────────────────────────── -->
