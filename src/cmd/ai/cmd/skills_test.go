@@ -641,17 +641,11 @@ func TestSkillsAvailable_Success(t *testing.T) {
 	if !strings.Contains(out, "commit") {
 		t.Errorf("output missing 'commit'; got:\n%s", out)
 	}
-	if !strings.Contains(out, "1.2.0") {
-		t.Errorf("output missing version '1.2.0'; got:\n%s", out)
-	}
 	if !strings.Contains(out, "Generate commit messages.") {
 		t.Errorf("output missing description; got:\n%s", out)
 	}
 	if !strings.Contains(out, "review") {
 		t.Errorf("output missing 'review'; got:\n%s", out)
-	}
-	if !strings.Contains(out, "0.5.1") {
-		t.Errorf("output missing version '0.5.1'; got:\n%s", out)
 	}
 }
 
@@ -886,5 +880,128 @@ func TestCopilotWiringOnUninstall(t *testing.T) {
 	// Copilot symlink must be gone.
 	if _, lstatErr := os.Lstat(linkPath); !os.IsNotExist(lstatErr) {
 		t.Errorf("Copilot symlink should have been removed; lstat: %v", lstatErr)
+	}
+}
+
+// fakeSkillAtomWithDeps builds an atom JSON payload that includes a depends_on list.
+func fakeSkillAtomWithDeps(slug, version, description string, deps []string) []byte {
+	payload := map[string]interface{}{
+		"id":                     "skill/" + slug,
+		"version":                version,
+		"name":                   slug,
+		"description":            description,
+		"system_prompt_fragment": "",
+		"depends_on":             deps,
+	}
+	b, _ := json.Marshal(payload)
+	return b
+}
+
+// ---------------------------------------------------------------------------
+// #375 — ai skills available: SLUG column
+// ---------------------------------------------------------------------------
+
+func TestSkillsAvailable_ShowsSlugColumn(t *testing.T) {
+	root := t.TempDir()
+	entries := map[string][]byte{
+		"commit": fakeSkillAtomWithLifecycle("commit", "1.0.0", "Generate commit messages.", ""),
+	}
+	srv := startSkillsAvailableServer(t, entries)
+	setSkillAtomBaseURL(t, srv.URL)
+
+	out, _, err := runSkillsCmd(t, root, "skills", "available")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	lines := strings.Split(strings.TrimSpace(out), "\n")
+	if len(lines) == 0 {
+		t.Fatal("output is empty")
+	}
+	// Header must start with "SLUG" as the first column.
+	header := strings.Fields(lines[0])
+	if len(header) == 0 || header[0] != "SLUG" {
+		t.Errorf("expected first column header to be 'SLUG'; got header line: %s", lines[0])
+	}
+	// The slug value "commit" must appear in the data rows.
+	if !strings.Contains(out, "commit") {
+		t.Errorf("expected slug 'commit' in output; got:\n%s", out)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// #375 — ai skills install: depends_on resolution
+// ---------------------------------------------------------------------------
+
+// TestSkillsInstall_InstallsDependencies verifies that when a skill atom
+// declares depends_on and stdout is non-interactive, all listed dependencies
+// are installed automatically.
+func TestSkillsInstall_InstallsDependencies(t *testing.T) {
+	root := t.TempDir()
+
+	// "make" depends on "make-commit" and "make-review".
+	makePayload := fakeSkillAtomWithDeps("make", "1.0.0", "Run make tasks.", []string{"make-commit", "make-review"})
+	makeCommitPayload := fakeSkillAtom("make-commit", "1.0.0", "make commit sub-skill.", "")
+	makeReviewPayload := fakeSkillAtom("make-review", "1.0.0", "make review sub-skill.", "")
+
+	// Build a multi-slug server: serve each atom at /skills/skill/<slug>.json.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/skills/skill/make.json":
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write(makePayload)
+		case "/skills/skill/make-commit.json":
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write(makeCommitPayload)
+		case "/skills/skill/make-review.json":
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write(makeReviewPayload)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = w.Write([]byte(`{"message":"Not Found"}`))
+		}
+	}))
+	t.Cleanup(srv.Close)
+	setSkillAtomBaseURL(t, srv.URL)
+
+	// stdout is not a TTY in test (non-interactive) → deps installed automatically.
+	out, _, err := runSkillsCmd(t, root, "skills", "install", "make")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Primary skill installed.
+	if !strings.Contains(out, "Installed make v1.0.0") {
+		t.Errorf("expected 'Installed make v1.0.0'; got:\n%s", out)
+	}
+
+	// Both dependencies installed automatically.
+	for _, dep := range []string{"make-commit", "make-review"} {
+		depMDPath := filepath.Join(root, "skills", dep, "SKILL.md")
+		if _, statErr := os.Stat(depMDPath); os.IsNotExist(statErr) {
+			t.Errorf("dependency %s was not installed (SKILL.md missing at %s)", dep, depMDPath)
+		}
+	}
+}
+
+// TestSkillsInstall_NoDependencies verifies that a skill with no depends_on
+// does not emit any dependency-related output.
+func TestSkillsInstall_NoDependencies(t *testing.T) {
+	root := t.TempDir()
+	payload := fakeSkillAtom("commit", "1.0.0", "Generate commit messages.", "")
+	srv := startSkillAtomServer(t, http.StatusOK, payload)
+	setSkillAtomBaseURL(t, srv.URL)
+
+	out, _, err := runSkillsCmd(t, root, "skills", "install", "commit")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if strings.Contains(out, "depends on") {
+		t.Errorf("expected no dependency output for skill without depends_on; got:\n%s", out)
+	}
+	if strings.Contains(out, "Install dependencies") {
+		t.Errorf("expected no dependency prompt for skill without depends_on; got:\n%s", out)
 	}
 }

@@ -40,13 +40,16 @@ See SPEC.md §3.10 + §9.`,
 				return err
 			}
 			sort.Strings(names)
-			fmt.Println("Embedded hooks available for `ai hooks install`:")
+			out := cmd.OutOrStdout()
+			fmt.Fprintln(out, "Installable hooks  (ai hooks install <name>  |  ai hooks install --all):")
 			for _, n := range names {
-				fmt.Println("  " + n)
+				if isHookFile(n) || n == "patterns.json" {
+					fmt.Fprintln(out, "  "+n)
+				}
 			}
-			fmt.Println()
-			fmt.Println("Wrappers available for `ai hooks install command-wrappers`:")
-			fmt.Println("  git, gh")
+			fmt.Fprintln(out)
+			fmt.Fprintln(out, "Wrappers  (ai hooks install command-wrappers):")
+			fmt.Fprintln(out, "  git, gh")
 			return nil
 		},
 	})

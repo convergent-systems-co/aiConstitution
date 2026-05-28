@@ -10,8 +10,8 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
-	"text/tabwriter"
 
+	cbterm "github.com/charmbracelet/x/term"
 	"github.com/spf13/cobra"
 )
 
@@ -26,12 +26,13 @@ var SkillAtomsBaseURL = "https://api.github.com/repos/convergent-systems-co/skil
 // skillAtom is the JSON schema returned by the skill-atoms GitHub API endpoint.
 // Only the fields relevant for install/upgrade/listing are decoded.
 type skillAtom struct {
-	ID                   string `json:"id"`
-	Version              string `json:"version"`
-	Name                 string `json:"name"`
-	Description          string `json:"description"`
-	SystemPromptFragment string `json:"system_prompt_fragment"`
-	Lifecycle            string `json:"lifecycle"`
+	ID                   string   `json:"id"`
+	Version              string   `json:"version"`
+	Name                 string   `json:"name"`
+	Description          string   `json:"description"`
+	SystemPromptFragment string   `json:"system_prompt_fragment"`
+	Lifecycle            string   `json:"lifecycle"`
+	DependsOn            []string `json:"depends_on,omitempty"`
 }
 
 // skillAtomDirEntry is a single entry in the GitHub Contents API directory
@@ -121,13 +122,17 @@ func runSkillsAvailable(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 
-	// Hydrate each entry into a full atom.
-	type row struct{ name, version, description string }
-	var rows []row
+	// First pass: hydrate all atoms and collect sub-skills from depends_on.
+	type hydrated struct {
+		slug, name, version, description string
+		dependsOn                        []string
+	}
+	var all []hydrated
+	subSkills := map[string]bool{}
+
 	for _, e := range entries {
 		atom, fetchErr := fetchSkillAtomFromURL(e.DownloadURL)
 		if fetchErr != nil {
-			// Non-fatal: skip entries that fail to hydrate.
 			fmt.Fprintf(cmd.ErrOrStderr(), "warning: could not fetch %s: %v\n", e.Name, fetchErr)
 			continue
 		}
@@ -135,11 +140,29 @@ func runSkillsAvailable(cmd *cobra.Command, _ []string) error {
 		if lc == "deprecated" || lc == "retired" {
 			continue
 		}
+		slug := strings.TrimSuffix(e.Name, ".json")
 		name := atom.Name
 		if name == "" {
-			name = strings.TrimSuffix(e.Name, ".json")
+			name = slug
 		}
-		rows = append(rows, row{name, atom.Version, atom.Description})
+		all = append(all, hydrated{slug, name, atom.Version, atom.Description, atom.DependsOn})
+		for _, dep := range atom.DependsOn {
+			subSkills[dep] = true
+		}
+	}
+
+	// Second pass: exclude sub-skills.
+	type row struct{ slug, name, version, description string }
+	var rows []row
+	for _, h := range all {
+		if subSkills[h.slug] {
+			continue
+		}
+		dep := ""
+		if len(h.dependsOn) > 0 {
+			dep = fmt.Sprintf(" (+%d)", len(h.dependsOn))
+		}
+		rows = append(rows, row{h.slug + dep, h.name, h.version, h.description})
 	}
 
 	if len(rows) == 0 {
@@ -147,12 +170,24 @@ func runSkillsAvailable(cmd *cobra.Command, _ []string) error {
 		return nil
 	}
 
-	w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "NAME\tVERSION\tDESCRIPTION")
+	out := cmd.OutOrStdout()
+	// Find longest slug for alignment.
+	maxSlug := 4 // len("SLUG")
 	for _, r := range rows {
-		fmt.Fprintf(w, "%s\t%s\t%s\n", r.name, r.version, r.description)
+		if len(r.slug) > maxSlug {
+			maxSlug = len(r.slug)
+		}
 	}
-	return w.Flush()
+	fmt.Fprintf(out, "  %-*s  %s\n", maxSlug, "SLUG", "DESCRIPTION")
+	fmt.Fprintf(out, "  %-*s  %s\n", maxSlug, strings.Repeat("─", maxSlug), strings.Repeat("─", 50))
+	for _, r := range rows {
+		desc := r.description
+		if len(desc) > 70 {
+			desc = desc[:67] + "..."
+		}
+		fmt.Fprintf(out, "  %-*s  %s\n", maxSlug, r.slug, desc)
+	}
+	return nil
 }
 
 // newSkillsAvailableCmd returns the cobra command for `ai skills available`.
@@ -326,6 +361,34 @@ func runSkillsInstall(cmd *cobra.Command, slug string) error {
 	}
 
 	fmt.Fprintf(cmd.OutOrStdout(), "Installed %s v%s\n", slug, atom.Version)
+
+	// If the skill declares dependencies, offer to install them.
+	if len(atom.DependsOn) > 0 {
+		fmt.Fprintf(cmd.OutOrStdout(), "\nThis skill depends on: %s\n", strings.Join(atom.DependsOn, ", "))
+		if cbterm.IsTerminal(os.Stdout.Fd()) {
+			fmt.Fprint(cmd.OutOrStdout(), "Install dependencies too? [Y/n]: ")
+			var answer string
+			fmt.Scanln(&answer) //nolint:errcheck // best-effort readline; empty = yes
+			answer = strings.TrimSpace(strings.ToLower(answer))
+			if answer == "" || answer == "y" || answer == "yes" {
+				for _, dep := range atom.DependsOn {
+					fmt.Fprintf(cmd.OutOrStdout(), "Installing %s...\n", dep)
+					if depErr := runSkillsInstall(cmd, dep); depErr != nil {
+						fmt.Fprintf(cmd.ErrOrStderr(), "warning: failed to install %s: %v\n", dep, depErr)
+					}
+				}
+			}
+		} else {
+			// Non-interactive: install deps automatically without prompting.
+			for _, dep := range atom.DependsOn {
+				fmt.Fprintf(cmd.OutOrStdout(), "Installing %s...\n", dep)
+				if depErr := runSkillsInstall(cmd, dep); depErr != nil {
+					fmt.Fprintf(cmd.ErrOrStderr(), "warning: failed to install %s: %v\n", dep, depErr)
+				}
+			}
+		}
+	}
+
 	return nil
 }
 
@@ -644,17 +707,46 @@ See SPEC.md §7.10.`,
 		newSkillsTemplatesCmd(),
 		newSkillsAvailableCmd(),
 		// install/uninstall/upgrade/upgrade-all — implemented in §7.10.2 (#347).
-		&cobra.Command{
-			Use:   "install <name>[@<version>]",
-			Short: "Fetch from skill-atoms.com and install to ~/.ai/skills/",
-			Long: `install fetches a skill atom from the skill-atoms registry and
+		func() *cobra.Command {
+			var installAll bool
+			cmd := &cobra.Command{
+				Use:   "install [<name>[@<version>]]",
+				Short: "Fetch from skill-atoms.com and install to ~/.ai/skills/",
+				Long: `install fetches a skill atom from the skill-atoms registry and
 installs it to ~/.ai/skills/<name>/SKILL.md. If ~/.claude/skills/ exists,
-a symlink is created there for Claude Code to discover.`,
-			Args: cobra.ExactArgs(1),
-			RunE: func(c *cobra.Command, args []string) error {
-				return runSkillsInstall(c, args[0])
-			},
-		},
+a symlink is created there for Claude Code to discover.
+
+Use --all to install every available skill at once.`,
+				Args: func(cmd *cobra.Command, args []string) error {
+					if installAll {
+						return cobra.NoArgs(cmd, args)
+					}
+					return cobra.ExactArgs(1)(cmd, args)
+				},
+				RunE: func(c *cobra.Command, args []string) error {
+					if installAll {
+						slugs, err := fetchSkillsDirectory()
+						if err != nil {
+							return fmt.Errorf("skills install --all: fetch list: %w", err)
+						}
+						var errs []string
+						for _, s := range slugs {
+							slug := strings.TrimSuffix(s.Name, ".json")
+							if installErr := runSkillsInstall(c, slug); installErr != nil {
+								errs = append(errs, slug+": "+installErr.Error())
+							}
+						}
+						if len(errs) > 0 {
+							return fmt.Errorf("some skills failed to install:\n  %s", strings.Join(errs, "\n  "))
+						}
+						return nil
+					}
+					return runSkillsInstall(c, args[0])
+				},
+			}
+			cmd.Flags().BoolVar(&installAll, "all", false, "install every available skill")
+			return cmd
+		}(),
 		&cobra.Command{
 			Use:   "uninstall <name>",
 			Short: "Remove a skill and its Claude symlink",
