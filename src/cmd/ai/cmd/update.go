@@ -184,17 +184,25 @@ func isV2Layout(constitutionPath string) bool {
 	return err == nil
 }
 
-// executeMigrationSteps runs the v1→v2 migration pipeline. The actual
-// migration logic (runMigrateFlatten, runMigrateAddBehavioral,
-// runMigrateGenerateRuntime) is deferred to v0.9; this stub records the
-// intent and prints what would happen.
+// executeMigrationSteps runs the v1→v2 migration pipeline.
 func executeMigrationSteps(cmd *cobra.Command, aiRoot string) error {
-	// v0.8: pipeline is stubbed. Print the steps that would run.
 	fmt.Fprintln(cmd.OutOrStdout(), "Running migration pipeline:")
-	fmt.Fprintln(cmd.OutOrStdout(), "  [1/3] runMigrateFlatten — not yet implemented (v0.9)")
-	fmt.Fprintln(cmd.OutOrStdout(), "  [2/3] runMigrateAddBehavioral — not yet implemented (v0.9)")
-	fmt.Fprintln(cmd.OutOrStdout(), "  [3/3] runMigrateGenerateRuntime — not yet implemented (v0.9)")
-	fmt.Fprintf(cmd.OutOrStdout(), "Migration target: %s\n", aiRoot)
-	fmt.Fprintln(cmd.OutOrStdout(), "Migration steps stubbed in v0.8 — run again after v0.9 ships.")
+
+	fmt.Fprintln(cmd.OutOrStdout(), "  [1/3] Flatten four-file layout into Constitution.md...")
+	if err := runMigrateFlatten(cmd, aiRoot); err != nil {
+		return fmt.Errorf("migrate step 1 (flatten): %w", err)
+	}
+
+	fmt.Fprintln(cmd.OutOrStdout(), "  [2/3] Add behavioral standards section...")
+	if err := runMigrateAddBehavioral(cmd, aiRoot); err != nil {
+		return fmt.Errorf("migrate step 2 (add-behavioral): %w", err)
+	}
+
+	fmt.Fprintln(cmd.OutOrStdout(), "  [3/3] Generate runtime artifacts...")
+	if err := runMigrateGenerateRuntime(cmd, aiRoot); err != nil {
+		return fmt.Errorf("migrate step 3 (generate-runtime): %w", err)
+	}
+
+	fmt.Fprintln(cmd.OutOrStdout(), "Migration complete.")
 	return nil
 }

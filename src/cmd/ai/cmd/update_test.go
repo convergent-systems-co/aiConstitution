@@ -137,3 +137,80 @@ func TestUpdate_NewVersionAvailable(t *testing.T) {
 		t.Errorf("expected upgrade instructions (brew upgrade / go install) in output; got:\n%s", out)
 	}
 }
+
+// ---- executeMigrationSteps tests --------------------------------------------
+
+// helperV1AIRoot creates a temp dir with the four v1 source files that
+// runMigrateFlatten expects, sets AI_ROOT, and returns the dir path.
+func helperV1AIRoot(t *testing.T) string {
+	t.Helper()
+	tmp := t.TempDir()
+	t.Setenv("AI_ROOT", tmp)
+	files := map[string]string{
+		"Constitution.md": "# Constitution\n\n## 1. The File System\n\nFour files.\n",
+		"Common.md":       "# Common\n\n## 1. Prime Directives\n\nP1. Civilization.\n",
+		"Code.md":         "# Code\n\n## 1. Clean Code\n\nNames reveal intent.\n",
+		"Writing.md":      "# Writing\n\n## 1. Voice\n\nMatch the voice.\n",
+	}
+	for name, content := range files {
+		if err := os.WriteFile(filepath.Join(tmp, name), []byte(content), 0o600); err != nil {
+			t.Fatalf("helperV1AIRoot: write %s: %v", name, err)
+		}
+	}
+	return tmp
+}
+
+// TestExecuteMigrationSteps_V1Layout verifies that with a valid v1 layout
+// all three migration steps run to completion and "Migration complete." is
+// printed. Constitution.md must exist afterward (flatten writes it).
+func TestExecuteMigrationSteps_V1Layout(t *testing.T) {
+	aiRoot := helperV1AIRoot(t)
+
+	buf := &bytes.Buffer{}
+	c := newUpdateCmd()
+	c.SetOut(buf)
+	c.SetErr(buf)
+
+	if err := executeMigrationSteps(c, aiRoot); err != nil {
+		t.Fatalf("executeMigrationSteps returned error: %v", err)
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "Migration complete.") {
+		t.Errorf("expected 'Migration complete.' in output; got:\n%s", out)
+	}
+
+	if _, err := os.Stat(filepath.Join(aiRoot, "Constitution.md")); err != nil {
+		t.Errorf("Constitution.md missing after migration: %v", err)
+	}
+}
+
+// TestExecuteMigrationSteps_Step1Fails verifies that when runMigrateFlatten
+// fails (missing source files), the error is wrapped as "migrate step 1
+// (flatten)" and subsequent steps are not attempted.
+func TestExecuteMigrationSteps_Step1Fails(t *testing.T) {
+	// Empty dir — runMigrateFlatten will fail because Common.md (and others) are absent.
+	tmp := t.TempDir()
+	t.Setenv("AI_ROOT", tmp)
+
+	buf := &bytes.Buffer{}
+	c := newUpdateCmd()
+	c.SetOut(buf)
+	c.SetErr(buf)
+
+	err := executeMigrationSteps(c, tmp)
+	if err == nil {
+		t.Fatal("expected non-nil error when source files are missing, got nil")
+	}
+	if !strings.Contains(err.Error(), "migrate step 1 (flatten)") {
+		t.Errorf("expected error to wrap 'migrate step 1 (flatten)'; got: %v", err)
+	}
+
+	out := buf.String()
+	if strings.Contains(out, "[2/3]") {
+		t.Errorf("step 2 should not run when step 1 fails; got output:\n%s", out)
+	}
+	if strings.Contains(out, "[3/3]") {
+		t.Errorf("step 3 should not run when step 1 fails; got output:\n%s", out)
+	}
+}
