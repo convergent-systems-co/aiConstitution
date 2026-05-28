@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -36,11 +37,32 @@ func backupRoot(home string) string {
 func newConstitutionCmd() *cobra.Command {
 	c := &cobra.Command{
 		Use:   "constitution",
-		Short: "Backup and restore the entire ~/.ai/ directory and tool wiring",
+		Short: "Backup, restore, and bootstrap the entire ~/.ai/ directory and tool wiring",
 	}
 	c.AddCommand(newConstitutionBackupCmd())
 	c.AddCommand(newConstitutionRestoreCmd())
+	c.AddCommand(newConstitutionSetupCmd())
 	return c
+}
+
+// ─── setup ───────────────────────────────────────────────────────────────────
+
+func newConstitutionSetupCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "setup",
+		Short: "Bootstrap a personal AI Constitution via the guided wizard",
+		Long: `setup walks the wizard interview and writes ~/.ai/Constitution.md
+plus the canonical tool wiring.
+
+Equivalent to: ai setup`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			fmt.Fprintln(cmd.OutOrStdout(), "Bootstrapping your AI Constitution...")
+			setupCmd := newSetupCmd()
+			setupCmd.SetOut(cmd.OutOrStdout())
+			setupCmd.SetErr(cmd.ErrOrStderr())
+			return setupCmd.RunE(setupCmd, args)
+		},
+	}
 }
 
 // ─── backup ──────────────────────────────────────────────────────────────────
@@ -218,10 +240,12 @@ func clearConstitutionLinks(home, claudeMD, copilotLink string) error {
 
 func newConstitutionRestoreCmd() *cobra.Command {
 	var backupTS string
+	var restoreURL string
+	var restoreDryRun bool
 
 	c := &cobra.Command{
 		Use:   "restore [backup-id]",
-		Short: "Extract the latest ~/.ai-backups/*.tar.gz back to ~/.ai/ and re-wire tools",
+		Short: "Restore ~/.ai/ from a local backup or a git URL",
 		Long: `restore extracts the most recent (or specified) backup archive back
 into ~/.ai/, replacing whatever is there now. After extraction it:
 
@@ -229,8 +253,14 @@ into ~/.ai/, replacing whatever is there now. After extraction it:
   2. Re-wires hooks into ~/.claude/settings.json
   3. Restores ~/.claude/CLAUDE.md with @-include directive
   4. Recreates the ~/.copilot/instructions/constitution.md symlink
-  5. Regenerates Constitution.runtime.md`,
+  5. Regenerates Constitution.runtime.md
+
+With --url, clones a git repository and copies governance files into ~/.ai/
+without performing hook rewiring (the constitution files are applied as-is).`,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if restoreURL != "" {
+				return runConstitutionRestoreURL(cmd, restoreURL, restoreDryRun)
+			}
 			// Positional arg takes precedence over --backup flag.
 			id := backupTS
 			if len(args) > 0 {
@@ -241,6 +271,10 @@ into ~/.ai/, replacing whatever is there now. After extraction it:
 	}
 	c.Flags().StringVar(&backupTS, "backup", "",
 		"timestamp ID to restore (e.g. 20260524T120000Z); defaults to most recent")
+	c.Flags().StringVar(&restoreURL, "url", "",
+		"git URL to restore from (e.g. https://github.com/user/ai.git)")
+	c.Flags().BoolVar(&restoreDryRun, "dry-run", false,
+		"show what would be copied without writing (requires --url)")
 	return c
 }
 
@@ -316,6 +350,85 @@ func runConstitutionRestore(cmd *cobra.Command, backupTS string) error {
 	}
 
 	_, _ = fmt.Fprintln(out, "\nRestore complete. Start a new Claude Code session to load the restored constitution.")
+	return nil
+}
+
+// runConstitutionRestoreURL clones a git URL to a temp dir and copies
+// governance files from the clone into ~/.ai/ (or AI_ROOT). When dryRun is
+// true, it prints what would be copied without writing anything.
+//
+// Governance files copied: Constitution.md, Common.md, Code.md, Writing.md,
+// GOALS.md, and directories memory/, audit/, governance/, hooks/.
+//
+// The existing ~/.ai/ is renamed to ~/.ai-backup-<UTC> before writing.
+// On dry-run no rename or write occurs.
+func runConstitutionRestoreURL(cmd *cobra.Command, rawURL string, dryRun bool) error {
+	aiRoot := resolveAIRoot()
+
+	tmpDir, err := os.MkdirTemp("", "ai-restore-*")
+	if err != nil {
+		return fmt.Errorf("constitution restore --url: mktemp: %w", err)
+	}
+	defer func() { _ = os.RemoveAll(tmpDir) }()
+
+	fmt.Fprintf(cmd.OutOrStdout(), "Cloning %s...\n", rawURL)
+	// gosec G204: URL comes from CLI flag, not user-controlled injection.
+	g := exec.Command("git", "clone", "--depth=1", rawURL, tmpDir) //nolint:gosec
+	g.Stdout = cmd.OutOrStdout()
+	g.Stderr = cmd.ErrOrStderr()
+	if err := g.Run(); err != nil {
+		return fmt.Errorf("constitution restore --url: git clone: %w", err)
+	}
+
+	// Governance files and dirs to copy from the clone into ~/.ai/.
+	candidates := []string{
+		"Constitution.md", "Common.md", "Code.md", "Writing.md", "GOALS.md",
+		"memory", "audit", "governance", "hooks",
+	}
+
+	if !dryRun {
+		utc := time.Now().UTC().Format("20060102T150405Z")
+		backupDir := aiRoot + "-backup-" + utc
+		if _, statErr := os.Stat(aiRoot); statErr == nil {
+			if err := os.Rename(aiRoot, backupDir); err != nil {
+				return fmt.Errorf("constitution restore --url: backup existing ~/.ai/: %w", err)
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "Backed up ~/.ai/ to %s\n", backupDir)
+		}
+		if err := os.MkdirAll(aiRoot, 0o750); err != nil {
+			return fmt.Errorf("constitution restore --url: mkdir ~/.ai/: %w", err)
+		}
+	}
+
+	for _, name := range candidates {
+		src := filepath.Join(tmpDir, name)
+		dst := filepath.Join(aiRoot, name)
+		info, statErr := os.Stat(src)
+		if os.IsNotExist(statErr) {
+			continue
+		}
+		if statErr != nil {
+			return fmt.Errorf("constitution restore --url: stat %s: %w", name, statErr)
+		}
+		if dryRun {
+			fmt.Fprintf(cmd.OutOrStdout(), "  would copy: %s → %s\n", src, dst)
+			continue
+		}
+		if info.IsDir() {
+			if err := copyDir(src, dst); err != nil {
+				return fmt.Errorf("constitution restore --url: copy dir %s: %w", name, err)
+			}
+		} else {
+			if err := copyFile(src, dst, info.Mode()); err != nil {
+				return fmt.Errorf("constitution restore --url: copy file %s: %w", name, err)
+			}
+		}
+		fmt.Fprintf(cmd.OutOrStdout(), "  copied: %s\n", name)
+	}
+
+	if !dryRun {
+		fmt.Fprintln(cmd.OutOrStdout(), "Restored. Start a new session to load the updated constitution.")
+	}
 	return nil
 }
 
