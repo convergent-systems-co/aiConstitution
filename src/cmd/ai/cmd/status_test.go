@@ -106,6 +106,60 @@ func TestStatus_AuditSection(t *testing.T) {
 	}
 }
 
+// ---------------------------------------------------------------------------
+// #390 — isUnifiedConstitution helper
+// ---------------------------------------------------------------------------
+
+func TestIsUnifiedConstitution_UnifiedModel(t *testing.T) {
+	root := t.TempDir()
+	// Only Constitution.md present — unified model.
+	_ = os.WriteFile(filepath.Join(root, "Constitution.md"), []byte("# C"), 0o644)
+
+	if !isUnifiedConstitution(root) {
+		t.Error("expected isUnifiedConstitution=true when only Constitution.md is present")
+	}
+}
+
+func TestIsUnifiedConstitution_FourFileModel(t *testing.T) {
+	root := t.TempDir()
+	// All four files present — legacy four-file model.
+	for _, name := range []string{"Constitution.md", "Common.md", "Code.md", "Writing.md"} {
+		_ = os.WriteFile(filepath.Join(root, name), []byte("# C"), 0o644)
+	}
+
+	if isUnifiedConstitution(root) {
+		t.Error("expected isUnifiedConstitution=false when all four files are present")
+	}
+}
+
+func TestIsUnifiedConstitution_NeitherModel(t *testing.T) {
+	root := t.TempDir()
+	// Nothing present — Constitution.md missing.
+
+	if isUnifiedConstitution(root) {
+		t.Error("expected isUnifiedConstitution=false when Constitution.md is absent")
+	}
+}
+
+func TestStatus_UnifiedModel_NoFalsePositives(t *testing.T) {
+	aiRoot := t.TempDir()
+	t.Setenv("AI_ROOT", aiRoot)
+	// Unified model: only Constitution.md exists.
+	_ = os.WriteFile(filepath.Join(aiRoot, "Constitution.md"), []byte("# C"), 0o644)
+
+	out := runStatusCmd(t)
+	// Must not show ✗ for the legacy sibling files.
+	for _, name := range []string{"Common.md", "Code.md", "Writing.md"} {
+		if strings.Contains(out, "✗") && strings.Contains(out, name) {
+			t.Errorf("got false-positive ✗ for %s in unified model output:\n%s", name, out)
+		}
+	}
+	// Must still show ✓ for Constitution.md itself.
+	if !strings.Contains(out, "Constitution.md") {
+		t.Errorf("expected Constitution.md in output\n%s", out)
+	}
+}
+
 func TestStatus_NoStubError(t *testing.T) {
 	aiRoot := t.TempDir()
 	t.Setenv("AI_ROOT", aiRoot)
