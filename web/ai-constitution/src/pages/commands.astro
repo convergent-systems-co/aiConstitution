@@ -3,7 +3,7 @@ import Base from '../layouts/Base.astro';
 ---
 <Base title="Command Reference — aiConstitution">
   <section class="cs-prose">
-    <p class="cs-section-label">CLI · v1.2</p>
+    <p class="cs-section-label">CLI · v1.3.0</p>
     <h1>Command Reference</h1>
     <p>
       Every <code>ai</code> command runs against <code>~/.ai/</code> by
@@ -86,9 +86,8 @@ ai constitution restore 20260525T120000Z  # restore specific backup</code></pre>
 
     <h3><code>ai migrate</code></h3>
     <p>
-      Migrates a legacy four-file layout
-      (<code>Constitution.md + Common.md + Code.md + Writing.md</code>)
-      to the unified v2 format. Run the three steps in order.
+      Migrates a legacy four-file layout to the unified
+      <code>Constitution.md</code> format. Run the three steps in order.
     </p>
 <pre><code>ai migrate --flatten           # merge four files → one Constitution.md
 ai migrate --add-behavioral    # insert §2 Behavioral Standards section

@@ -6,15 +6,13 @@ import Base from '../layouts/Base.astro';
     <p class="cs-section-label">Methodology</p>
     <h1>What "AI Constitution" means</h1>
     <p>
-      An AI Constitution is a small set of authored rules — three to
-      five files of prose — that govern how AI tools behave inside
-      one person's working environment. The four-file shape is:
+      An AI Constitution is a single authored document that governs how AI tools
+      behave inside one person's working environment. The unified model is:
     </p>
     <ul>
-      <li><strong><code>Constitution.md</code></strong> — governance meta-rules (file inheritance, override protocol, audit conventions, amendment process).</li>
-      <li><strong><code>Common.md</code></strong> — universal operating rules that apply to every task.</li>
-      <li><strong><code>Code.md</code></strong> — code, code+documentation, websites, engineering practices.</li>
-      <li><strong><code>Writing.md</code></strong> — theology, philosophy, articles, science writing, worldbuilding, fiction, non-fiction.</li>
+      <li>A single <strong><code>Constitution.md</code></strong> contains all sections: universal operating rules, technical work, prose and writing, and personal rules for each domain.</li>
+      <li>Domain-specific sections (<code>§4 Technical Work</code>, <code>§5 Prose &amp; Writing</code>) live inside the unified file rather than as separate files.</li>
+      <li>Hooks and skills are fetched from <a href="https://ai-atoms.com">ai-atoms.com</a> on install — the binary ships only infrastructure.</li>
     </ul>
 
     <h2>What this product adds</h2>
@@ -29,7 +27,7 @@ import Base from '../layouts/Base.astro';
     </p>
     <ol>
       <li><strong>Onboarding.</strong> <code>ai setup</code> launches a guided interview that produces a personalized <code>Constitution.md</code> without the assistant fabricating rules.</li>
-      <li><strong>Maintenance.</strong> <code>ai review</code> watches <code>~/.ai/memory/</code> for patterns and proposes amendments back into the four files. You approve. You don't scribe.</li>
+      <li><strong>Maintenance.</strong> <code>ai review</code> watches <code>~/.ai/memory/</code> for patterns and proposes amendments back into <code>Constitution.md</code>. You approve. You don't scribe.</li>
       <li><strong>Portability.</strong> <code>ai sync</code> + <code>ai restore</code> move the whole tree — memories, audit records, hook topology, symlink wiring — to and from a user-owned remote. One command for a fresh laptop.</li>
       <li><strong>Self-repair.</strong> <code>ai doctor</code> fixes broken symlinks, missing hooks, dirty trees, divergent HEAD, stale binary. No conversation needed.</li>
       <li><strong>Atoms.</strong> Personas, profiles, skills, brand identity — versioned, immutable, content-hashed. Drift becomes structurally impossible.</li>
