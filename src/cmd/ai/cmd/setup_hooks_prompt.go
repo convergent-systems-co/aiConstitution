@@ -35,8 +35,10 @@ var hookDescriptions = map[string]string{ //nolint:gosec // G101: false positive
 // hookInstallFn is the function signature for installing a single hook by name.
 type hookInstallFn func(name, hooksDir string, force bool) error
 
-// hookWireFn is the function signature for wiring installed hooks into Claude settings.
-type hookWireFn func(repoRoot, hooksDir string) (int, error)
+// hookWireFn is the function signature for wiring installed hooks into the
+// Claude settings.json at settingsPath. The function is expected to be
+// idempotent.
+type hookWireFn func(settingsPath, hooksDir string) error
 
 // runHookSelectionPrompt shows a numbered hook list and installs the selected hooks.
 //
@@ -137,8 +139,8 @@ func runHookSelectionPrompt(
 	}
 
 	// Wire installed hooks into Claude settings (~/.claude/settings.json).
-	claudeDir := filepath.Join(home, ".claude")
-	if _, addErr := wireHooks(claudeDir, hooksDir); addErr != nil {
+	settingsPath := filepath.Join(home, ".claude", "settings.json")
+	if addErr := wireHooks(settingsPath, hooksDir); addErr != nil {
 		fmt.Fprintf(w, "\nNote: could not wire hooks into settings.json: %v\n", addErr)
 	}
 
@@ -167,7 +169,7 @@ func runHookSelectionPromptReal() error {
 			_, extractErr := embed.ExtractHook(name, dir, force)
 			return extractErr
 		},
-		installClaudeHooks,
+		updateSettingsJSON,
 		home,
 	)
 }

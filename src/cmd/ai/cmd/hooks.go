@@ -487,13 +487,14 @@ func runHooksInstallClaude(cmd *cobra.Command, claudeRoot string) error {
 		aiRoot = filepath.Join(home, ".ai")
 	}
 	hooksDir := filepath.Join(aiRoot, "hooks")
-	added, err := installClaudeHooks(claudeRoot, hooksDir)
-	if err != nil {
+	if claudeRoot == "" {
+		claudeRoot = "."
+	}
+	settingsPath := filepath.Join(claudeRoot, ".claude", "settings.json")
+	if err := updateSettingsJSON(settingsPath, hooksDir); err != nil {
 		return err
 	}
-	_, _ = fmt.Fprintf(cmd.OutOrStdout(),
-		"Wired %d Claude hook entries into %s\n",
-		added, filepath.Join(claudeRoot, ".claude", "settings.json"))
+	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Wired Claude hooks into %s\n", settingsPath)
 	return nil
 }
 
@@ -687,6 +688,12 @@ func canonicalWiring(_ string) []eventHookSpec {
 // updateSettingsJSON reads settings.json (if present), merges the canonical
 // hook wiring, and writes the result back. Idempotent and non-destructive:
 // existing keys (model, enabledPlugins, etc.) are preserved.
+//
+// Before merging, purgeMalformedHookEntries scrubs any non-canonical shapes
+// left behind by older writers (flat {type, command} entries, {"hooks": null}
+// stubs, absolute-path commands). Without that step the existing JSON
+// round-trip silently coerced those entries into hookGroup{Hooks: nil}, which
+// serialized back as growing piles of {"hooks": null} stubs.
 func updateSettingsJSON(settingsPath, hooksDir string) error {
 	// Read existing settings or start fresh.
 	var raw map[string]any
@@ -701,6 +708,8 @@ func updateSettingsJSON(settingsPath, hooksDir string) error {
 	if raw == nil {
 		raw = make(map[string]any)
 	}
+
+	purgeMalformedHookEntries(raw)
 
 	// Fetch or initialise the hooks map.
 	hooksMap, _ := raw["hooks"].(map[string]any)
@@ -719,11 +728,17 @@ func updateSettingsJSON(settingsPath, hooksDir string) error {
 			desired.Hooks = append(desired.Hooks, hookEntry{Type: "command", Command: cmd})
 		}
 
-		// Load existing groups for this event.
+		// Load existing groups for this event. After purge, every surviving
+		// entry conforms to hookGroup shape, so unmarshal failure is a real bug.
 		var groups []hookGroup
 		if existing, ok := hooksMap[spec.event]; ok {
-			existingJSON, _ := json.Marshal(existing)
-			_ = json.Unmarshal(existingJSON, &groups)
+			existingJSON, marshalErr := json.Marshal(existing)
+			if marshalErr != nil {
+				return fmt.Errorf("re-marshal %s hooks: %w", spec.event, marshalErr)
+			}
+			if unmarshalErr := json.Unmarshal(existingJSON, &groups); unmarshalErr != nil {
+				return fmt.Errorf("decode %s hooks (post-purge): %w", spec.event, unmarshalErr)
+			}
 		}
 
 		// Check if an identical group (same matcher) is already present;
