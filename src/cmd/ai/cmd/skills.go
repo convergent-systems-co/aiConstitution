@@ -770,9 +770,9 @@ Use --all to install every available skill at once.`,
 				return runSkillsUpgradeAll(c)
 			},
 		},
-		&cobra.Command{Use: "share <name>", Short: "File a skill draft upstream as an atom PR", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
-			notice("skills share:", args[0])
-			return stub("skills share", "§7.10.3")
+		&cobra.Command{Use: "share <slug>", Short: "File a skill draft upstream as a contribution issue", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+			filePath := filepath.Join(skillsManifestDir(), args[0], "SKILL.md")
+			return runShareUpstream(args[0], filePath, "convergent-systems-co/skill-atoms", "", cmd.OutOrStdout())
 		}},
 		newSkillsLinkCmd(),
 	)

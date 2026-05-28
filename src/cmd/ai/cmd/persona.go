@@ -130,19 +130,18 @@ func newPersonaShowCmd() *cobra.Command {
 	}
 }
 
-// newPersonaShareCmd remains a stub (§7.9.3 is out of scope for this batch).
+// newPersonaShareCmd implements `ai persona share <name>`.
+// It files the persona YAML as a contribution issue on the persona-atoms repo.
 func newPersonaShareCmd() *cobra.Command {
-	var shareDomain bool
 	share := &cobra.Command{
 		Use:   "share <name>",
-		Short: "File a persona draft upstream (agentic by default; --domain for reviewer)",
+		Short: "File a persona draft upstream as a contribution issue",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			notice("persona share:", args[0], "(reviewer:", shareDomain, ")")
-			return stub("persona share", "§7.9.3")
+			filePath := personaPath(args[0])
+			return runShareUpstream(args[0], filePath, "convergent-systems-co/persona-atoms", "", cmd.OutOrStdout())
 		},
 	}
-	share.Flags().BoolVar(&shareDomain, "domain", false, "share as a reviewer persona (YAML, kind: reviewer)")
 	return share
 }
 

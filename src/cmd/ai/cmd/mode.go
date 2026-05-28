@@ -127,8 +127,8 @@ See SPEC.md §3.7 + §7.`,
 		Short: "File a draft as an upstream atom PR",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			notice("mode share:", args[0])
-			return stub("mode share", "§7.9.3")
+			filePath := filepath.Join(paths.AIRoot(), "mode", args[0])
+			return runShareUpstream(args[0], filePath, "convergent-systems-co/mode-atoms", "", cmd.OutOrStdout())
 		},
 	})
 

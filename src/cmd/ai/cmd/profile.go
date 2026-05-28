@@ -40,12 +40,12 @@ See SPEC.md §3.8 + §7.8.`,
 		newProfileNewCmd(),
 		newProfileEditCmd(),
 		newProfileRemoveCmd(),
-		// share remains stub
+		// share
 		&cobra.Command{
-			Use: "share <name>", Short: "File the profile upstream as an atom PR", Args: cobra.ExactArgs(1),
+			Use: "share <name>", Short: "File the profile upstream as a contribution issue", Args: cobra.ExactArgs(1),
 			RunE: func(cmd *cobra.Command, args []string) error {
-				notice("profile share:", args[0])
-				return stub("profile share", "§7.9.3")
+				filePath := profilePath(args[0])
+				return runShareUpstream(args[0], filePath, "convergent-systems-co/profile-atoms", "", cmd.OutOrStdout())
 			},
 		},
 	)
