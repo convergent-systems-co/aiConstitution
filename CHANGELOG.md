@@ -51,6 +51,13 @@ binary version independently — the binary tracks `SemVer` over the
 - **`ai constitution restore --url <git-url>`**: restore `~/.ai/` from a personal git repo URL (#408)
 - **`ai setup` TUI**: hook selection step added before skill selection; users pick individual hooks interactively (#410)
 - **ai-atoms.com**: 14 governance hook atoms published (13 with Python scripts + `hook/lib`); `hook-v1.json` schema extended with `script` and `depends_on` fields
+- **281 skills in ai-atoms.com catalog**: 18 additional convergent-systems skills (commit, cleanup, diagram, make-clean, make-work, refactor, etc.) published to ai-atoms.com (previously only in skill-atoms.com)
+- **Website**: `ai-constitution.convergent-systems.co` updated — four-file model replaced with unified Constitution.md description; version updated to v1.3.0 (#426)
+
+### Changed (post-initial entry)
+
+- **Embed stripped**: 12 hook `.py` scripts removed from binary embed; hooks now source exclusively from ai-atoms.com catalog with `_lib.py` remaining as the only embedded infrastructure (#424)
+- **`ai skills install` fallback**: when a skill isn't in ai-atoms.com catalog yet, falls back to skill-atoms GitHub API automatically (#429)
 
 ### Fixed (post-initial entry)
 
