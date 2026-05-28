@@ -28,16 +28,17 @@ func ApplyIdentityRoutingForTest(out io.Writer, cloneURL, cloneDir, forceName st
 	return applyIdentityRouting(out, cloneURL, cloneDir, forceName)
 }
 
-// PurgeOldHookEntriesForTest exposes purgeOldHookEntries to the external
-// _test package without making the underlying function part of the public API.
-func PurgeOldHookEntriesForTest(settings map[string]any) {
-	purgeOldHookEntries(settings)
+// PurgeMalformedHookEntriesForTest exposes purgeMalformedHookEntries to the
+// external _test package without making the underlying function part of the
+// public API.
+func PurgeMalformedHookEntriesForTest(settings map[string]any) {
+	purgeMalformedHookEntries(settings)
 }
 
-// InstallClaudeHooksForTest exposes installClaudeHooks to the external
-// _test package without making the underlying function part of the public API.
-func InstallClaudeHooksForTest(repoRoot, hooksDir string) (int, error) {
-	return installClaudeHooks(repoRoot, hooksDir)
+// UpdateSettingsJSONForTest exposes updateSettingsJSON to the external _test
+// package so tests can drive the canonical writer directly.
+func UpdateSettingsJSONForTest(settingsPath, hooksDir string) error {
+	return updateSettingsJSON(settingsPath, hooksDir)
 }
 
 // AiAtomsCatalogURLForTest exposes AiAtomsCatalogURL to the external _test

@@ -18,9 +18,9 @@ func testHookInstallRecorder(installed *[]string) hookInstallFn {
 
 // testWireRecorder returns a hookWireFn that records calls.
 func testWireRecorder(called *bool) hookWireFn {
-	return func(_, _ string) (int, error) {
+	return func(_, _ string) error {
 		*called = true
-		return 0, nil
+		return nil
 	}
 }
 

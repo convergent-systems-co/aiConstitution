@@ -1,221 +1,50 @@
 package cmd_test
 
 import (
-	"bytes"
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/convergent-systems-co/aiConstitution/src/cmd/ai/cmd"
 )
 
-// writeStubHooks creates a tiny ~/.ai/hooks/ tree with a few of the
-// canonical hook filenames so the install test has something to wire.
-func writeStubHooks(t *testing.T, aiRoot string, names ...string) string {
-	t.Helper()
-	hooksDir := filepath.Join(aiRoot, "hooks")
-	if err := os.MkdirAll(hooksDir, 0o750); err != nil {
-		t.Fatal(err)
-	}
-	for _, n := range names {
-		if err := os.WriteFile(filepath.Join(hooksDir, n), []byte("# stub\n"), 0o600); err != nil {
-			t.Fatal(err)
-		}
-	}
-	return hooksDir
-}
-
-func TestHooksInstallClaudeCreatesSettings(t *testing.T) {
-	aiRoot := t.TempDir()
-	repoRoot := t.TempDir()
-	t.Setenv("AI_ROOT", aiRoot)
-
-	writeStubHooks(t, aiRoot, "audit.py", "branch-guard.py")
-
-	root := cmd.NewRootCmd()
-	buf := &bytes.Buffer{}
-	root.SetOut(buf)
-	root.SetErr(buf)
-	root.SetArgs([]string{"hooks", "install", "--claude", "--claude-root", repoRoot})
-	if err := root.Execute(); err != nil {
-		t.Fatalf("install --claude error: %v\noutput:%s", err, buf)
-	}
-
-	settingsPath := filepath.Join(repoRoot, ".claude", "settings.json")
-	data, err := os.ReadFile(settingsPath)
-	if err != nil {
-		t.Fatalf("read settings.json: %v", err)
-	}
-	var s struct {
-		Hooks map[string][]map[string]string `json:"hooks"`
-	}
-	if err := json.Unmarshal(data, &s); err != nil {
-		t.Fatalf("decode settings.json: %v\nraw: %s", err, data)
-	}
-	if len(s.Hooks["PreToolUse"]) == 0 {
-		t.Errorf("PreToolUse hooks empty:\n%s", data)
-	}
-	// branch-guard.py should produce ONE PreToolUse entry; audit.py should produce
-	// one too (audit fires on every event). So total PreToolUse >= 2.
-	if len(s.Hooks["PreToolUse"]) < 2 {
-		t.Errorf("PreToolUse < 2 entries:\n%s", data)
-	}
-	// audit.py wires into Stop as well.
-	if len(s.Hooks["Stop"]) == 0 {
-		t.Errorf("Stop hooks empty:\n%s", data)
-	}
-}
-
-func TestHooksInstallClaudeIdempotent(t *testing.T) {
-	aiRoot := t.TempDir()
-	repoRoot := t.TempDir()
-	t.Setenv("AI_ROOT", aiRoot)
-	writeStubHooks(t, aiRoot, "audit.py", "branch-guard.py")
-
-	// First run.
-	root1 := cmd.NewRootCmd()
-	root1.SetOut(&bytes.Buffer{})
-	root1.SetErr(&bytes.Buffer{})
-	root1.SetArgs([]string{"hooks", "install", "--claude", "--claude-root", repoRoot})
-	if err := root1.Execute(); err != nil {
-		t.Fatal(err)
-	}
-	before, err := os.ReadFile(filepath.Join(repoRoot, ".claude", "settings.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// Second run.
-	root2 := cmd.NewRootCmd()
-	root2.SetOut(&bytes.Buffer{})
-	root2.SetErr(&bytes.Buffer{})
-	root2.SetArgs([]string{"hooks", "install", "--claude", "--claude-root", repoRoot})
-	if err := root2.Execute(); err != nil {
-		t.Fatal(err)
-	}
-	after, err := os.ReadFile(filepath.Join(repoRoot, ".claude", "settings.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// Re-running must NOT duplicate entries — count of PreToolUse stays the same.
-	var b, a struct {
-		Hooks map[string][]map[string]string `json:"hooks"`
-	}
-	if err := json.Unmarshal(before, &b); err != nil {
-		t.Fatal(err)
-	}
-	if err := json.Unmarshal(after, &a); err != nil {
-		t.Fatal(err)
-	}
-	for ev := range b.Hooks {
-		if len(a.Hooks[ev]) != len(b.Hooks[ev]) {
-			t.Errorf("event %s grew on idempotent re-run: before=%d after=%d", ev, len(b.Hooks[ev]), len(a.Hooks[ev]))
-		}
-	}
-}
-
-func TestHooksInstallClaudePreservesExistingKeys(t *testing.T) {
-	aiRoot := t.TempDir()
-	repoRoot := t.TempDir()
-	t.Setenv("AI_ROOT", aiRoot)
-	writeStubHooks(t, aiRoot, "branch-guard.py")
-
-	// Pre-existing settings.json with a key we don't manage.
-	settingsDir := filepath.Join(repoRoot, ".claude")
-	if err := os.MkdirAll(settingsDir, 0o750); err != nil {
-		t.Fatal(err)
-	}
-	pre := []byte(`{"theme": "dark", "hooks": {}}` + "\n")
-	if err := os.WriteFile(filepath.Join(settingsDir, "settings.json"), pre, 0o600); err != nil {
-		t.Fatal(err)
-	}
-
-	root := cmd.NewRootCmd()
-	root.SetOut(&bytes.Buffer{})
-	root.SetErr(&bytes.Buffer{})
-	root.SetArgs([]string{"hooks", "install", "--claude", "--claude-root", repoRoot})
-	if err := root.Execute(); err != nil {
-		t.Fatal(err)
-	}
-
-	data, err := os.ReadFile(filepath.Join(settingsDir, "settings.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	var s map[string]any
-	if err := json.Unmarshal(data, &s); err != nil {
-		t.Fatalf("decode: %v\n%s", err, data)
-	}
-	if s["theme"] != "dark" {
-		t.Errorf("theme was clobbered: %v", s["theme"])
-	}
-}
-
 // ---------------------------------------------------------------------------
-// Tests for purgeOldHookEntries (via PurgeOldHookEntriesForTest export)
+// purgeMalformedHookEntries — covers every malformed shape we have observed
+// in the wild (see ~/.ai/audit/violations/2026-05-28T21-48-49Z-…).
 // ---------------------------------------------------------------------------
 
-func TestPurgeOldHookEntries_RemovesFlatAbsolutePath(t *testing.T) {
+func TestPurgeMalformed_RemovesFlatAbsolutePath(t *testing.T) {
 	settings := map[string]any{
 		"hooks": map[string]any{
 			"PreToolUse": []any{
+				// Pre-v1.3 absolute-path flat entry (Bug A + earlier absolute paths).
 				map[string]any{"type": "PreToolUse", "command": "python3 /home/user/.ai/hooks/audit.py"},
-				map[string]any{"type": "PreToolUse", "command": "ai hooks run audit"},
-			},
-		},
-	}
-	cmd.PurgeOldHookEntriesForTest(settings)
-
-	hooks, ok := settings["hooks"].(map[string]any)
-	if !ok {
-		t.Fatal("hooks key missing after purge")
-	}
-	entries, ok := hooks["PreToolUse"].([]any)
-	if !ok {
-		t.Fatal("PreToolUse key missing after purge")
-	}
-	if len(entries) != 1 {
-		t.Fatalf("expected 1 entry after purge, got %d: %v", len(entries), entries)
-	}
-	m, ok := entries[0].(map[string]any)
-	if !ok {
-		t.Fatal("entry is not a map")
-	}
-	if m["command"] != "ai hooks run audit" {
-		t.Errorf("wrong entry preserved: %v", m["command"])
-	}
-}
-
-func TestPurgeOldHookEntries_RemovesGroupFormat(t *testing.T) {
-	settings := map[string]any{
-		"hooks": map[string]any{
-			"PreToolUse": []any{
-				// Group format: "hooks" array inside the entry
+				// Canonical group with a portable command.
 				map[string]any{
 					"hooks": []any{
-						map[string]any{"command": "/home/user/.ai/hooks/branch-guard.py"},
+						map[string]any{"type": "command", "command": "ai hooks run audit"},
 					},
 				},
-				map[string]any{"type": "PreToolUse", "command": "ai hooks run branch-guard"},
 			},
 		},
 	}
-	cmd.PurgeOldHookEntriesForTest(settings)
+	cmd.PurgeMalformedHookEntriesForTest(settings)
 
-	hooks := settings["hooks"].(map[string]any)
-	entries := hooks["PreToolUse"].([]any)
+	entries := settings["hooks"].(map[string]any)["PreToolUse"].([]any)
 	if len(entries) != 1 {
-		t.Fatalf("expected 1 entry after purge, got %d: %v", len(entries), entries)
+		t.Fatalf("expected 1 surviving entry, got %d: %v", len(entries), entries)
 	}
-	m := entries[0].(map[string]any)
-	if m["command"] != "ai hooks run branch-guard" {
-		t.Errorf("wrong entry preserved: %v", m["command"])
+	g := entries[0].(map[string]any)
+	if _, ok := g["hooks"].([]any); !ok {
+		t.Fatalf("surviving entry must be canonical group form; got %v", g)
 	}
 }
 
-func TestPurgeOldHookEntries_PreservesPortableEntries(t *testing.T) {
+func TestPurgeMalformed_RemovesFlatPortableEntry(t *testing.T) {
+	// Bug A: addClaudeEntry wrote flat {type: <eventName>, command: "ai hooks run …"}.
+	// These must be dropped — the canonical writer re-emits them as proper groups.
 	settings := map[string]any{
 		"hooks": map[string]any{
 			"PreToolUse": []any{
@@ -224,126 +53,506 @@ func TestPurgeOldHookEntries_PreservesPortableEntries(t *testing.T) {
 			},
 		},
 	}
-	cmd.PurgeOldHookEntriesForTest(settings)
+	cmd.PurgeMalformedHookEntriesForTest(settings)
 
-	hooks := settings["hooks"].(map[string]any)
-	entries := hooks["PreToolUse"].([]any)
-	if len(entries) != 2 {
-		t.Fatalf("expected 2 entries preserved, got %d: %v", len(entries), entries)
+	entries := settings["hooks"].(map[string]any)["PreToolUse"].([]any)
+	if len(entries) != 0 {
+		t.Fatalf("expected all flat entries dropped; got %d: %v", len(entries), entries)
 	}
 }
 
-func TestPurgeOldHookEntries_EmptySettings(t *testing.T) {
-	// No "hooks" key — must not panic.
-	settings := map[string]any{}
-	cmd.PurgeOldHookEntriesForTest(settings)
+func TestPurgeMalformed_RemovesNullHookStubs(t *testing.T) {
+	// Bug B: updateSettingsJSON round-tripped flat entries through []hookGroup,
+	// which serialized them back as {"hooks": null}. These must be dropped.
+	settings := map[string]any{
+		"hooks": map[string]any{
+			"PreToolUse": []any{
+				map[string]any{"hooks": nil},
+				map[string]any{"hooks": []any{}},
+				map[string]any{
+					"hooks": []any{
+						map[string]any{"type": "command", "command": "ai hooks run audit"},
+					},
+				},
+			},
+		},
+	}
+	cmd.PurgeMalformedHookEntriesForTest(settings)
 
-	// Settings unchanged (no hooks key added).
+	entries := settings["hooks"].(map[string]any)["PreToolUse"].([]any)
+	if len(entries) != 1 {
+		t.Fatalf("expected only the canonical group to survive; got %d: %v", len(entries), entries)
+	}
+}
+
+func TestPurgeMalformed_DropsBadNestedType(t *testing.T) {
+	// A group with a nested entry whose type is not "command" is malformed —
+	// the nested entry must be dropped. If no valid commands remain, the
+	// whole group goes too.
+	settings := map[string]any{
+		"hooks": map[string]any{
+			"PreToolUse": []any{
+				map[string]any{
+					"matcher": "Bash",
+					"hooks": []any{
+						map[string]any{"type": "PreToolUse", "command": "ai hooks run branch-guard"},
+						map[string]any{"type": "command", "command": "ai hooks run audit"},
+					},
+				},
+			},
+		},
+	}
+	cmd.PurgeMalformedHookEntriesForTest(settings)
+
+	entries := settings["hooks"].(map[string]any)["PreToolUse"].([]any)
+	if len(entries) != 1 {
+		t.Fatalf("expected 1 group to survive; got %d: %v", len(entries), entries)
+	}
+	g := entries[0].(map[string]any)
+	if g["matcher"] != "Bash" {
+		t.Errorf("matcher lost: %v", g)
+	}
+	inner := g["hooks"].([]any)
+	if len(inner) != 1 {
+		t.Fatalf("expected only the canonical nested entry; got %d: %v", len(inner), inner)
+	}
+	h := inner[0].(map[string]any)
+	if h["type"] != "command" || h["command"] != "ai hooks run audit" {
+		t.Errorf("nested entry wrong: %v", h)
+	}
+}
+
+func TestPurgeMalformed_PreservesCanonicalGroups(t *testing.T) {
+	// Canonical {matcher, hooks:[{type:"command", command}]} groups must survive
+	// untouched and idempotently.
+	settings := map[string]any{
+		"hooks": map[string]any{
+			"PreToolUse": []any{
+				map[string]any{
+					"hooks": []any{
+						map[string]any{"type": "command", "command": "ai hooks run audit"},
+					},
+				},
+				map[string]any{
+					"matcher": "Bash",
+					"hooks": []any{
+						map[string]any{"type": "command", "command": "ai hooks run branch-guard"},
+					},
+				},
+			},
+		},
+	}
+	cmd.PurgeMalformedHookEntriesForTest(settings)
+	// Run twice to confirm idempotence.
+	cmd.PurgeMalformedHookEntriesForTest(settings)
+
+	entries := settings["hooks"].(map[string]any)["PreToolUse"].([]any)
+	if len(entries) != 2 {
+		t.Fatalf("expected both canonical groups preserved; got %d: %v", len(entries), entries)
+	}
+}
+
+func TestPurgeMalformed_EmptySettings(t *testing.T) {
+	settings := map[string]any{}
+	cmd.PurgeMalformedHookEntriesForTest(settings)
 	if _, ok := settings["hooks"]; ok {
 		t.Error("purge should not add a hooks key when none existed")
 	}
 }
 
-func TestInstallClaudeHooks_PurgesAndRewires(t *testing.T) {
-	aiRoot := t.TempDir()
-	repoRoot := t.TempDir()
-	t.Setenv("AI_ROOT", aiRoot)
+// ---------------------------------------------------------------------------
+// updateSettingsJSON — regression test against the exact corruption observed
+// in the wild (see settings.json.broken).
+// ---------------------------------------------------------------------------
 
-	hooksDir := writeStubHooks(t, aiRoot, "audit.py", "branch-guard.py")
+// TestUpdateSettingsJSON_RecoversFromCorruptedFile drives the canonical writer
+// against a settings.json containing every bad shape we saw on disk and
+// asserts the result is a single clean set of canonical groups per event.
+func TestUpdateSettingsJSON_RecoversFromCorruptedFile(t *testing.T) {
+	tmp := t.TempDir()
+	settingsPath := filepath.Join(tmp, "settings.json")
 
-	// Seed settings.json with old absolute-path entries so we simulate a
-	// pre-v1.3 installation.
-	settingsDir := filepath.Join(repoRoot, ".claude")
-	if err := os.MkdirAll(settingsDir, 0o750); err != nil {
-		t.Fatal(err)
-	}
-	oldSettings := map[string]any{
+	// Synthesize the exact PreToolUse pathology: 1 valid all-tools group,
+	// several {"hooks": null} stubs, 1 valid Bash group, more nulls, then
+	// the flat {type: "PreToolUse", command} entries that addClaudeEntry wrote.
+	corrupted := map[string]any{
+		"model": "sonnet[1m]",
 		"hooks": map[string]any{
 			"PreToolUse": []any{
-				map[string]any{"type": "PreToolUse", "command": "python3 /home/user/.ai/hooks/audit.py"},
-				map[string]any{"type": "PreToolUse", "command": "python3 /home/user/.ai/hooks/branch-guard.py"},
-			},
-			"Stop": []any{
-				map[string]any{"type": "Stop", "command": "python3 /home/user/.ai/hooks/audit.py"},
+				map[string]any{
+					"hooks": []any{
+						map[string]any{"type": "command", "command": "ai hooks run audit"},
+					},
+				},
+				map[string]any{"hooks": nil},
+				map[string]any{"hooks": nil},
+				map[string]any{
+					"matcher": "Bash",
+					"hooks": []any{
+						map[string]any{"type": "command", "command": "ai hooks run branch-guard"},
+					},
+				},
+				map[string]any{"hooks": nil},
+				map[string]any{"hooks": nil},
+				map[string]any{"command": "ai hooks run audit", "type": "PreToolUse"},
+				map[string]any{"command": "ai hooks run branch-guard", "type": "PreToolUse"},
 			},
 		},
 	}
-	data, err := json.Marshal(oldSettings)
+	data, err := json.MarshalIndent(corrupted, "", "  ")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(settingsDir, "settings.json"), data, 0o600); err != nil {
+	if err := os.WriteFile(settingsPath, data, 0o644); err != nil {
 		t.Fatal(err)
 	}
 
-	// Call installClaudeHooks directly via the exported wrapper.
-	added, err := cmd.InstallClaudeHooksForTest(repoRoot, hooksDir)
-	if err != nil {
-		t.Fatalf("installClaudeHooks error: %v", err)
-	}
-	if added == 0 {
-		t.Error("expected at least one entry added (old entries should have been purged first)")
+	if err := cmd.UpdateSettingsJSONForTest(settingsPath, ""); err != nil {
+		t.Fatalf("updateSettingsJSON: %v", err)
 	}
 
-	// Read result and verify.
-	result, err := os.ReadFile(filepath.Join(settingsDir, "settings.json"))
+	out, err := os.ReadFile(settingsPath)
 	if err != nil {
 		t.Fatal(err)
 	}
-	var s struct {
-		Hooks map[string][]map[string]string `json:"hooks"`
-	}
-	if err := json.Unmarshal(result, &s); err != nil {
-		t.Fatalf("decode: %v\nraw: %s", err, result)
+	var got map[string]any
+	if err := json.Unmarshal(out, &got); err != nil {
+		t.Fatalf("result not valid JSON: %v\n%s", err, out)
 	}
 
-	// Old absolute-path entries must be gone; new portable entries must be present.
-	for ev, entries := range s.Hooks {
-		seen := map[string]int{}
-		for _, e := range entries {
-			cmd := e["command"]
-			seen[cmd]++
-			// No old absolute-path format should survive.
-			if len(cmd) > 0 && (contains(cmd, "/.ai/hooks/") || (hasPrefix(cmd, "python3 ") && contains(cmd, "/hooks/"))) {
-				t.Errorf("event %s: old entry not purged: %q", ev, cmd)
-			}
-			// No duplicates.
-			if seen[cmd] > 1 {
-				t.Errorf("event %s: duplicate entry %q", ev, cmd)
-			}
-		}
+	// Unrelated keys must survive.
+	if got["model"] != "sonnet[1m]" {
+		t.Errorf("model key was clobbered: %v", got["model"])
 	}
 
-	// Portable entries must exist.
-	foundPortable := false
-	for _, entries := range s.Hooks {
-		for _, e := range entries {
-			if hasPrefix(e["command"], "ai hooks run ") {
-				foundPortable = true
-			}
+	hooks, ok := got["hooks"].(map[string]any)
+	if !ok {
+		t.Fatalf("hooks key missing or wrong type: %v", got["hooks"])
+	}
+	entries, ok := hooks["PreToolUse"].([]any)
+	if !ok {
+		t.Fatalf("PreToolUse missing or wrong type: %v", hooks["PreToolUse"])
+	}
+
+	// Expect exactly two groups: one matcher="" (all-tools), one matcher="Bash".
+	// No nulls, no flat entries.
+	if len(entries) != 2 {
+		t.Fatalf("expected 2 canonical groups, got %d:\n%s", len(entries), out)
+	}
+	seenAllTools, seenBash := false, false
+	for _, e := range entries {
+		g, ok := e.(map[string]any)
+		if !ok {
+			t.Fatalf("entry not an object: %v", e)
+		}
+		if _, ok := g["hooks"].([]any); !ok {
+			t.Fatalf("entry has no hooks array (malformed survivor): %v", g)
+		}
+		if _, hasType := g["type"]; hasType {
+			t.Errorf("entry retains stray top-level type field: %v", g)
+		}
+		if _, hasCmd := g["command"]; hasCmd {
+			t.Errorf("entry retains stray top-level command field: %v", g)
+		}
+		matcher, _ := g["matcher"].(string)
+		if matcher == "Bash" {
+			seenBash = true
+		} else {
+			seenAllTools = true
 		}
 	}
-	if !foundPortable {
-		t.Errorf("no portable 'ai hooks run' entries found after re-wiring:\n%s", result)
+	if !seenAllTools {
+		t.Errorf("expected all-tools group (matcher=\"\"): %s", out)
+	}
+	if !seenBash {
+		t.Errorf("expected Bash matcher group: %s", out)
 	}
 }
 
-// contains and hasPrefix are thin string helpers used only in this test file
-// to avoid importing strings in the _test package (it's already imported by
-// the package under test, not the external test package).
-func contains(s, sub string) bool {
-	return len(s) >= len(sub) && (s == sub || len(sub) == 0 || stringIndex(s, sub) >= 0)
+// TestUpdateSettingsJSON_Idempotent verifies running the writer twice produces
+// byte-identical output — the failure mode in the wild was that re-runs grew
+// the file with {"hooks": null} stubs.
+func TestUpdateSettingsJSON_Idempotent(t *testing.T) {
+	tmp := t.TempDir()
+	settingsPath := filepath.Join(tmp, "settings.json")
+
+	if err := cmd.UpdateSettingsJSONForTest(settingsPath, ""); err != nil {
+		t.Fatalf("first run: %v", err)
+	}
+	first, err := os.ReadFile(settingsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := cmd.UpdateSettingsJSONForTest(settingsPath, ""); err != nil {
+		t.Fatalf("second run: %v", err)
+	}
+	second, err := os.ReadFile(settingsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(first) != string(second) {
+		t.Errorf("not idempotent:\nfirst:\n%s\nsecond:\n%s", first, second)
+	}
 }
 
-func hasPrefix(s, prefix string) bool {
-	return len(s) >= len(prefix) && s[:len(prefix)] == prefix
+// ---------------------------------------------------------------------------
+// Schema validity — assert the written settings.json conforms to the Claude
+// Code hook schema, independent of the canonical wiring content. This catches
+// any future writer change that re-introduces the corruption shapes.
+//
+// Schema reference (Claude Code settings.json hooks section):
+//
+//	hooks: {
+//	  <EventName>: [
+//	    {
+//	      matcher?: string,            // optional; absent or "" = all tools
+//	      hooks: [                     // REQUIRED, non-empty array
+//	        { type: "command",         // REQUIRED literal "command"
+//	          command: string          // REQUIRED non-empty
+//	        }, ...
+//	      ]
+//	    }, ...
+//	  ]
+//	}
+//
+// Allowed event names mirror Claude Code's documented hook events.
+// ---------------------------------------------------------------------------
+
+var allowedEventNames = map[string]bool{
+	"PreToolUse":       true,
+	"PostToolUse":      true,
+	"UserPromptSubmit": true,
+	"SessionStart":     true,
+	"SessionEnd":       true,
+	"SubagentStop":     true,
+	"Stop":             true,
+	"PreCompact":       true,
+	"Notification":     true,
 }
 
-func stringIndex(s, sub string) int {
-	for i := 0; i <= len(s)-len(sub); i++ {
-		if s[i:i+len(sub)] == sub {
-			return i
+// validateSettingsJSONShape walks a parsed settings.json and reports every
+// schema violation it finds. Returns nil only when the file is fully valid.
+func validateSettingsJSONShape(t *testing.T, settings map[string]any) {
+	t.Helper()
+	hooksRaw, ok := settings["hooks"]
+	if !ok {
+		return // no hooks section is valid — empty config.
+	}
+	hooks, ok := hooksRaw.(map[string]any)
+	if !ok {
+		t.Errorf("settings.hooks must be an object, got %T: %v", hooksRaw, hooksRaw)
+		return
+	}
+	for event, val := range hooks {
+		if !allowedEventNames[event] {
+			t.Errorf("hooks.%s: unknown event name (allowed: %v)", event, keys(allowedEventNames))
+		}
+		entries, ok := val.([]any)
+		if !ok {
+			t.Errorf("hooks.%s must be an array, got %T", event, val)
+			continue
+		}
+		for i, entry := range entries {
+			validateHookGroup(t, event, i, entry)
 		}
 	}
-	return -1
+}
+
+func validateHookGroup(t *testing.T, event string, idx int, entry any) {
+	t.Helper()
+	g, ok := entry.(map[string]any)
+	if !ok {
+		t.Errorf("hooks.%s[%d] must be an object, got %T: %v", event, idx, entry, entry)
+		return
+	}
+	for k := range g {
+		if k != "matcher" && k != "hooks" {
+			t.Errorf("hooks.%s[%d] has unknown field %q (allowed: matcher, hooks)", event, idx, k)
+		}
+	}
+	if m, present := g["matcher"]; present {
+		if _, ok := m.(string); !ok {
+			t.Errorf("hooks.%s[%d].matcher must be a string, got %T", event, idx, m)
+		}
+	}
+	raw, ok := g["hooks"]
+	if !ok {
+		t.Errorf("hooks.%s[%d].hooks is required", event, idx)
+		return
+	}
+	inner, ok := raw.([]any)
+	if !ok {
+		t.Errorf("hooks.%s[%d].hooks must be an array, got %T (value: %v)", event, idx, raw, raw)
+		return
+	}
+	if len(inner) == 0 {
+		t.Errorf("hooks.%s[%d].hooks must be non-empty", event, idx)
+		return
+	}
+	for j, h := range inner {
+		validateHookEntry(t, event, idx, j, h)
+	}
+}
+
+func validateHookEntry(t *testing.T, event string, gi, hi int, h any) {
+	t.Helper()
+	m, ok := h.(map[string]any)
+	if !ok {
+		t.Errorf("hooks.%s[%d].hooks[%d] must be an object, got %T", event, gi, hi, h)
+		return
+	}
+	for k := range m {
+		if k != "type" && k != "command" {
+			t.Errorf("hooks.%s[%d].hooks[%d] has unknown field %q (allowed: type, command)", event, gi, hi, k)
+		}
+	}
+	typ, _ := m["type"].(string)
+	if typ != "command" {
+		t.Errorf("hooks.%s[%d].hooks[%d].type must be \"command\", got %q", event, gi, hi, typ)
+	}
+	cmd, _ := m["command"].(string)
+	if strings.TrimSpace(cmd) == "" {
+		t.Errorf("hooks.%s[%d].hooks[%d].command must be non-empty", event, gi, hi)
+	}
+}
+
+func keys(m map[string]bool) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	return out
+}
+
+func readAndValidate(t *testing.T, settingsPath string) {
+	t.Helper()
+	data, err := os.ReadFile(settingsPath)
+	if err != nil {
+		t.Fatalf("read settings.json: %v", err)
+	}
+	var got map[string]any
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatalf("settings.json is not valid JSON: %v\n%s", err, data)
+	}
+	validateSettingsJSONShape(t, got)
+}
+
+// TestSettingsJSON_ValidOnFreshWrite verifies the canonical writer produces a
+// schema-valid file when starting from nothing.
+func TestSettingsJSON_ValidOnFreshWrite(t *testing.T) {
+	tmp := t.TempDir()
+	settingsPath := filepath.Join(tmp, "settings.json")
+
+	if err := cmd.UpdateSettingsJSONForTest(settingsPath, ""); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	readAndValidate(t, settingsPath)
+}
+
+// TestSettingsJSON_ValidAfterRepairingCorruption verifies the writer recovers
+// from every malformed shape we have seen in the wild and emits a schema-valid
+// result. Drives a representative slice of the on-disk corruption from
+// settings.json.broken (the snapshot in ~/.ai/audit/violations/).
+func TestSettingsJSON_ValidAfterRepairingCorruption(t *testing.T) {
+	tmp := t.TempDir()
+	settingsPath := filepath.Join(tmp, "settings.json")
+
+	corrupted := map[string]any{
+		"hooks": map[string]any{
+			"PreToolUse": []any{
+				// Canonical groups that should be preserved.
+				map[string]any{
+					"hooks": []any{
+						map[string]any{"type": "command", "command": "ai hooks run audit"},
+					},
+				},
+				map[string]any{
+					"matcher": "Bash",
+					"hooks": []any{
+						map[string]any{"type": "command", "command": "ai hooks run branch-guard"},
+					},
+				},
+				// Null stubs (Bug B).
+				map[string]any{"hooks": nil},
+				map[string]any{"hooks": []any{}},
+				// Flat wrong-shape entries (Bug A).
+				map[string]any{"command": "ai hooks run audit", "type": "PreToolUse"},
+				map[string]any{"command": "ai hooks run worktree-guard", "type": "PreToolUse"},
+				// Pre-v1.3 absolute-path entry (both flat and embedded in a group).
+				map[string]any{"command": "python3 /Users/x/.ai/hooks/audit.py", "type": "PreToolUse"},
+				map[string]any{
+					"hooks": []any{
+						map[string]any{"type": "command", "command": "/Users/x/.ai/hooks/secret-block.py"},
+					},
+				},
+			},
+			"Stop": []any{
+				// Mixed: one canonical, one null, one flat.
+				map[string]any{
+					"hooks": []any{
+						map[string]any{"type": "command", "command": "ai hooks run audit"},
+					},
+				},
+				map[string]any{"hooks": nil},
+				map[string]any{"command": "ai hooks run checkpoint-tick", "type": "Stop"},
+			},
+		},
+	}
+	data, err := json.MarshalIndent(corrupted, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(settingsPath, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := cmd.UpdateSettingsJSONForTest(settingsPath, ""); err != nil {
+		t.Fatalf("repair: %v", err)
+	}
+	readAndValidate(t, settingsPath)
+}
+
+// TestSettingsJSON_RepeatedWritesStayValid verifies the writer remains valid
+// under many repeated invocations — the file must not grow or degrade.
+func TestSettingsJSON_RepeatedWritesStayValid(t *testing.T) {
+	tmp := t.TempDir()
+	settingsPath := filepath.Join(tmp, "settings.json")
+
+	for i := 0; i < 10; i++ {
+		if err := cmd.UpdateSettingsJSONForTest(settingsPath, ""); err != nil {
+			t.Fatalf("iteration %d: %v", i, err)
+		}
+		readAndValidate(t, settingsPath)
+	}
+}
+
+// TestSettingsJSON_NoNullHooks proves the writer never emits {"hooks": null}
+// stubs even when the input file is dense with them.
+func TestSettingsJSON_NoNullHooks(t *testing.T) {
+	tmp := t.TempDir()
+	settingsPath := filepath.Join(tmp, "settings.json")
+
+	// Seed with 50 null stubs under PreToolUse — the exact failure mode.
+	preToolUse := make([]any, 0, 50)
+	for i := 0; i < 50; i++ {
+		preToolUse = append(preToolUse, map[string]any{"hooks": nil})
+	}
+	seed := map[string]any{
+		"hooks": map[string]any{"PreToolUse": preToolUse},
+	}
+	data, _ := json.MarshalIndent(seed, "", "  ")
+	if err := os.WriteFile(settingsPath, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := cmd.UpdateSettingsJSONForTest(settingsPath, ""); err != nil {
+		t.Fatalf("repair: %v", err)
+	}
+
+	out, err := os.ReadFile(settingsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(out), "\"hooks\": null") {
+		t.Errorf("settings.json contains \"hooks\": null after repair:\n%s", out)
+	}
+	readAndValidate(t, settingsPath)
 }
