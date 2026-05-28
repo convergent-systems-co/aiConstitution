@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 
@@ -30,6 +31,31 @@ hooks/command-wrappers.toml.
 
 See SPEC.md §3.10 + §9.`,
 	}
+
+	// run — cross-platform hook executor (used as the command in settings.json)
+	c.AddCommand(&cobra.Command{
+		Use:   "run <name>",
+		Short: "Execute a hook by name (cross-platform; used in settings.json entries)",
+		Long: `run invokes a hook from ~/.ai/hooks/ by slug name (without extension).
+
+Discovers the Python binary automatically:
+  macOS / Linux:  python3 → python
+  Windows:        python3 → python → py -3
+
+Reads JSON from stdin and writes the hook's stdout/stderr to the
+calling process. Exit code is forwarded exactly.
+
+This is the command written into .claude/settings.json by
+'ai hooks install --all', making hook wiring portable across platforms:
+    {"command": "ai hooks run branch-guard"}
+
+Previously, install wrote a non-portable absolute path:
+    {"command": "python3 /Users/user/.ai/hooks/branch-guard.py"}`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			return runHooksRun(args[0])
+		},
+	})
 
 	// available — embedded hooks plus registry hooks from skill-atoms.com
 	c.AddCommand(&cobra.Command{
@@ -541,13 +567,20 @@ type eventHookSpec struct {
 
 // canonicalWiring returns the authoritative event→hook mapping for stories #84+#96.
 // Each spec describes one hook group under an event; PreToolUse has two groups.
-func canonicalWiring(hooksDir string) []eventHookSpec {
+//
+// Commands are written as "ai hooks run <slug>" (portable across platforms)
+// rather than absolute paths. hooksDir is retained for future use where a
+// direct path is needed (e.g. git pre-commit shim).
+func canonicalWiring(_ string) []eventHookSpec {
+	// h builds "ai hooks run <slug>" entries for named hook files.
+	// The slug is the filename without extension (e.g. "audit.py" → "audit").
 	h := func(names ...string) []string {
-		paths := make([]string, 0, len(names))
+		cmds := make([]string, 0, len(names))
 		for _, n := range names {
-			paths = append(paths, filepath.Join(hooksDir, n))
+			slug := strings.TrimSuffix(n, filepath.Ext(n))
+			cmds = append(cmds, "ai hooks run "+slug)
 		}
-		return paths
+		return cmds
 	}
 	return []eventHookSpec{
 		{event: "SessionStart", hooks: h("audit.py")},
@@ -1056,6 +1089,102 @@ exec python3 %q "$@"
 		return err
 	}
 	fmt.Println("installed", dst)
+	return nil
+}
+
+// ─── hooks run ────────────────────────────────────────────────────────────
+
+// runHooksRun implements `ai hooks run <name>`.
+// It locates the hook file, discovers the Python binary cross-platform,
+// and executes the hook with stdin passed through and exit code forwarded.
+func runHooksRun(name string) error {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("hooks run: resolve home: %w", err)
+	}
+	aiRoot := os.Getenv("AI_ROOT")
+	if aiRoot == "" {
+		aiRoot = filepath.Join(home, ".ai")
+	}
+	hooksDir := filepath.Join(aiRoot, "hooks")
+
+	hookPath := resolveHookPath(hooksDir, name)
+	if hookPath == "" {
+		return fmt.Errorf("hooks run: %q not found in %s\n"+
+			"  Run: ai hooks install --all", name, hooksDir)
+	}
+
+	var execCmd *exec.Cmd
+	if strings.HasSuffix(hookPath, ".py") {
+		pyArgs := discoverPythonArgs()
+		if pyArgs == nil {
+			return fmt.Errorf("hooks run: Python 3 not found\n" +
+				"  Install Python 3 and ensure it is in PATH (Windows: python3, python, or py)")
+		}
+		args := append(pyArgs[1:], hookPath) //nolint:gocritic // intentional append to slice
+		execCmd = exec.Command(pyArgs[0], args...)
+	} else {
+		// .sh or executable without extension
+		execCmd = exec.Command(hookPath)
+	}
+
+	execCmd.Stdin = os.Stdin
+	execCmd.Stdout = os.Stdout
+	execCmd.Stderr = os.Stderr
+	// Set the hooks dir on PYTHONPATH so _lib.py imports work.
+	execCmd.Env = append(os.Environ(), "PYTHONPATH="+hooksDir)
+
+	if err := execCmd.Run(); err != nil {
+		if exit, ok := err.(*exec.ExitError); ok {
+			// Propagate the hook's exit code directly.
+			os.Exit(exit.ExitCode())
+		}
+		return fmt.Errorf("hooks run %s: %w", name, err)
+	}
+	return nil
+}
+
+// resolveHookPath returns the absolute path to a hook file.
+// Tries, in order: exact name, name+".py", name+".sh".
+// Returns empty string if not found.
+func resolveHookPath(hooksDir, name string) string {
+	for _, candidate := range []string{
+		filepath.Join(hooksDir, name),
+		filepath.Join(hooksDir, name+".py"),
+		filepath.Join(hooksDir, name+".sh"),
+	} {
+		if _, err := os.Stat(candidate); err == nil {
+			return candidate
+		}
+	}
+	return ""
+}
+
+// discoverPythonArgs returns the command slice needed to invoke Python 3.
+// On Windows it tries python3 → python → py -3 (Windows Python Launcher).
+// On other platforms it tries python3 → python.
+// Returns nil if Python 3 cannot be located.
+func discoverPythonArgs() []string {
+	candidates := []string{"python3", "python"}
+	if runtime.GOOS == "windows" {
+		// py.exe is the Windows Python Launcher; it requires "-3" to force Python 3.
+		// Test it last so a proper python3/python install is preferred.
+		if p, err := exec.LookPath("python3"); err == nil {
+			return []string{p}
+		}
+		if p, err := exec.LookPath("python"); err == nil {
+			return []string{p}
+		}
+		if p, err := exec.LookPath("py"); err == nil {
+			return []string{p, "-3"}
+		}
+		return nil
+	}
+	for _, c := range candidates {
+		if p, err := exec.LookPath(c); err == nil {
+			return []string{p}
+		}
+	}
 	return nil
 }
 
