@@ -9,9 +9,8 @@ import Base from '../layouts/Base.astro';
       <span class="cs-mark">Installable.</span> Portable. Auditable.
     </h1>
     <p>
-      <code>ai</code> turns the four-file personal AI Constitution
-      (<code>Constitution.md</code> · <code>Common.md</code> ·
-      <code>Code.md</code> · <code>Writing.md</code>) into a product.
+      <code>ai</code> turns the personal AI Constitution
+      (<code>Constitution.md</code>) into a product.
       Install it. Answer a guided interview. Have a personalized
       constitution governing every AI tool on your machine — within
       thirty minutes.
@@ -34,7 +33,7 @@ import Base from '../layouts/Base.astro';
     <p class="cs-section-label">Why</p>
     <h2>Why a personal AI constitution?</h2>
     <ul>
-      <li><strong>Portable.</strong> Four markdown files. Every AI tool — Claude Code, Copilot CLI, Cursor, Codex — reads the same governing documents. One constitution, all tools.</li>
+      <li><strong>Portable.</strong> One markdown file. Every AI tool — Claude Code, Copilot CLI, Cursor, Codex — reads the same governing document. One constitution, all tools.</li>
       <li><strong>Auditable.</strong> Every override, every self-noticed violation, every governance decision leaves a permanent typed record under <code>~/.ai/audit/</code>. Local-only. Never synced raw.</li>
       <li><strong>Onboardable.</strong> New tools and new AI collaborators read the same files. Onboarding is reading the constitution, not re-negotiating it.</li>
       <li><strong>Self-repairing.</strong> <code>ai doctor</code> detects and fixes the predictable failure modes — broken symlinks, missing hooks, dirty working tree, stale binary — without conversation.</li>
@@ -138,11 +137,10 @@ import Base from '../layouts/Base.astro';
 
   <section style="margin-block-start: var(--space-24);">
     <p class="cs-section-label">Status</p>
-    <h2>Draft v0.8 — implementation in progress</h2>
+    <h2>v1.3.0 — production ready</h2>
     <p>
-      This site, the CLI binary, the hook library, and the atom
-      registries are being built in parallel. The
-      <a href="/spec">authoritative spec</a> is current at draft v0.8.
+      The CLI binary, hook library, and atom registries are live. The
+      <a href="/spec">authoritative spec</a> is current at v1.3.0.
       Source lives at
       <a href="https://github.com/convergent-systems-co/aiConstitution">github.com/convergent-systems-co/aiConstitution</a>.
     </p>
