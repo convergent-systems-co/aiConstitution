@@ -27,3 +27,15 @@ func RunHooksPropose(name, fromViolation, lang, aiRoot string, out io.Writer) er
 func ApplyIdentityRoutingForTest(out io.Writer, cloneURL, cloneDir, forceName string) error {
 	return applyIdentityRouting(out, cloneURL, cloneDir, forceName)
 }
+
+// PurgeOldHookEntriesForTest exposes purgeOldHookEntries to the external
+// _test package without making the underlying function part of the public API.
+func PurgeOldHookEntriesForTest(settings map[string]any) {
+	purgeOldHookEntries(settings)
+}
+
+// InstallClaudeHooksForTest exposes installClaudeHooks to the external
+// _test package without making the underlying function part of the public API.
+func InstallClaudeHooksForTest(repoRoot, hooksDir string) (int, error) {
+	return installClaudeHooks(repoRoot, hooksDir)
+}
