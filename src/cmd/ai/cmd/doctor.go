@@ -73,6 +73,7 @@ func runDoctor(w io.Writer, fix bool, resetHead string) error {
 	checkPersonasBlock(w)
 	checkDerivativeFiles(w)
 	checkHookWiring(w, paths.AIRoot(), homeDir())
+	checkWrapperHookDrift(w)
 	_ = checkInstalledSkills(w)
 
 	return nil
@@ -187,6 +188,45 @@ func checkHookWiring(w io.Writer, aiRoot, home string) {
 	}
 	if allOK {
 		fmt.Fprintln(w, "[✓] Hook wiring complete")
+	}
+}
+
+// checkWrapperHookDrift verifies that every blocking pre-hook referenced in
+// command-wrappers.toml is installed on disk. A missing hook means runWrap
+// will fail closed (ENFORCEMENT DEGRADED) on the next invocation; doctor
+// surfaces this proactively so the user can fix it before it blocks work.
+func checkWrapperHookDrift(w io.Writer) {
+	cfg, err := loadCommandWrappers()
+	if err != nil {
+		fmt.Fprintf(w, "[⚠] command-wrappers.toml unreadable: %v — run: ai hooks install --all\n", err)
+		return
+	}
+
+	hooksDir := paths.HooksDir()
+	var missing []string
+
+	for _, entry := range cfg.Command {
+		if !entry.isEnabled() {
+			continue
+		}
+		for _, h := range entry.PreHooks {
+			if !h.isBlocking() {
+				continue
+			}
+			slug := hookSlug(h.Script)
+			hookPath := filepath.Join(hooksDir, slug+".py")
+			if _, err := os.Stat(hookPath); os.IsNotExist(err) {
+				missing = append(missing, slug)
+			}
+		}
+	}
+
+	if len(missing) == 0 {
+		fmt.Fprintln(w, "[✓] All blocking wrapper hooks installed")
+		return
+	}
+	for _, slug := range missing {
+		fmt.Fprintf(w, "[⚠] Blocking hook %q not installed — run: ai hooks install --all\n", slug)
 	}
 }
 
