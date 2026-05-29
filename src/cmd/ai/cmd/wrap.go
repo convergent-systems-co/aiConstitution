@@ -201,13 +201,15 @@ func runHookForWrap(slug string, toolArgs, extraEnv []string, blocking bool) int
 		fmt.Fprintf(os.Stderr, "[ai/wrap] Python 3 not found; skipping advisory hook %s\n", slug)
 		return 0
 	}
-	// Build: python <hookPath> --mode=wrapper <toolArgs...>
-	args := make([]string, 0, len(pyArgs)+2+len(toolArgs))
+	// Build: python <hookPath> --mode=wrapper
+	// toolArgs are intentionally not forwarded: hooks read git state via
+	// `git diff --staged` / `git branch --show-current` and argparse would
+	// reject git subcommand tokens (e.g. "commit -m msg") as unrecognised args.
+	args := make([]string, 0, len(pyArgs)+2)
 	args = append(args, pyArgs[1:]...)
 	args = append(args, hookPath, "--mode=wrapper")
-	args = append(args, toolArgs...)
 	c := exec.Command(pyArgs[0], args...) //nolint:gosec // hookPath is within AI_ROOT
-	c.Stdin = os.Stdin
+	c.Stdin = nil // hooks in --mode=wrapper never read stdin; nil avoids consuming input the real binary needs
 	c.Stdout = os.Stdout
 	c.Stderr = os.Stderr
 	c.Env = append(os.Environ(), extraEnv...)
