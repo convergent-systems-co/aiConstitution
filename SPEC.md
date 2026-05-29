@@ -4,8 +4,8 @@
 **Full spec:** [`specs/aiConstitution-spec-v1.0.0-draft.md`](specs/aiConstitution-spec-v1.0.0-draft.md)
 
 The AI Constitution is a version-controlled governance layer for AI-assisted
-software development. The user maintains four Markdown files in `~/.ai/` that
-define how every AI tool they use must behave. Hooks enforce rules deterministically.
+software development. The user maintains a single unified `Constitution.md`
+in `~/.ai/` that defines how every AI tool they use must behave. Hooks enforce rules deterministically.
 An audit system captures violations. Violations become amendments that update the
 files. The files become atoms, distributed and cached locally for immutable
 version-pinned use. The `ai` binary is the CLI that orchestrates everything.

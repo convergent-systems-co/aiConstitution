@@ -2,7 +2,7 @@
 
 ## What is this?
 
-`aiConstitution` is the **tool** half of a two-repo AI governance system. It builds the `ai` Go CLI — a binary that operationalizes the four-file AI governance system (`Constitution.md`, `Common.md`, `Code.md`, `Writing.md`). The CLI ships a TUI setup wizard, a memory-to-amendment review loop, a self-repairing doctor command, sync/restore for cross-machine portability, and an atom-based persona/profile/skill distribution layer.
+`aiConstitution` is the **tool** half of a two-repo AI governance system. It builds the `ai` Go CLI — a binary that operationalizes the unified AI Constitution governance system (a single `Constitution.md` in `~/.ai/`). The CLI ships a TUI setup wizard, a memory-to-amendment review loop, a self-repairing doctor command, sync/restore for cross-machine portability, and an atom-based persona/profile/skill distribution layer.
 
 The binary reads governance data from `~/.ai/` on the user's machine. It does not own or modify that data.
 
@@ -11,7 +11,7 @@ The binary reads governance data from `~/.ai/` on the user's machine. It does no
 | Repo | What it is | Modified by |
 |---|---|---|
 | `convergent-systems-co/aiConstitution` (this repo) | Go CLI binary, embedded hooks, skill templates, CI | Engineers via PRs |
-| `convergent-systems-co/ai` (personal governance) | Constitution.md, Common.md, memory files, audit logs | AI assistant + user |
+| `convergent-systems-co/ai` (personal governance) | Constitution.md, memory files, audit logs | AI assistant + user |
 
 **The contract in one sentence:** this repo builds the tool; `convergent-systems-co/ai` is the data the tool reads. Nothing in this repo should ever write to `~/.ai/` or commit governance prose.
 
@@ -66,14 +66,14 @@ The `ai` binary is structured as a Cobra command tree. Every top-level verb has 
 
 | Command | Purpose |
 |---|---|
-| `ai setup` / `ai --tui` | Guided TUI interview that generates a personalized four-file constitution |
+| `ai setup` / `ai --tui` | Guided TUI interview that generates a personalized `Constitution.md` |
 | `ai review` | Memory-to-amendment loop; default 30-day cadence |
 | `ai doctor` | Detect and repair broken symlinks, missing hooks, stale binary |
 | `ai compress` | Compress/compact context |
 | `ai sync` | Push/pull canonical `~/.ai/` tree to a user-owned remote |
 | `ai restore` | Reproduce the governance system on a fresh machine |
 | `ai amend` | Draft, list, show, publish, and apply governance amendments |
-| `ai constitution` | Backup and restore the four-file governance prose |
+| `ai constitution` | Backup and restore the unified governance prose |
 | `ai memory` | List, show, codify, archive, and retire memory entries |
 | `ai brand` | Brand token management from `brand-atoms.com` |
 | `ai atoms` | Fetch, list, verify, publish, fork, and GC atoms |
@@ -102,7 +102,7 @@ The `ai` binary is structured as a Cobra command tree. Every top-level verb has 
 | `ai integrate` | Wire governance into an existing project |
 | `ai op` | 1Password integration (clip, env, signin, signout, whoami) |
 
-> **Note:** many commands are v0.8 scaffolds that print "not yet implemented" with a pointer to the authoritative spec section. See `SPEC.md §3` for the full intended surface.
+> See `SPEC.md §3` for the full intended CLI surface.
 
 ## Project structure
 
@@ -123,7 +123,7 @@ questions.yaml       Setup wizard question tree
 settings.toml.example  Example user settings file
 web/ai-constitution/ Astro documentation site
 docs/adr/            MADR-format architecture decision records
-SPEC.md              Authoritative implementation specification (draft v0.8)
+SPEC.md              Authoritative implementation specification (v1.0.0-draft)
 GOALS.md             G1–G7 goals, non-goals, anti-goals
 ARCHITECTURE.md      Navigational architecture overview
 Makefile             Build, test, lint, fmt, tidy, clean targets
@@ -136,7 +136,7 @@ go.work              Go workspace — three modules: src/cmd/ai, src/internal, s
 
 Work in a feature branch cut from `main`. Naming convention: `feat/<issue>-<slug>`, `fix/<issue>-<slug>`, etc.
 
-Use `ai worktree add` (or `git worktree add .worktrees/<branch>`) for isolated feature work. See `Common.md §U17` for canonical worktree placement rules.
+Use `ai worktree add` (or `git worktree add .worktrees/<branch>`) for isolated feature work. See `Constitution.md §U17` for canonical worktree placement rules.
 
 ### Commit convention
 
@@ -176,18 +176,16 @@ Every PR must pass three jobs (`.github/workflows/ci.yml`):
 
 ## The governance contract
 
-This repo is itself governed by the four-file constitution it operationalizes:
+This repo is itself governed by the unified constitution it operationalizes:
 
-- `~/.ai/Constitution.md` — governance meta-rules and override protocol
-- `~/.ai/Common.md` — universal operating rules (autonomy gates, honesty, secret handling)
-- `~/.ai/Code.md` — code quality, testing, commit discipline, change management
-- `~/.ai/Writing.md` — prose quality (applies to docs and ADRs)
+- `~/.ai/Constitution.md` — all governance rules (meta-rules, autonomy gates, honesty,
+  secret handling, code quality, testing, commit discipline, prose quality)
 
-The AI assistant working in this repo loads those files via `~/.claude/CLAUDE.md`.
+The AI assistant working in this repo loads that file via `~/.claude/CLAUDE.md`.
 
 **What this repo never does:**
 
-- Commits user governance data (Constitution.md, Common.md, memory, audit logs) — those live in `~/.ai/`, owned by `convergent-systems-co/ai`.
+- Commits user governance data (Constitution.md, memory, audit logs) — those live in `~/.ai/`, owned by `convergent-systems-co/ai`.
 - Commits secrets — API keys, tokens, `.env` files, private keys.
 - Writes directly to `~/.ai/` from CI or build scripts.
 

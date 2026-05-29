@@ -9,7 +9,14 @@ import (
 	"strings"
 )
 
-// FileNames is the list of legacy constitution filenames.
+// CanonicalFile is the single file that constitutes the unified end-state.
+// All new code reads from or writes to this file; the derivative files
+// (Common.md, Code.md, Writing.md) exist only in migration/detection paths.
+const CanonicalFile = "Constitution.md"
+
+// FileNames is the ordered list of legacy filenames used for migration
+// detection and the four-file → unified conversion. Do not use FileNames
+// when the goal is to read or write the unified end-state — use CanonicalFile.
 var FileNames = []string{"Constitution.md", "Common.md", "Code.md", "Writing.md"}
 
 // UnifiedFiles holds the unified constitution content.
@@ -33,8 +40,10 @@ func LoadUnified(root string) (UnifiedFiles, error) {
 	return uf, nil
 }
 
-// FileStatusV2 detects whether root has a v2 unified constitution or legacy four-file layout.
-// The returned map includes a synthetic "v2" key (true when Constitution.md present and Common.md absent).
+// FileStatusV2 detects whether root has a unified Constitution.md or the legacy
+// four-file layout (Constitution.md + Common.md + Code.md + Writing.md).
+// The returned map includes a synthetic "v2" key: true when Constitution.md is
+// present and Common.md is absent, indicating the user has migrated.
 func FileStatusV2(root string) map[string]bool {
 	status := make(map[string]bool)
 	for _, name := range FileNames {
