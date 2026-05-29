@@ -1,9 +1,5 @@
 // Package cmd is the cobra command tree for `ai`.
-//
-// The surface is defined by SPEC.md §3. Each top-level verb has its
-// own file under this package. For v0.8 every verb is registered and
-// prints a meaningful "not yet implemented" message that cites the
-// authoritative spec section.
+// The surface is defined by SPEC.md §3. Each top-level verb has its own file.
 package cmd
 
 import (
@@ -16,25 +12,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// errNotImplementedHint is the v0.8 stub error returned by un-implemented
-// commands. It cites the spec section that defines the verb's behavior.
-type errNotImplementedHint struct {
-	verb    string
-	section string
-}
-
-func (e errNotImplementedHint) Error() string {
-	return fmt.Sprintf("ai %s: not yet implemented (v0.8 scaffold). Authoritative spec: SPEC.md %s.", e.verb, e.section)
-}
-
-// stub is a convenience constructor for the v0.8 stub error.
-func stub(verb, specSection string) error {
-	return errNotImplementedHint{verb: verb, section: specSection}
-}
-
-// notice prints a "what would happen" trace for a stub command before
-// returning the stub error. Keeps the v0.8 scaffold informative without
-// pretending to do work that hasn't been implemented yet.
+// notice prints an informational trace to stderr. Used by commands that need
+// to surface advisory messages without returning a hard error.
 func notice(args ...any) {
 	fmt.Fprintln(os.Stderr, append([]any{"[ai]"}, args...)...)
 }
@@ -44,8 +23,8 @@ func NewRootCmd() *cobra.Command {
 	root := &cobra.Command{
 		Use:   "ai",
 		Short: "Personal AI Constitution — CLI, TUI, sync, restore, governance",
-		Long: `ai is the Go CLI that operationalizes the four-file AI Constitution
-governance system (Constitution / Common / Code / Writing).
+		Long: `ai is the Go CLI that operationalizes the unified AI Constitution
+governance system (a single Constitution.md that covers all rule domains).
 
 It ships:
   - a Bubble Tea TUI wizard (ai setup, ai --tui)
@@ -58,7 +37,7 @@ It ships:
     regardless of which AI tool issued the command
 
 See SPEC.md at the repo root for the authoritative implementation
-specification (currently draft v0.8).`,
+specification (v1.0.0-draft).`,
 		SilenceUsage:  true,
 		SilenceErrors: false,
 		Version:       buildinfo.Version(),

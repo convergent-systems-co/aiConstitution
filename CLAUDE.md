@@ -7,7 +7,7 @@ This repo is the **tool** half of the two-repo AI governance system.
 | Repo | What it is | Who modifies it |
 |---|---|---|
 | `convergent-systems-co/aiConstitution` (this repo) | Go CLI binary, hooks, skill templates, CI | Engineers via PRs |
-| `convergent-systems-co/ai` (personal) | User's Constitution.md, Common.md, memory, audit logs | AI assistant + user |
+| `convergent-systems-co/ai` (personal) | User's Constitution.md, memory, audit logs | AI assistant + user |
 
 The binary reads from `~/.ai/` (synced from `convergent-systems-co/ai`). It does NOT commit to `~/.ai/`.
 
@@ -41,11 +41,11 @@ go test ./src/...
 
 ## Key contracts
 
-- **Never commit user data** — Constitution.md, Common.md, memory, audit logs belong in `~/.ai/`, not here.
+- **Never commit user data** — Constitution.md, memory, audit logs belong in `~/.ai/`, not here.
 - **Never commit secrets** — API keys, tokens, `.env` files. Use `~/.ai/hooks/` for secret redaction.
 - **Conventional Commits** — feat/fix/refactor/chore/docs/test/ci prefixes required.
 - **CI must pass** before merge — lint (golangci-lint), test (go test), build.
 
 ## Governance
 
-This repo follows `~/.ai/Constitution.md` and the companion governance files. The AI assistant working in this repo loads those files via `~/.claude/CLAUDE.md`.
+This repo follows `~/.ai/Constitution.md` (the unified single-file governance document). The AI assistant working in this repo loads it via `~/.claude/CLAUDE.md`.

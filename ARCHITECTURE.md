@@ -52,8 +52,8 @@ mermaid topology. The summary form:
            v
 ┌──────────────────────────────────────────────────────────────────┐
 │  Per-tool consumers: ~/.claude/, ~/.copilot/, .cursor/,         │
-│  AGENTS.md (Codex). All read the four-file constitution via      │
-│  symlinks; all wire the hooks into their native event surfaces.  │
+│  AGENTS.md (Codex). All read Constitution.md via symlinks;       │
+│  all wire the hooks into their native event surfaces.            │
 └──────────────────────────────────────────────────────────────────┘
 ```
 
@@ -66,7 +66,7 @@ chat-handoff windows:
 | Behavior | Surface |
 |---|---|
 | Render TUI, capture answers, validate, persist | `bin/ai` (Bubble Tea) |
-| Template-fill the four canonical files from answers | `bin/ai` (Go templates) |
+| Template-fill `Constitution.md` from answers | `bin/ai` (Go templates) |
 | Diff memory against canonical files, classify candidates | `bin/ai` |
 | **Propose amendment prose** | model (chat handoff) |
 | Apply approved amendment | `bin/ai` |

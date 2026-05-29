@@ -4,39 +4,62 @@
 > interview, and be governed by a personalized constitution inside
 > thirty minutes.
 
-`ai` is the Go CLI that operationalizes the four-file AI governance
-system (`Constitution.md`, `Common.md`, `Code.md`, `Writing.md`). It
-ships a TUI wizard, a memory-to-amendment review loop, a sync/restore
-flow, a self-repairing doctor, atom-based persona/profile/skill
-distribution, and a cross-tool command-wrapper facade that enforces
-governance regardless of which AI tool (Claude Code, Copilot CLI,
-Cursor, Codex) issued the command.
+`ai` is the Go CLI that operationalizes the unified AI Constitution
+governance system (a single `Constitution.md` in `~/.ai/`). It ships
+a TUI wizard, a memory-to-amendment review loop, a sync/restore flow,
+a self-repairing doctor, atom-based persona/profile/skill distribution,
+and a cross-tool command-wrapper facade that enforces governance
+regardless of which AI tool (Claude Code, Copilot CLI, Cursor, Codex)
+issued the command.
 
-**Status:** in development. Spec at draft v0.8 — see [`SPEC.md`](./SPEC.md).
+**Status:** in development. Spec at v1.0.0-draft — see [`SPEC.md`](./SPEC.md).
 The binary surface is being built out from the spec.
+
+> **Migrating from the legacy four-file layout?** If your `~/.ai/` contains
+> separate `Common.md`, `Code.md`, and `Writing.md` files, run `ai migrate`
+> to fold them into a single `Constitution.md`. The `ai migrate` command
+> detects the legacy layout automatically.
 
 ## What it does
 
 | Command | Purpose |
 |---|---|
-| `ai setup` / `ai --tui` | Guided interview → personalized four-file constitution |
+| `ai setup` / `ai --tui` | Guided interview → personalized `Constitution.md` |
 | `ai review` | Memory → amendment loop; default 30-day cadence |
 | `ai doctor` | Detect + repair broken symlinks, missing hooks, stale binary |
-| `ai sync push` / `ai sync pull` | Push/pull canonical tree to user-owned remote |
-| `ai restore <url>` | Reproduce the system on a fresh machine |
+| `ai sync` | Push/pull canonical `~/.ai/` tree to a user-owned remote |
+| `ai restore <url>` | Reproduce the system on a fresh machine from a snapshot or URL |
+| `ai constitution` | Backup, restore, and bootstrap the entire `~/.ai/` directory |
+| `ai backup` | Snapshot the canonical tree to a local archive |
+| `ai migrate` | Migrate from legacy four-file layout to unified `Constitution.md` |
+| `ai amend` | Draft, list, show, publish, and apply governance amendments |
+| `ai compress` | Generate compact constitution or per-persona YAML derivatives |
+| `ai generate` | Generate derived artifacts from `Constitution.md` |
 | `ai mode <name>` | Activate a persona or profile (additive, not exclusive) |
-| `ai profile new` | Compose a profile from atomic personas |
-| `ai persona share` | File a draft as an upstream atom PR |
-| `ai skills install <name>[@<ver>]` | Resolve from `skill-atoms.com`, cache, symlink |
-| `ai hooks propose <name>` | Scaffold a new hook from a finding |
-| `ai update --migrate` | Reconcile new hooks/personas/questions after upgrade |
-| `ai settings get/set/edit` | Manage `~/.config/aiConstitution/settings.toml` |
-| `ai clone <url>` | Identity-aware git clone + post-clone pre-commit secret hook install |
-| `ai audit rotate` | Gzip prior-month audit JSONLs (suitable for cron) |
-| `ai hooks install --all` | Extract all embedded hooks to `~/.ai/hooks/` |
-| `ai hooks install command-wrappers` | Extract embedded git/gh wrappers to `~/.ai/bin/` |
+| `ai focus` | Alias of `ai mode` — activate a cognitive focus mode |
+| `ai profile` | Compose, list, show, edit, and remove profiles |
+| `ai persona` | List, show, create, and share persona atoms |
+| `ai skills` | Install, list, show, validate, and manage skill bundles |
+| `ai plugins` | Install, enable, disable, update, and check plugin status |
+| `ai brand` | Fetch or list brand atoms from `brand-atoms.com` |
+| `ai hooks` | Manage the embedded hook library (propose, install, validate) |
+| `ai update` | Update the binary + reconcile new hooks/skills/personas/questions |
+| `ai settings` | Manage `~/.config/aiConstitution/settings.toml` |
+| `ai clone <url>` | Identity-aware git clone + post-clone hook install |
+| `ai worktree` | Create worktrees in the canonical locations (§U17) |
+| `ai audit` | List and show override/violation audit entries |
+| `ai memory` | Inspect and curate `~/.ai/memory/` |
+| `ai status` | Sprint and system status (sync state, review cadence, doctor warnings) |
+| `ai plan` | Scaffold a work-plan document under `~/.ai/governance/plans/` |
+| `ai issue` | File governance-related GitHub issues |
+| `ai pm-mode` | Activate PM discipline mode (shortcut for `ai mode pm`) |
+| `ai spawn` | Dispatch agentic sub-tasks |
+| `ai init` | Scaffold project integration files in the current directory |
+| `ai init-integrate` | Wire AI tool integrations (Cursor, Codex/AGENTS.md) |
+| `ai op` | 1Password CLI integration (env, signin, signout, whoami, clip) |
+| `ai version` | Print the binary version and questions.yaml version |
 
-See [`SPEC.md §3`](./SPEC.md#3-cli-surface) for the complete surface.
+See [`SPEC.md §3`](./SPEC.md#3-cli-surface) for the authoritative surface definition.
 
 ## Install
 
@@ -62,9 +85,9 @@ ai setup            # guided wizard
 ai --tui            # same, explicit
 ```
 
-After setup, the four canonical files are at `~/.ai/`, the hook library
-is wired into your AI tool of choice, and a `~/.config/aiConstitution/`
-directory holds your per-machine mutable state (settings, mode, cache).
+After setup, `Constitution.md` is at `~/.ai/`, the hook library is wired
+into your AI tool of choice, and a `~/.config/aiConstitution/` directory
+holds your per-machine mutable state (settings, mode, cache).
 
 ## Build from source
 
@@ -103,7 +126,7 @@ src/                 Go source
 governance/          policy json + wizard pointers + seed answers
 web/ai-constitution/ Astro site (methodology + spec)
 docs/adr/            MADR-format architecture decisions
-SPEC.md              authoritative implementation specification (draft v0.8)
+SPEC.md              authoritative implementation specification (v1.0.0-draft)
 GOALS.md             G1-G7 goals, non-goals, anti-goals
 ARCHITECTURE.md      navigational architecture overview
 ```
@@ -136,7 +159,7 @@ cached locally, mutation-impossible at the published version. See
 
 ## Governance
 
-`ai` is itself governed by the four-file constitution it operationalizes.
+`ai` is itself governed by the unified constitution it operationalizes.
 Override and violation audit logs live at `~/.ai/audit/overrides/` and
 `~/.ai/audit/violations/` in canonical UTC ISO-8601 filenames.
 

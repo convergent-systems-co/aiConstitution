@@ -335,5 +335,8 @@ terraform.rc
 # Issue creation state map (local-only, never tracked)
 scripts/.issue-map.json
 
+# AI checkpoint file generated at context boundaries — transient, not project state.
+HANDOFF.md
+
 # Git worktrees (local-only, never tracked)
 .worktrees/

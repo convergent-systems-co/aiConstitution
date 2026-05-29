@@ -12,9 +12,8 @@ aiConstitution
 
 ## Mission
 
-Turn the four-file personal AI Constitution prose stack (`Constitution.md`,
-`Common.md`, `Code.md`, `Writing.md`) into a portable, onboardable,
-self-repairing product — a Go CLI plus a Bubble Tea TUI plus a public
+Turn the unified personal AI Constitution (`Constitution.md`) into a portable,
+onboardable, self-repairing product — a Go CLI plus a Bubble Tea TUI plus a public
 methodology site — so that anyone, not only the original author, can install
 it, run a guided interview, and be governed by a personalized constitution
 within thirty minutes.
@@ -26,7 +25,7 @@ shapes), and **always auditable** — every override, every violation, every
 focus change leaves a permanent record the user can read.
 
 See [`SPEC.md`](./SPEC.md) for the authoritative implementation
-specification (currently draft v0.8). This file is the goals layer that
+specification (v1.0.0-draft). This file is the goals layer that
 governs which decisions are in scope.
 
 ## Principles
