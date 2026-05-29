@@ -3,7 +3,7 @@ GO        ?= go
 GOFLAGS   ?= -trimpath
 APP       ?= ai
 
-.PHONY: help build test lint fmt tidy clean
+.PHONY: help build test lint fmt tidy docs clean
 
 help: ## Show this help
 	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "  %-20s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -39,6 +39,11 @@ tidy: ## go work sync + go mod tidy per workspace module
 			(cd "$$dir" && $(GO) mod tidy); \
 		fi; \
 	done
+
+docs: ## Regenerate README command table from registered commands
+	go run ./src/cmd/ai/cmd/gen_docs.go > /tmp/cmd-table.md
+	@echo "Command table written to /tmp/cmd-table.md"
+	@echo "Review and paste into README.md ## What it does section"
 
 clean: ## Remove build artifacts
 	rm -rf dist/
