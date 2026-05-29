@@ -1,6 +1,6 @@
 # aiConstitution Implementation Specification
 
-**Status:** Draft v1.0.0  
+**Status:** v1.0.0-draft  
 **Full spec:** [`specs/aiConstitution-spec-v1.0.0-draft.md`](specs/aiConstitution-spec-v1.0.0-draft.md)
 
 The AI Constitution is a version-controlled governance layer for AI-assisted

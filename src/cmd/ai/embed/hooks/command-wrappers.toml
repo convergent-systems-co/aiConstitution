@@ -3,10 +3,11 @@
 # terraform/kubectl) read this file at startup and inject the listed
 # preHooks / commandHooks / postHooks into every invocation.
 #
-# Defense-in-depth, not security control — see SPEC.md §10.5.4.
-# Bypass via absolute path (/usr/bin/git) is always possible; the
-# wrapper produces an audit signal where one would normally appear,
-# so an absent audit line is itself visible in forensic review.
+# Blocking pre-hooks (branch-guard, secret-precommit, no-verify-strip,
+# destructive-gh-guard) fail closed when not installed or when Python
+# is absent — enforcement is explicit, not accidental. Bypass via
+# absolute path (/usr/bin/git) remains possible; the wrapper produces
+# an audit signal so an absent log line is itself visible in forensic review.
 
 schemaVersion = "0.1"
 
