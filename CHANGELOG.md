@@ -66,6 +66,14 @@ binary version independently — the binary tracks `SemVer` over the
 - `ai hooks list`: `lib.py` filtered (transition artifact); `audit-logger.py` wired to `PreToolUse` (#421)
 - `ai status`: wired hook count now reflects both group and flat settings.json formats (#402)
 
+## [1.4.2] — 2026-05-29
+
+### Fixed
+
+- **`ai setup` now wires the compact form into clients** — `Constitution.compact.md` (~8KB) is generated immediately after `Constitution.md` and wired into `~/.claude/CLAUDE.md` and Copilot instead of the full 38KB constitution. Both clients receive the same compressed, `§ID`-prefixed form on every session (#458).
+
+---
+
 ## [1.4.1] — 2026-05-29
 
 ### Added
