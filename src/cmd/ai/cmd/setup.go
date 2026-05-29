@@ -3,7 +3,9 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -236,10 +238,30 @@ func runSetupPostWizard(aiRoot, claudeDir, copilotDir string, answers map[string
 		return nil
 	}
 
-	// §196 — extract embedded hooks.
+	// Fix Python prerequisites before attempting hook installation.
+	// On Windows, the Microsoft Store may place zero-byte python.exe stubs that
+	// shadow a real Python installation — silently fix them so hooks can run.
+	ensurePythonWorks()
+
+	// §196 — full hook install: fetch from catalog + extract infrastructure +
+	// wire ~/.claude/settings.json. Non-fatal: a network failure is surfaced as
+	// a warning; the user can run 'ai hooks install --all' to retry.
 	hooksDir := filepath.Join(aiRoot, "hooks")
-	if _, err := embed.ExtractAllHooks(hooksDir, false); err != nil {
-		return fmt.Errorf("setup: install hooks: %w", err)
+	home := homeDir()
+	fmt.Println("setup: installing hooks...")
+	if err := installAllHooksAndWire(hooksDir, home, false); err != nil {
+		fmt.Fprintf(os.Stderr, "setup: warning: hook install incomplete (%v)\n", err)
+		fmt.Fprintln(os.Stderr, "       Run 'ai hooks install --all' to retry when online.")
+	}
+
+	// Install command-wrappers: git/gh shims appropriate for this OS.
+	// On Windows this extracts git.cmd + git.ps1; on POSIX the bash shims.
+	fmt.Println("setup: installing command-wrappers...")
+	binDir := filepath.Join(aiRoot, "bin")
+	if _, err := embed.ExtractWrappers(binDir, false); err != nil {
+		fmt.Fprintf(os.Stderr, "setup: warning: command-wrapper install failed: %v\n", err)
+	} else {
+		fmt.Printf("setup: add %s early to PATH for git/gh interception.\n", binDir)
 	}
 
 	// §197 — write CLAUDE.md.
@@ -254,6 +276,25 @@ func runSetupPostWizard(aiRoot, claudeDir, copilotDir string, answers map[string
 
 	fmt.Println("setup: done — constitution wired. Run `ai doctor` to verify.")
 	return nil
+}
+
+// ensurePythonWorks silently fixes Windows Python App Execution Alias stubs
+// before setup attempts to install hooks. On non-Windows this is a no-op.
+// It reuses fixWindowsPythonStubs from doctor.go (same package).
+func ensurePythonWorks() {
+	pyArgs := discoverPythonArgs() // defined in hooks.go
+	if pyArgs == nil {
+		return // no Python; doctor will surface this later
+	}
+	out, err := exec.Command(pyArgs[0], "--version").CombinedOutput() //nolint:gosec
+	if err != nil || len(out) == 0 {
+		if runtime.GOOS == "windows" {
+			removed := fixWindowsPythonStubs(os.Stderr)
+			if removed > 0 {
+				fmt.Fprintf(os.Stderr, "setup: removed %d Python App Execution Alias stub(s).\n", removed)
+			}
+		}
+	}
 }
 
 // saveWizardSettings maps wizard answers to config.Settings fields and
