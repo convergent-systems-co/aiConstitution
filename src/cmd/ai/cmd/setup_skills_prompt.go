@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"strings"
 
-	cbterm "github.com/charmbracelet/x/term"
+	_ "github.com/charmbracelet/x/term" // kept for IsTerminal usage in runSkillSelectionPrompt
 	"github.com/spf13/cobra"
 )
 
@@ -166,14 +166,48 @@ func buildSkillRows(entries []skillAtomDirEntry, fetchAtom fetchAtomFn) ([]skill
 }
 
 func runSkillSelectionPromptReal(cmd *cobra.Command) error {
-	isTTY := cbterm.IsTerminal(os.Stdout.Fd())
-	return runSkillSelectionPrompt(
-		os.Stdout,
-		os.Stdin,
-		isTTY,
-		fetchSkillsDirectory,
-		fetchSkillAtomFromURL,
-		runSkillsInstall,
-		cmd,
-	)
+	// Fetch from ai-atoms.com catalog (same source as `ai skills available`).
+	catalog, err := fetchAiAtomsCatalog()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "\nNote: could not fetch available skills (%v). Skipping.\n", err)
+		return nil
+	}
+
+	// Build deduplicated top-level skill list.
+	subSkills := map[string]bool{}
+	for _, a := range catalog {
+		if a.Type == "skill" {
+			for _, dep := range a.DependsOn {
+				subSkills[dep] = true
+			}
+		}
+	}
+	var entries []catalogSkillEntry
+	for _, a := range catalog {
+		lc := strings.ToLower(a.Lifecycle)
+		if a.Type != "skill" || lc == "deprecated" || lc == "retired" {
+			continue
+		}
+		slug := strings.TrimPrefix(a.ID, "skill/")
+		if subSkills[slug] {
+			continue
+		}
+		name := a.Name
+		if name == "" {
+			name = slug
+		}
+		entries = append(entries, catalogSkillEntry{
+			slug:     slug,
+			name:     name,
+			fullDesc: a.Description,
+			subCount: len(a.DependsOn),
+		})
+	}
+
+	if len(entries) == 0 {
+		return nil
+	}
+
+	// Launch the Bubble Tea checkbox TUI.
+	return runCatalogSkillPickerTUI(cmd, entries)
 }
