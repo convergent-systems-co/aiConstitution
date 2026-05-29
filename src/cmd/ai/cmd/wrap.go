@@ -153,19 +153,37 @@ func realBinaryCandidates(dir, tool string) []string {
 	return []string{base, base + ".exe"}
 }
 
-// runHookForWrap runs a hook by slug using the cross-platform Python
-// dispatcher. It sets the caller-provided extraEnv (WRAPPED_CMD,
-// WRAPPED_ARGV, etc.) in the hook process's environment.
-// Returns the hook's exit code; returns 0 if the hook is not installed
-// (non-fatal: allows fresh installs where hooks aren't yet extracted).
-func runHookForWrap(slug string, toolArgs, extraEnv []string) int {
+// runHookForWrap runs a hook by slug using the cross-platform Python dispatcher.
+// It sets the caller-provided extraEnv (WRAPPED_CMD, WRAPPED_ARGV, etc.) in
+// the hook process's environment.
+//
+// When blocking is true (the default for security-gate hooks):
+//   - Hook file missing → prints ENFORCEMENT DEGRADED message + returns 1.
+//   - Python 3 absent   → prints ENFORCEMENT DEGRADED message + returns 1.
+//
+// When blocking is false (advisory hooks, e.g. worktree-guard):
+//   - Hook file missing → returns 0 silently.
+//   - Python 3 absent   → prints a warning + returns 0.
+func runHookForWrap(slug string, toolArgs, extraEnv []string, blocking bool) int {
 	hookPath := filepath.Join(paths.HooksDir(), slug+".py")
 	if _, err := os.Stat(hookPath); err != nil {
-		return 0 // not installed — skip silently
+		if blocking {
+			fmt.Fprintf(os.Stderr,
+				"[ai/wrap] ENFORCEMENT DEGRADED: hook %q is wired as blocking but not installed;\n"+
+					"  run 'ai hooks install --all' or 'ai doctor' to restore enforcement.\n", slug)
+			return 1
+		}
+		return 0 // advisory: skip silently
 	}
 	pyArgs := discoverPythonArgs() // defined in hooks.go, same package
 	if pyArgs == nil {
-		fmt.Fprintf(os.Stderr, "[ai/wrap] Python 3 not found; skipping hook %s\n", slug)
+		if blocking {
+			fmt.Fprintf(os.Stderr,
+				"[ai/wrap] ENFORCEMENT DEGRADED: Python 3 is required for blocking hook %q but was not found;\n"+
+					"  install Python 3 or run 'ai doctor' to restore enforcement.\n", slug)
+			return 1
+		}
+		fmt.Fprintf(os.Stderr, "[ai/wrap] Python 3 not found; skipping advisory hook %s\n", slug)
 		return 0
 	}
 	// Build: python <hookPath> --mode=wrapper <toolArgs...>
@@ -253,7 +271,7 @@ func runWrap(tool string, rawArgs []string) error {
 			continue
 		}
 		effectiveArgs = applyStripArgs(effectiveArgs, h.StripArgs)
-		if code := runHookForWrap(hookSlug(h.Script), effectiveArgs, baseEnv); code != 0 {
+		if code := runHookForWrap(hookSlug(h.Script), effectiveArgs, baseEnv, h.isBlocking()); code != 0 {
 			os.Exit(code)
 		}
 	}
@@ -263,7 +281,8 @@ func runWrap(tool string, rawArgs []string) error {
 	exitCode := execRealCapturingCode(tool, entry.RealCommand, effectiveArgs)
 	duration := int(time.Since(start).Seconds())
 
-	// Post-hooks: always run; ignore failures.
+	// Post-hooks: always run; advisory only (can't block after binary ran).
+	// Failures are surfaced as warnings — audit loss must be visible.
 	postEnv := append(append([]string{}, baseEnv...),
 		fmt.Sprintf("WRAPPED_EXIT=%d", exitCode),
 		fmt.Sprintf("WRAPPED_DURATION=%d", duration),
@@ -272,7 +291,10 @@ func runWrap(tool string, rawArgs []string) error {
 		if !hookApplies(h, subCmd) {
 			continue
 		}
-		_ = runHookForWrap(hookSlug(h.Script), effectiveArgs, postEnv)
+		if code := runHookForWrap(hookSlug(h.Script), effectiveArgs, postEnv, false); code != 0 {
+			fmt.Fprintf(os.Stderr, "[ai/wrap] WARN: post-hook %q failed (exit %d); audit record may be incomplete\n",
+				hookSlug(h.Script), code)
+		}
 	}
 
 	os.Exit(exitCode)

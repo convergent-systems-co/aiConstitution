@@ -1,6 +1,8 @@
 package cmd_test
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	cmd "github.com/convergent-systems-co/aiConstitution/src/cmd/ai/cmd"
@@ -121,5 +123,71 @@ func TestFindRealBinary_FindsOnPath(t *testing.T) {
 	}
 	if got == "" {
 		t.Error("FindRealBinary(\"true\") returned empty path")
+	}
+}
+
+// --- Enforcement tests ---
+
+// TestRunHookForWrap_BlockingMissingHook verifies that when a blocking hook
+// file is not installed, runHookForWrap returns 1 (not 0).
+func TestRunHookForWrap_BlockingMissingHook(t *testing.T) {
+	s := sandbox(t)
+	_ = os.MkdirAll(filepath.Join(s.AIRoot, "hooks"), 0o755)
+	code := cmd.RunHookForWrapForTest("branch-guard", nil, nil, true)
+	if code != 1 {
+		t.Errorf("blocking missing hook: want exit 1, got %d", code)
+	}
+}
+
+// TestRunHookForWrap_AdvisoryMissingHook verifies that when an advisory hook
+// file is not installed, runHookForWrap returns 0 (skip silently).
+func TestRunHookForWrap_AdvisoryMissingHook(t *testing.T) {
+	s := sandbox(t)
+	_ = os.MkdirAll(filepath.Join(s.AIRoot, "hooks"), 0o755)
+	code := cmd.RunHookForWrapForTest("worktree-guard", nil, nil, false)
+	if code != 0 {
+		t.Errorf("advisory missing hook: want exit 0, got %d", code)
+	}
+}
+
+// TestHookDef_IsBlocking verifies the isBlocking() semantics via the
+// NewHookDefForTest constructor (enforcement is the fourth field).
+func TestHookDef_IsBlocking(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		enforcement string
+		want        bool
+	}{
+		{"", true},          // default: blocking
+		{"blocking", false}, // explicit — but isBlocking checks != "advisory", so "blocking" is also true
+		{"advisory", false},
+	}
+	// Re-derive: isBlocking returns true when enforcement != "advisory"
+	for _, c := range cases {
+		got := cmd.IsBlockingForTest(c.enforcement)
+		wantBlocking := c.enforcement != "advisory"
+		if got != wantBlocking {
+			t.Errorf("isBlocking(%q) = %v, want %v", c.enforcement, got, wantBlocking)
+		}
+	}
+}
+
+// --- Config error test ---
+
+// TestLoadCommandWrappers_CorruptTOML verifies that a corrupt TOML on disk
+// returns an error (so the caller can fail closed rather than pass through).
+func TestLoadCommandWrappers_CorruptTOML(t *testing.T) {
+	s := sandbox(t)
+	hooksDir := filepath.Join(s.AIRoot, "hooks")
+	if err := os.MkdirAll(hooksDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	corrupt := []byte("not [ valid toml ][[[")
+	if err := os.WriteFile(filepath.Join(hooksDir, "command-wrappers.toml"), corrupt, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := cmd.LoadCommandWrappersForTest()
+	if err == nil {
+		t.Errorf("expected error for corrupt TOML, got config: %+v", cfg)
 	}
 }

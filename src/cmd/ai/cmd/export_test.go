@@ -88,3 +88,21 @@ func ApplyStripArgsForTest(args, strip []string) []string { return applyStripArg
 func NewHookDefForTest(script string, subcommands, stripArgs []string) hookDef {
 	return hookDef{Script: script, Subcommands: subcommands, StripArgs: stripArgs}
 }
+
+// RunHookForWrapForTest exposes runHookForWrap to external tests.
+// blocking=true mirrors hookDef.isBlocking()=true (security-gate hooks).
+func RunHookForWrapForTest(slug string, toolArgs, extraEnv []string, blocking bool) int {
+	return runHookForWrap(slug, toolArgs, extraEnv, blocking)
+}
+
+// IsBlockingForTest exposes hookDef.isBlocking() via the enforcement string.
+func IsBlockingForTest(enforcement string) bool {
+	return (hookDef{Enforcement: enforcement}).isBlocking()
+}
+
+// LoadCommandWrappersForTest exposes loadCommandWrappers to external tests.
+func LoadCommandWrappersForTest() (*commandWrappersConfig, error) {
+	return loadCommandWrappers()
+}
+
+// NormalizeFlagForTest is added in the flag-normalization commit (Task 4).
