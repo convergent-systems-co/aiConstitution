@@ -270,15 +270,10 @@ func runSetupPostWizard(aiRoot, claudeDir, copilotDir string, answers map[string
 		fmt.Printf("setup: add %s early to PATH for git/gh interception.\n", binDir)
 	}
 
-	// §197 — write CLAUDE.md.
-	if err := writeClaudeMD(claudeDir, aiRoot); err != nil {
-		return fmt.Errorf("setup: write CLAUDE.md: %w", err)
-	}
-
-	// §198 — create Copilot symlink.
-	if err := installCopilotSymlink(copilotDir, aiRoot); err != nil {
-		return fmt.Errorf("setup: install Copilot symlink: %w", err)
-	}
+	// §197-198 — wire each client the user selected in Q36.
+	// Q36 is a multi-select: values like "claude-code,copilot-cli,cursor,codex".
+	// Default to Claude Code when Q36 is absent (e.g. non-interactive/seeds).
+	wireClients(answers, claudeDir, copilotDir, aiRoot)
 
 	fmt.Println("setup: done — constitution wired. Run `ai doctor` to verify.")
 	return nil
@@ -480,4 +475,61 @@ func runSetupNonInteractive(_ string) error {
 		filepath.Join(home, ".claude"),
 		filepath.Join(home, ".copilot"),
 		answers, false)
+}
+
+// wireClients reads the Q36 multi-select answer and wires each selected client.
+//
+//   - claude-code → ~/.claude/CLAUDE.md @-include (global; always wired when selected or when Q36 absent)
+//   - copilot-cli → ~/.copilot/instructions/constitution.md symlink (global)
+//   - cursor      → per-project: prints a reminder to run `ai init-integrate --cursor` in each repo
+//   - codex       → per-project: prints a reminder to run `ai init-integrate --codex` in each repo
+//
+// If Q36 is absent (non-interactive / seeds that omit it), Claude Code is wired
+// as the safe default so setup never produces an unwired installation.
+func wireClients(answers map[string]string, claudeDir, copilotDir, aiRoot string) {
+	q36 := answers["Q36"]
+
+	// Parse multi-select: "claude-code,copilot-cli" → set
+	tools := map[string]bool{}
+	for _, t := range strings.Split(q36, ",") {
+		tools[strings.TrimSpace(t)] = true
+	}
+
+	// Default: wire Claude Code when Q36 is absent.
+	if q36 == "" || len(tools) == 0 {
+		tools["claude-code"] = true
+	}
+
+	if tools["claude-code"] {
+		if err := writeClaudeMD(claudeDir, aiRoot); err != nil {
+			fmt.Fprintf(os.Stderr, "setup: warning: Claude Code wiring failed: %v\n", err)
+		} else {
+			fmt.Println("setup: [✓] Claude Code wired (CLAUDE.md → Constitution.compact.md)")
+		}
+	}
+
+	if tools["copilot-cli"] {
+		if err := installCopilotSymlink(copilotDir, aiRoot); err != nil {
+			fmt.Fprintf(os.Stderr, "setup: warning: Copilot wiring failed: %v\n", err)
+		} else {
+			fmt.Println("setup: [✓] GitHub Copilot CLI wired")
+		}
+	}
+
+	if tools["cursor"] {
+		fmt.Println("setup: [i] Cursor is per-repo — run in each project:")
+		fmt.Println("         ai init-integrate --cursor")
+	}
+
+	if tools["codex"] {
+		fmt.Println("setup: [i] Codex/AGENTS.md is per-repo — run in each project:")
+		fmt.Println("         ai init-integrate --codex")
+	}
+
+	if !tools["claude-code"] && !tools["copilot-cli"] && !tools["cursor"] && !tools["codex"] {
+		// Fallback: Q36 had a value we don't recognise (e.g. "other") — wire Claude Code.
+		if err := writeClaudeMD(claudeDir, aiRoot); err != nil {
+			fmt.Fprintf(os.Stderr, "setup: warning: Claude Code wiring failed: %v\n", err)
+		}
+	}
 }
