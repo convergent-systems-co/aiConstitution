@@ -74,6 +74,7 @@ func runDoctor(w io.Writer, fix bool, resetHead string) error {
 	checkHookWiring(w, paths.AIRoot(), homeDir())
 	checkWrapperHookDrift(w)
 	checkPythonAvailable(w, fix)
+	checkCompactConstitution(w, fix, paths.AIRoot(), homeDir())
 	_ = checkInstalledSkills(w)
 
 	return nil
@@ -297,6 +298,68 @@ func fixWindowsPythonStubs(w io.Writer) int {
 		}
 	}
 	return removed
+}
+
+// checkCompactConstitution verifies that:
+//  1. Constitution.compact.md exists in AI_ROOT (if Constitution.md exists).
+//  2. ~/.claude/CLAUDE.md references the compact form, not the full form.
+//
+// With fix=true: generates the compact form if missing; updates CLAUDE.md to
+// use the compact include.
+func checkCompactConstitution(w io.Writer, fix bool, aiRoot, home string) {
+	fullPath := filepath.Join(aiRoot, "Constitution.md")
+	compactPath := filepath.Join(aiRoot, "Constitution.compact.md")
+	claudeMD := filepath.Join(home, ".claude", "CLAUDE.md")
+
+	// Only check if the full constitution exists.
+	if _, err := os.Stat(fullPath); os.IsNotExist(err) {
+		return
+	}
+
+	// Check 1: compact form exists.
+	if _, err := os.Stat(compactPath); os.IsNotExist(err) {
+		if fix {
+			// Generate compact form.
+			values, _ := extractPersonalValues(aiRoot)
+			full, readErr := os.ReadFile(fullPath) //nolint:gosec
+			compact := renderCompactConstitution(values, string(full))
+			if readErr == nil {
+				if writeErr := os.WriteFile(compactPath, []byte(compact), 0o600); writeErr == nil {
+					fmt.Fprintf(w, "[✓] Generated Constitution.compact.md (%d bytes)\n", len(compact))
+					return
+				}
+			}
+			fmt.Fprintln(w, "[⚠] Could not generate Constitution.compact.md — run: ai compress")
+		} else {
+			fmt.Fprintln(w, "[⚠] Constitution.compact.md missing — run: ai compress  (or: ai doctor --fix)")
+		}
+		return
+	}
+
+	// Check 2: CLAUDE.md uses compact form.
+	claudeData, err := os.ReadFile(claudeMD) //nolint:gosec
+	if err != nil {
+		return // CLAUDE.md absent — not our concern here
+	}
+	content := string(claudeData)
+	const oldInclude = "@~/.ai/Constitution.md"
+	const newInclude = "@~/.ai/Constitution.compact.md"
+
+	if strings.Contains(content, oldInclude) && !strings.Contains(content, newInclude) {
+		if fix {
+			updated := strings.ReplaceAll(content, oldInclude, newInclude)
+			if writeErr := os.WriteFile(claudeMD, []byte(updated), 0o640); writeErr == nil { //nolint:gosec
+				fmt.Fprintln(w, "[✓] CLAUDE.md updated to use Constitution.compact.md")
+			} else {
+				fmt.Fprintf(w, "[⚠] Could not update CLAUDE.md: %v\n", writeErr)
+			}
+		} else {
+			fmt.Fprintln(w, "[⚠] CLAUDE.md still uses full Constitution.md — run: ai doctor --fix")
+		}
+		return
+	}
+
+	fmt.Fprintln(w, "[✓] Constitution.compact.md present and wired")
 }
 
 // checkInstalledSkills reports whether any skills are installed under the
