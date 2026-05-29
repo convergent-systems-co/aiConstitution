@@ -142,17 +142,18 @@ phases:
     questions:
 
       - qid: Q07
-        prompt: "Which domain files should your constitution include?"
+        prompt: "What type of work does your constitution primarily govern?"
         framing: >-
-          Code.md governs technical work (code, infra, websites). Writing.md
-          governs prose (theology, philosophy, journalism, fiction). "Both"
-          is the recommended default for anyone who does either occasionally.
+          Coder / Engineer includes software, infrastructure, data engineering,
+          and technical writing. Author / Researcher includes theology, philosophy,
+          journalism, and fiction. Both is the recommended default — even
+          occasional work in the other domain benefits from its rule set.
         time: "~10s"
         options:
-          - { label: "Code only",                value: "code" }
-          - { label: "Writing only",             value: "writing" }
-          - { label: "Both (recommended)",       value: "both",   note: "Default" }
-          - { label: "Other domain (describe)",  value: "other",  note: "Chat handoff" }
+          - { label: "Coder / Engineer",            value: "code" }
+          - { label: "Author / Researcher",         value: "writing" }
+          - { label: "Both (recommended)",          value: "both",   note: "Default" }
+          - { label: "Other — describe it",         value: "other",  note: "Chat handoff" }
         allow_free_text: false
         allow_chat: true
         allow_defer: false
