@@ -153,6 +153,27 @@ binary version independently — the binary tracks `SemVer` over the
 
 ---
 
+## [1.4.4] — 2026-05-29
+
+### Added
+
+- **`ai setup` installs Claude official plugins** — registers `anthropics/claude-plugins-official` marketplace and installs `security-guidance` (always) plus Q36c selections (#462).
+- **`ai setup` wires clients from Q36 selection** — only selected clients wired; Cursor/Codex print per-repo reminder (#459).
+- **`ai doctor` compact checks** — detects missing `Constitution.compact.md` or stale `CLAUDE.md` include; `--fix` corrects both (#460).
+- **Profile picker wired** — Q07 answer now maps to correct domain sections in `Constitution.md` (code → Technical, writing → Prose) (#469).
+
+### Fixed
+
+- Six `os.Symlink()` calls replaced with `symlinkOrCopy()` — falls back to file copy on Windows without Developer Mode (#464, #470).
+- Hook validation uses `discoverPythonArgs()` instead of hardcoded `python3`; bash validation skipped on Windows (#465, #470).
+- Pre-commit hook body uses portable `ai hooks run` instead of `exec python3` with bash shebang (#465, #470).
+- Path separator checks now match both `/` and `\` for Windows AI_ROOT paths (#466, #470).
+- `checkBinPath` skips POSIX system bin list on Windows (#467, #470).
+- Stale `Code.md not found` line removed from `ai version` output — it is a section in `Constitution.md` (#463).
+- Skill symlinks `make-work`, `make-review`, `make` relinked from broken temp paths; tests now isolate `CLAUDE_SKILLS_DIR` (#461).
+
+---
+
 ## [Unreleased]
 
 ### Spec — v0.10: GitHub Actions trinity
