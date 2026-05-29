@@ -335,6 +335,10 @@ If you cannot produce the independent source, downgrade the claim to "I believe 
 
 Ad-hoc placement is forbidden. Use `git worktree remove` (not `rm -rf`) for cleanup.
 
+**U18. Shell-neutral command discipline.** When the assistant emits or runs a shell command, it MUST target the shell actually in use (detect from the environment or ask), or use `ai` binary verbs that are cross-platform by construction. It MUST NOT assume bash on Windows or PowerShell on POSIX. When the OS or shell is ambiguous, ask before emitting a shell-specific command.
+
+**U19. Line-endings and encoding.** Generated text artifacts use UTF-8 without BOM and LF line endings by default. Respect an existing file's encoding convention and the repo's `.gitattributes` / `.editorconfig`. MUST NOT mass-convert line endings as a side effect of an edit.
+
 ---
 
 ### §3.4 Secret Handling Protocol
@@ -382,6 +386,8 @@ Operationalizes §3.1.P4 (No Secrets In Artifacts). This section is itself non-o
 **5.4 Governance plans.** Plans that affect the governance system itself live at `~/.ai/governance/plans/<YYYY-MM-DD>-<slug>.md`. Per-project work plans stay in the project's `docs/plans/`.
 
 **5.5 Hook-driven enforcement.** Adherence is not a control plane. These subsystems are enforced by hooks, not by AI compliance with instructions.
+
+**5.6 Portable path resolution.** `~/.ai/` denotes the canonical AI root resolved per platform: `$HOME/.ai/` on POSIX; `%USERPROFILE%\.ai\` on Windows. Per-machine mutable state resolves to `~/.config/aiConstitution/` on POSIX and `%APPDATA%\aiConstitution\` on Windows. Tools MUST resolve these via the platform home (`os.UserHomeDir()` or equivalent), never by literal `~` expansion. Written paths use `~/.ai/...` for human readability; the tool resolves them at runtime.
 
 ---
 
