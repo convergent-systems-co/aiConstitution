@@ -136,6 +136,23 @@ binary version independently — the binary tracks `SemVer` over the
 - `TestDoctorTerminalNotifierFound` assertion tightened to per-line check (was false-positive when any `[⚠]` appeared alongside any `terminal-notifier` mention) (#447).
 - `command-wrappers.toml` header updated to reflect post-fail-closed enforcement model (#447).
 
+## [1.4.3] — 2026-05-29
+
+### Added
+
+- **`ai setup` installs Claude official plugins** — when Claude Code is selected in Q36, setup registers `anthropics/claude-plugins-official` marketplace and installs `security-guidance` (always) plus any plugins selected in Q36c (superpowers, amendment-author, hook-author, etc.) (#462).
+- **`ai doctor` compact constitution checks** — detects when `Constitution.compact.md` is missing or when `CLAUDE.md` still references the full form; `ai doctor --fix` generates the compact form and updates the include (#460).
+- **`ai setup` reads Q36 to wire only selected clients** — Claude Code and Copilot wired globally; Cursor and Codex print per-repo instructions (#459).
+- **All clients use compact form** — Cursor and Codex `AGENTS.md` now link to `Constitution.compact.md` (#459).
+
+### Fixed
+
+- Skill symlinks for `make-work`, `make-review`, `make` were pointing to macOS temp dirs left by test runs; relinked to correct `~/.ai/skills/` targets (#461).
+- Skills install tests now isolate `CLAUDE_SKILLS_DIR` to prevent writing dangling symlinks into the real `~/.claude/skills/` (#461).
+- `env` and `.env*` added to `.gitignore` to prevent accidental commit of local credentials.
+
+---
+
 ## [Unreleased]
 
 ### Spec — v0.10: GitHub Actions trinity
