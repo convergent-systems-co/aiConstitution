@@ -86,6 +86,7 @@ specification (v1.0.0-draft).`,
 		newVersionCmd(),
 		newGenerateCmd(),
 		newMigrateCmd(),
+		newWrapCmd(),
 		newInitIntegrateCmd(),
 		newOpCmd(),
 	)

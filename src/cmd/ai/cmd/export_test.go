@@ -69,3 +69,22 @@ var BrandHTTPGetForTest = &brandHTTPGet
 // PluginHTTPGetForTest allows tests to replace the plugin archive HTTP
 // GET seam.
 var PluginHTTPGetForTest = &pluginHTTPGet
+
+// FindRealBinaryForTest exposes findRealBinary to external tests.
+func FindRealBinaryForTest(tool, override string) (string, error) {
+	return findRealBinary(tool, override)
+}
+
+// HookSlugForTest exposes hookSlug to external tests.
+func HookSlugForTest(scriptPath string) string { return hookSlug(scriptPath) }
+
+// HookAppliesForTest exposes hookApplies to external tests.
+func HookAppliesForTest(h hookDef, subCmd string) bool { return hookApplies(h, subCmd) }
+
+// ApplyStripArgsForTest exposes applyStripArgs to external tests.
+func ApplyStripArgsForTest(args, strip []string) []string { return applyStripArgs(args, strip) }
+
+// NewHookDefForTest constructs a hookDef for tests without exposing the type directly.
+func NewHookDefForTest(script string, subcommands, stripArgs []string) hookDef {
+	return hookDef{Script: script, Subcommands: subcommands, StripArgs: stripArgs}
+}
