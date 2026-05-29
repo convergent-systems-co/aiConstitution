@@ -419,13 +419,13 @@ Operationalizes §3.1.P4 (No Secrets In Artifacts). This section is itself non-o
 
 ### §{{.SectionNum}}.4 AI-Specific Code Practices
 
-- You MUST verify that any library, function, or API exists at the version in use. When uncertain, check or ask. Verification scope: every symbol you introduce that didn't exist in the file before.
-- You MUST NOT invent imports, type signatures, environment variables, CLI flags, or config keys.
-- Generated code MUST be reviewable. Prefer small, focused changes over sprawling rewrites.
-- Commit messages and PR descriptions MUST explain non-obvious decisions: why this library, why this pattern, why this tradeoff.
-- When refactoring across modules, plan first per §3.2.5.
-- Prompts that materially shape generated code SHOULD be versioned alongside the code they produce.
-- When you generate code that closely mirrors a known open-source project (training-data fingerprint), flag it for license review.
+- **{{.SectionNum}}.4.1 Verify library exists.** You MUST verify that any library, function, or API exists at the version in use. When uncertain, check or ask. Verification scope: every symbol you introduce that didn't exist in the file before.
+- **{{.SectionNum}}.4.2 No invented imports.** You MUST NOT invent imports, type signatures, environment variables, CLI flags, or config keys.
+- **{{.SectionNum}}.4.3 Reviewable generated code.** Generated code MUST be reviewable. Prefer small, focused changes over sprawling rewrites.
+- **{{.SectionNum}}.4.4 Explain commit decisions.** Commit messages and PR descriptions MUST explain non-obvious decisions: why this library, why this pattern, why this tradeoff.
+- **{{.SectionNum}}.4.5 Plan cross-module refactors.** When refactoring across modules, plan first per §3.2.5.
+- **{{.SectionNum}}.4.6 Version generative prompts.** Prompts that materially shape generated code SHOULD be versioned alongside the code they produce.
+- **{{.SectionNum}}.4.7 Flag training-data fingerprints.** When you generate code that closely mirrors a known open-source project (training-data fingerprint), flag it for license review.
 
 ### §{{.SectionNum}}.5 Observability and Operations
 
