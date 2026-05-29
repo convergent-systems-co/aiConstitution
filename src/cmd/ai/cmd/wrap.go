@@ -245,9 +245,12 @@ func runWrap(tool string, rawArgs []string) error {
 
 	cfg, err := loadCommandWrappers()
 	if err != nil {
-		// Config missing — fail-open: pass through to real binary.
-		fmt.Fprintf(os.Stderr, "[ai/wrap] config error: %v; passing through to real %s\n", err, tool)
-		os.Exit(execRealCapturingCode(tool, "", toolArgs))
+		// Config missing or unparseable — cannot determine which hooks are blocking.
+		// Fail closed: the caller must fix the config or run 'ai hooks install --all'.
+		fmt.Fprintf(os.Stderr,
+			"[ai/wrap] ENFORCEMENT DEGRADED: cannot load command-wrappers.toml: %v\n"+
+				"  Run 'ai hooks install --all' or 'ai doctor' to restore enforcement.\n", err)
+		os.Exit(1)
 	}
 
 	entry, ok := cfg.Command[tool]
@@ -317,8 +320,9 @@ in ~/.ai/bin/ (git, git.cmd, git.ps1 etc.) delegate to it:
 
 wrap loads command-wrappers.toml, runs the configured pre-hooks for
 the tool and subcommand, invokes the real binary, and runs post-hooks.
-If command-wrappers.toml cannot be loaded, wrap passes through directly
-(fail-open on config error so git/gh are never broken by a bad config).`,
+If command-wrappers.toml cannot be loaded, wrap exits with an error and
+a remediation hint rather than silently passing through — enforcement
+must be explicit, not accidental.`,
 		DisableFlagParsing: true, // forward all flags to the wrapped tool
 		SilenceUsage:       true,
 		RunE: func(_ *cobra.Command, args []string) error {
