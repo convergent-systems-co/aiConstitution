@@ -123,6 +123,33 @@ func RuleIDs(s constitution.Section) []string {
 	return ids
 }
 
+// CompactRules returns the compact-form rule lines for section s,
+// without the HTML comment header that marshalCompact prepends.
+// Each line has the format: §ID [GATE][NON-OVERRIDABLE?] Label — content
+//
+// Used by renderCompactConstitution to embed section rules into
+// Constitution.compact.md without the persona derivative header.
+func CompactRules(s constitution.Section) string {
+	rules := extractRules(s)
+	if len(rules) == 0 {
+		return ""
+	}
+	var sb strings.Builder
+	for _, r := range rules {
+		gateTag := map[string]string{
+			"hard":       "[HARD]",
+			"soft":       "[SOFT]",
+			"permission": "[MAY]",
+		}[r.Gate]
+		noTag := ""
+		if r.NonOverridable {
+			noTag = " [NON-OVERRIDABLE]"
+		}
+		sb.WriteString(fmt.Sprintf("§%s %s%s %s — %s\n\n", r.ID, gateTag, noTag, r.Label, r.Content))
+	}
+	return strings.TrimRight(sb.String(), "\n")
+}
+
 func parseRuleBlock(sectionNum, ruleIdx int, block string) *rule {
 	lines := strings.SplitN(block, "\n", 2)
 	firstLine := lines[0]

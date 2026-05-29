@@ -206,3 +206,39 @@ func TestExtract_ThreeLevelBulletSubRule(t *testing.T) {
 		}
 	}
 }
+
+// TestCompactRules_EmitsIDPrefixedLines verifies that CompactRules returns
+// §ID-prefixed rule lines without the HTML comment header.
+func TestCompactRules_EmitsIDPrefixedLines(t *testing.T) {
+	body := "**P1. Honesty.** MUST NOT fabricate. *(Non-overridable.)*\n\n" +
+		"**U1. State assumptions.** MUST name gap-fill assumptions.\n\n" +
+		"- **13.1 Capacity gate.** MUST stop at 80%%."
+	s := section(3, "Universal", body)
+	out := compress.CompactRules(s)
+
+	if strings.Contains(out, "<!--") {
+		t.Error("CompactRules output must not contain HTML comment header")
+	}
+	if !strings.Contains(out, "§") {
+		t.Errorf("CompactRules output must contain § prefixes, got:\n%s", out)
+	}
+	if !strings.Contains(out, "[HARD]") {
+		t.Errorf("CompactRules output must contain gate tags, got:\n%s", out)
+	}
+	if !strings.Contains(out, "NON-OVERRIDABLE") {
+		t.Errorf("CompactRules output must mark non-overridable rules, got:\n%s", out)
+	}
+	if !strings.Contains(out, "13.1") {
+		t.Errorf("CompactRules output must include bullet sub-rule ID 13.1, got:\n%s", out)
+	}
+}
+
+// TestCompactRules_EmptySection verifies that CompactRules returns empty
+// string when no rules are extractable.
+func TestCompactRules_EmptySection(t *testing.T) {
+	s := section(4, "Technical", "Just prose with no rule heads or bullets.")
+	out := compress.CompactRules(s)
+	if out != "" {
+		t.Errorf("expected empty string for section with no rules, got %q", out)
+	}
+}
