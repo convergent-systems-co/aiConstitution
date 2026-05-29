@@ -115,7 +115,7 @@ func runInit(cmd *cobra.Command, cwd string, dryRun bool) error {
 			return fmt.Errorf("init: mkdir .cursor/rules: %w", err)
 		}
 		if _, err := os.Lstat(cursorLink); os.IsNotExist(err) {
-			if err := os.Symlink(cursorTarget, cursorLink); err != nil {
+			if err := symlinkOrCopy(cursorTarget, cursorLink); err != nil {
 				// Symlink failure is non-fatal (e.g., unsupported FS); warn and continue.
 				fmt.Fprintf(cmd.ErrOrStderr(), "init: warning: could not create symlink %s: %v\n", cursorLink, err)
 			}

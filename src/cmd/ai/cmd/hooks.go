@@ -968,34 +968,35 @@ func checkPython(r *hookValidationResult, content []byte) {
 		// intent — but we continue to collect all findings.
 	}
 
-	// 2. Syntax check via python3 -m py_compile
-	tmpFile, err := os.CreateTemp("", "ai-hook-validate-*.py")
-	if err == nil {
-		defer os.Remove(tmpFile.Name())
-		if _, werr := tmpFile.Write(content); werr == nil {
-			tmpFile.Close()
-			out, cerr := exec.Command("python3", "-m", "py_compile", tmpFile.Name()).CombinedOutput()
-			if cerr != nil {
-				r.status = "fail"
-				msg := strings.TrimSpace(string(out))
-				if msg == "" {
-					msg = cerr.Error()
-				}
-				// Replace tmpFile path with the hook name for readability.
-				msg = strings.ReplaceAll(msg, tmpFile.Name(), f(r.name))
-				r.messages = append(r.messages, "syntax error: "+msg)
-			}
-		} else {
-			tmpFile.Close()
+	// 2. Syntax check via python3 -m py_compile (cross-platform: use discoverPythonArgs)
+	pyArgs := discoverPythonArgs()
+	if pyArgs == nil {
+		// Python not found — warn rather than fail.
+		if r.status == "ok" {
+			r.status = "warn"
 		}
-	}
-	// If python3 is missing entirely, emit a warning rather than failing.
-	if err != nil {
-		if _, lerr := exec.LookPath("python3"); lerr != nil {
-			if r.status == "ok" {
-				r.status = "warn"
+		r.messages = append(r.messages, "python3 not found; skipping syntax check")
+	} else {
+		tmpFile, err := os.CreateTemp("", "ai-hook-validate-*.py")
+		if err == nil {
+			defer os.Remove(tmpFile.Name())
+			if _, werr := tmpFile.Write(content); werr == nil {
+				tmpFile.Close()
+				args := append(pyArgs[1:], "-m", "py_compile", tmpFile.Name()) //nolint:gocritic // intentional
+				out, cerr := exec.Command(pyArgs[0], args...).CombinedOutput()
+				if cerr != nil {
+					r.status = "fail"
+					msg := strings.TrimSpace(string(out))
+					if msg == "" {
+						msg = cerr.Error()
+					}
+					// Replace tmpFile path with the hook name for readability.
+					msg = strings.ReplaceAll(msg, tmpFile.Name(), f(r.name))
+					r.messages = append(r.messages, "syntax error: "+msg)
+				}
+			} else {
+				tmpFile.Close()
 			}
-			r.messages = append(r.messages, "python3 not found; skipping syntax check")
 		}
 	}
 
@@ -1018,6 +1019,11 @@ func f(name string) string { return "<" + name + ">" }
 
 // checkShell applies bash -n syntax check to a shell script.
 func checkShell(r *hookValidationResult, content []byte) {
+	if runtime.GOOS == "windows" {
+		r.status = "skip"
+		r.messages = append(r.messages, "bash not available on Windows; skipping shell syntax check")
+		return
+	}
 	tmpFile, err := os.CreateTemp("", "ai-hook-validate-*.sh")
 	if err != nil {
 		r.status = "fail"
@@ -1166,10 +1172,10 @@ func installRepoPrecommit(repoDir, hooksDir string) error {
 		fmt.Println("pre-commit already present at", dst, "— leaving in place")
 		return nil
 	}
-	body := fmt.Sprintf(`#!/usr/bin/env bash
-# Installed by `+"`"+`ai hooks install --repo=%s`+"`"+` (SPEC.md §10.2).
-exec python3 %q "$@"
-`, repoDir, hookPath)
+	// Use the portable `ai hooks run` invocation rather than hardcoding python3 or
+	// bash, which are not available on all platforms (e.g. Windows).
+	slug := strings.TrimSuffix(filepath.Base(hookPath), ".py")
+	body := fmt.Sprintf("#!/usr/bin/env ai-hooks-run\n# Installed by `ai hooks install --repo=%s` (SPEC.md §10.2).\nai hooks run %s\n", repoDir, slug)
 	if err := os.MkdirAll(filepath.Dir(dst), 0o750); err != nil {
 		return err
 	}
@@ -1294,7 +1300,7 @@ func runHooksCopilotInstall(aiRoot, home string) error {
 	link := filepath.Join(dir, "constitution.md")
 	// Remove stale or existing symlink before (re)creating.
 	_ = os.Remove(link)
-	if err := os.Symlink(target, link); err != nil {
+	if err := symlinkOrCopy(target, link); err != nil {
 		return fmt.Errorf("hooks copilot: symlink: %w", err)
 	}
 	return nil
