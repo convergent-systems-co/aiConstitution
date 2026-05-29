@@ -66,6 +66,16 @@ binary version independently — the binary tracks `SemVer` over the
 - `ai hooks list`: `lib.py` filtered (transition artifact); `audit-logger.py` wired to `PreToolUse` (#421)
 - `ai status`: wired hook count now reflects both group and flat settings.json formats (#402)
 
+## [1.4.3] — 2026-05-29
+
+### Added
+
+- **`ai doctor` compact constitution checks** — detects when `Constitution.compact.md` is missing or when `CLAUDE.md` still references the full form; `ai doctor --fix` generates the compact form and updates the include (#460).
+- **`ai setup` reads Q36 to wire only selected clients** — Claude Code and Copilot wired globally; Cursor and Codex print per-repo instructions (#459).
+- **All clients use compact form** — Cursor (`init-integrate --cursor`) and Codex (`AGENTS.md`) now link to `Constitution.compact.md` (#459).
+
+---
+
 ## [1.4.2] — 2026-05-29
 
 ### Fixed
