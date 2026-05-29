@@ -46,23 +46,32 @@ def patterns_local_path() -> Path:
 def load_patterns() -> list[dict]:
     """Load patterns.json plus optional patterns.local.json. Returns a
     list of pattern dicts (the union of both). Local entries override
-    canonical entries with the same id."""
+    canonical entries with the same id. Any id listed under "disable"
+    in patterns.local.json is dropped from the final set, allowing
+    per-repo suppression of false-positive patterns."""
     base: list[dict] = []
     p = patterns_path()
     if p.is_file():
         data = json.loads(p.read_text(encoding="utf-8"))
         base = data.get("patterns", [])
 
-    local: list[dict] = []
+    local_add: list[dict] = []
+    local_disable: list[str] = []
     lp = patterns_local_path()
     if lp.is_file():
         data = json.loads(lp.read_text(encoding="utf-8"))
-        local = data.get("patterns", [])
+        local_add = data.get("add", data.get("patterns", []))
+        local_disable = data.get("disable", [])
 
-    # local overrides by id
+    # local overrides / additions by id
     by_id = {p["id"]: p for p in base}
-    for entry in local:
+    for entry in local_add:
         by_id[entry["id"]] = entry
+
+    # drop any id the local allowlist suppresses
+    for slug in local_disable:
+        by_id.pop(slug, None)
+
     out = list(by_id.values())
     # compile regexes once for the lifetime of the process
     for entry in out:
@@ -71,7 +80,12 @@ def load_patterns() -> list[dict]:
 
 
 def scan_lines(lines: Iterable[str], patterns: list[dict]) -> list[dict]:
-    """Walk every line through every pattern; return a list of hits."""
+    """Walk every line through every pattern; return a list of hits.
+
+    Each hit includes a ``block_level`` key: ``"blocking"`` (default) means the
+    caller should abort; ``"warn"`` means the caller should emit a warning but
+    allow the operation to proceed.
+    """
     hits = []
     for lineno, line in enumerate(lines, start=1):
         for entry in patterns:
@@ -79,6 +93,7 @@ def scan_lines(lines: Iterable[str], patterns: list[dict]) -> list[dict]:
                 hits.append({
                     "pattern_id": entry["id"],
                     "severity": entry.get("severity", "medium"),
+                    "block_level": entry.get("block_level", "blocking"),
                     "redaction": entry.get("redaction", "[REDACTED]"),
                     "line": lineno,
                     "col": m.start() + 1,

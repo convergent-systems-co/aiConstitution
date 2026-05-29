@@ -6,6 +6,7 @@
       "id": "github-token",
       "regex": "(ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{36,}",
       "severity": "high",
+      "block_level": "blocking",
       "redaction": "[REDACTED:github-token]",
       "description": "GitHub personal/OAuth/user-to-server/server-to-server/refresh token"
     },
@@ -13,6 +14,7 @@
       "id": "github-fine-grained-pat",
       "regex": "github_pat_[A-Za-z0-9_]{60,}",
       "severity": "high",
+      "block_level": "blocking",
       "redaction": "[REDACTED:github-fine-grained-pat]",
       "description": "GitHub fine-grained personal access token"
     },
@@ -20,6 +22,7 @@
       "id": "aws-access-key",
       "regex": "(?:AKIA|ASIA)[0-9A-Z]{16}",
       "severity": "high",
+      "block_level": "blocking",
       "redaction": "[REDACTED:aws-access-key]",
       "description": "AWS access key id (long-lived or session)"
     },
@@ -27,6 +30,7 @@
       "id": "google-api-key",
       "regex": "AIza[0-9A-Za-z\\-_]{35}",
       "severity": "high",
+      "block_level": "blocking",
       "redaction": "[REDACTED:google-api-key]",
       "description": "Google Cloud API key"
     },
@@ -97,6 +101,7 @@
       "id": "jwt-token",
       "regex": "eyJ[A-Za-z0-9_\\-]{10,}\\.[A-Za-z0-9_\\-]{10,}\\.[A-Za-z0-9_\\-]{10,}",
       "severity": "medium",
+      "block_level": "warn",
       "redaction": "[REDACTED:jwt]",
       "description": "JSON Web Token (three base64 segments). Medium severity to limit false positives on long encoded values."
     },
@@ -118,6 +123,7 @@
       "id": "azure-storage-sas",
       "regex": "(?:sig|signature)=[A-Za-z0-9%]{40,}",
       "severity": "medium",
+      "block_level": "warn",
       "redaction": "[REDACTED:azure-sas-signature]",
       "description": "Azure Storage SAS signature segment"
     },
@@ -139,6 +145,7 @@
       "id": "twilio-account-sid",
       "regex": "AC[a-f0-9]{32}",
       "severity": "medium",
+      "block_level": "warn",
       "redaction": "[REDACTED:twilio-account-sid]",
       "description": "Twilio Account SID (low-risk by itself; pair with auth token to weaponize)"
     },
