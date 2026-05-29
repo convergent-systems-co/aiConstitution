@@ -7,6 +7,8 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/convergent-systems-co/aiConstitution/src/internal/paths"
 )
 
 // TestDoctorTerminalNotifierFound verifies that runDoctor prints a [✓]
@@ -528,5 +530,59 @@ func TestCheckHookWiring_NoSettings(t *testing.T) {
 		if !strings.Contains(got, h) {
 			t.Errorf("expected warning mentioning %s when settings.json absent; got:\n%s", h, got)
 		}
+	}
+}
+
+func TestCheckWrapperHookDrift_AllInstalled(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("AI_ROOT", tmp)
+	paths.SetOverrides(tmp, "")
+	t.Cleanup(func() { paths.SetOverrides("", "") })
+
+	hooksDir := filepath.Join(tmp, "hooks")
+	if err := os.MkdirAll(hooksDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// Install all blocking hooks referenced by the embedded TOML.
+	for _, slug := range []string{
+		"branch-guard", "secret-precommit", "no-verify-strip", "destructive-gh-guard",
+	} {
+		if err := os.WriteFile(filepath.Join(hooksDir, slug+".py"), []byte("# stub\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	var buf bytes.Buffer
+	checkWrapperHookDrift(&buf)
+	out := buf.String()
+
+	if strings.Contains(out, "⚠") {
+		t.Errorf("expected no warnings when all hooks installed, got:\n%s", out)
+	}
+	if !strings.Contains(out, "[✓]") {
+		t.Errorf("expected [✓] confirmation, got:\n%s", out)
+	}
+}
+
+func TestCheckWrapperHookDrift_MissingHook(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("AI_ROOT", tmp)
+	paths.SetOverrides(tmp, "")
+	t.Cleanup(func() { paths.SetOverrides("", "") })
+
+	// Create hooks dir but leave it empty — no hook files installed.
+	if err := os.MkdirAll(filepath.Join(tmp, "hooks"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	var buf bytes.Buffer
+	checkWrapperHookDrift(&buf)
+	out := buf.String()
+
+	if !strings.Contains(out, "⚠") {
+		t.Errorf("expected drift warning when hooks missing, got:\n%s", out)
+	}
+	if !strings.Contains(out, "ai hooks install --all") {
+		t.Errorf("expected remediation hint 'ai hooks install --all', got:\n%s", out)
 	}
 }
