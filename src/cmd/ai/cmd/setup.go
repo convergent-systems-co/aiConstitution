@@ -227,14 +227,20 @@ func runSetupPostWizard(aiRoot, claudeDir, copilotDir string, answers map[string
 	if err := os.WriteFile(constitutionPath, []byte(rendered), 0o600); err != nil { //nolint:gosec
 		return fmt.Errorf("setup: write Constitution.md: %w", err)
 	}
-	// Generate compact runtime for Copilot/Cursor.
-	if rc, err := constitution.ExtractRuntime(rendered); err == nil {
-		runtimePath := filepath.Join(aiRoot, "Constitution.runtime.md")
-		_ = os.WriteFile(runtimePath, []byte(constitution.FormatRuntime(rc)), 0o600) //nolint:gosec
+
+	// Generate Constitution.compact.md — the compressed form that clients load.
+	// This is what Claude Code and Copilot receive; the full Constitution.md is
+	// the human-readable source of truth.
+	values, _ := extractPersonalValues(aiRoot)
+	compact := renderCompactConstitution(values, rendered)
+	compactPath := filepath.Join(aiRoot, "Constitution.compact.md")
+	if err := os.WriteFile(compactPath, []byte(compact), 0o600); err != nil { //nolint:gosec
+		return fmt.Errorf("setup: write Constitution.compact.md: %w", err)
 	}
 
 	if noHooks {
-		fmt.Printf("setup: Constitution.md written (%d bytes). Skipping hook install and tool wiring (--no-hooks).\n", len(rendered))
+		fmt.Printf("setup: Constitution.md written (%d bytes), compact: %d bytes. Skipping wiring (--no-hooks).\n",
+			len(rendered), len(compact))
 		return nil
 	}
 
@@ -344,14 +350,16 @@ func writeClaudeMD(claudeDir, _ string) error {
 	}
 	path := filepath.Join(claudeDir, "CLAUDE.md")
 
-	const primaryInclude = "@~/.ai/Constitution.md"
+	// Wire the compact form — clients (Claude Code, Copilot) receive the
+	// compressed ~8KB form. Constitution.md remains the human-readable source.
+	const primaryInclude = "@~/.ai/Constitution.compact.md"
 
-	// Stale four-file includes from the pre-v2 layout. These reference files
-	// that no longer exist in a fresh install and cause silent context failures.
+	// Stale includes from earlier layouts that cause silent context failures.
 	staleIncludes := map[string]bool{
-		"@~/.ai/Common.md":  true,
-		"@~/.ai/Code.md":    true,
-		"@~/.ai/Writing.md": true,
+		"@~/.ai/Constitution.md":  true, // superseded by compact form
+		"@~/.ai/Common.md":        true,
+		"@~/.ai/Code.md":          true,
+		"@~/.ai/Writing.md":       true,
 	}
 
 	existing := ""
@@ -388,12 +396,10 @@ func writeClaudeMD(claudeDir, _ string) error {
 
 // installCopilotSymlink creates (or repairs) the symlink:
 //
-//	~/.copilot/instructions/constitution.md → ~/.ai/Constitution.runtime.md
+//	~/.copilot/instructions/constitution.md → ~/.ai/Constitution.compact.md
 //
-// #198 acceptance criteria:
-//   - If the symlink already exists and points to the correct target: no-op.
-//   - If the symlink exists but points to a stale target: remove and recreate.
-//   - If the symlink does not exist: create it (and any missing parent dirs).
+// Copilot receives the compact form — same as Claude Code — keeping both
+// clients in sync and within context budget.
 func installCopilotSymlink(copilotDir, aiRoot string) error {
 	instructionsDir := filepath.Join(copilotDir, "instructions")
 	if err := os.MkdirAll(instructionsDir, 0o750); err != nil {
@@ -401,7 +407,7 @@ func installCopilotSymlink(copilotDir, aiRoot string) error {
 	}
 
 	linkPath := filepath.Join(instructionsDir, "constitution.md")
-	target := filepath.Join(aiRoot, "Constitution.runtime.md")
+	target := filepath.Join(aiRoot, "Constitution.compact.md")
 
 	// Check existing symlink.
 	existing, err := os.Readlink(linkPath)

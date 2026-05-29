@@ -27,8 +27,8 @@ func TestWriteClaudeMDCreatesFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadFile: %v", err)
 	}
-	if !strings.Contains(string(content), "@~/.ai/Constitution.md") {
-		t.Errorf("CLAUDE.md does not contain @~/.ai/Constitution.md; got:\n%s", content)
+	if !strings.Contains(string(content), "@~/.ai/Constitution.compact.md") {
+		t.Errorf("CLAUDE.md does not contain @~/.ai/Constitution.compact.md; got:\n%s", content)
 	}
 }
 
@@ -53,7 +53,7 @@ func TestWriteClaudeMDIsIdempotent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadFile: %v", err)
 	}
-	count := strings.Count(string(content), "@~/.ai/Constitution.md")
+	count := strings.Count(string(content), "@~/.ai/Constitution.compact.md")
 	if count != 1 {
 		t.Errorf("Idempotent: @-include appears %d times, want exactly 1;\n%s", count, content)
 	}
@@ -61,7 +61,7 @@ func TestWriteClaudeMDIsIdempotent(t *testing.T) {
 
 // TestInstallCopilotSymlinkCreatesSymlink verifies that installCopilotSymlink
 // creates a symlink from ~/.copilot/instructions/constitution.md to
-// ~/.ai/Constitution.runtime.md.
+// ~/.ai/Constitution.compact.md.
 func TestInstallCopilotSymlinkCreatesSymlink(t *testing.T) {
 	tmp := t.TempDir()
 	aiRoot := filepath.Join(tmp, ".ai")
@@ -78,7 +78,7 @@ func TestInstallCopilotSymlinkCreatesSymlink(t *testing.T) {
 		t.Fatalf("Readlink: %v", err)
 	}
 
-	wantTarget := filepath.Join(aiRoot, "Constitution.runtime.md")
+	wantTarget := filepath.Join(aiRoot, "Constitution.compact.md")
 	if target != wantTarget {
 		t.Errorf("symlink target = %q, want %q", target, wantTarget)
 	}
@@ -110,7 +110,7 @@ func TestInstallCopilotSymlinkStaleSymlink(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Readlink after fix: %v", err)
 	}
-	wantTarget := filepath.Join(aiRoot, "Constitution.runtime.md")
+	wantTarget := filepath.Join(aiRoot, "Constitution.compact.md")
 	if target != wantTarget {
 		t.Errorf("symlink target after fix = %q, want %q", target, wantTarget)
 	}
@@ -212,7 +212,7 @@ func TestRunSetupWritesConstitutionFiles(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CLAUDE.md missing: %v", err)
 	}
-	if !strings.Contains(string(content), "@~/.ai/Constitution.md") {
+	if !strings.Contains(string(content), "@~/.ai/Constitution.compact.md") {
 		t.Errorf("CLAUDE.md missing @-include; got:\n%s", content)
 	}
 }
