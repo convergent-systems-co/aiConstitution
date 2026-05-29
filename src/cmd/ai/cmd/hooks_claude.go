@@ -117,6 +117,6 @@ func isRetiredHookCmd(cmd string) bool {
 //	python3 /some/path/.ai/hooks/foo.py   (with python3 prefix)
 //	/some/path/.ai/hooks/foo.py           (bare path, no interpreter)
 func isAbsoluteHookCmd(cmd string) bool {
-	return strings.Contains(cmd, "/.ai/hooks/") ||
+	return strings.Contains(cmd, "/.ai/hooks/") || strings.Contains(cmd, "\\.ai\\hooks\\") ||
 		(strings.HasPrefix(cmd, "python3 ") && strings.Contains(cmd, "/hooks/"))
 }

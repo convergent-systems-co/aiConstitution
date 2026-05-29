@@ -342,7 +342,7 @@ func ensureSymlink(target, linkPath string) error {
 			return fmt.Errorf("skills: remove existing symlink %s: %w", linkPath, removeErr)
 		}
 	}
-	return os.Symlink(target, linkPath)
+	return symlinkOrCopy(target, linkPath)
 }
 
 // runSkillsInstall is the implementation of `ai skills install <name>[@version]`.

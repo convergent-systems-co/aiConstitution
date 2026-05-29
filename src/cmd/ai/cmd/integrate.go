@@ -128,7 +128,7 @@ func runIntegrateCursor(cwd, aiRoot string) error {
 		}
 	}
 
-	if err := os.Symlink(compactFile, symlinkPath); err != nil {
+	if err := symlinkOrCopy(compactFile, symlinkPath); err != nil {
 		return fmt.Errorf("creating symlink %s: %w", symlinkPath, err)
 	}
 	fmt.Printf("Cursor rule symlink created: %s → Constitution.compact.md\n", symlinkPath)

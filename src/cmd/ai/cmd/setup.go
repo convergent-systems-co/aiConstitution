@@ -426,7 +426,7 @@ func installCopilotSymlink(copilotDir, aiRoot string) error {
 		return fmt.Errorf("installCopilotSymlink: readlink: %w", err)
 	}
 
-	return os.Symlink(target, linkPath)
+	return symlinkOrCopy(target, linkPath)
 }
 
 // runSetupNonInteractive renders the constitution using default answers from

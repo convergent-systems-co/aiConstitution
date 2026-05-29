@@ -335,7 +335,7 @@ func runConstitutionRestore(cmd *cobra.Command, backupTS string) error {
 	copilotLink := filepath.Join(home, ".copilot", "instructions", "constitution.md")
 	_ = os.MkdirAll(filepath.Dir(copilotLink), 0o750)
 	_ = os.Remove(copilotLink)
-	if err := os.Symlink(runtimeMD, copilotLink); err != nil {
+	if err := symlinkOrCopy(runtimeMD, copilotLink); err != nil {
 		_, _ = fmt.Fprintf(out, "[!] Copilot symlink: %v\n", err)
 	} else {
 		_, _ = fmt.Fprintln(out, "[✓] Copilot symlink recreated")

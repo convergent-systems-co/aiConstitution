@@ -118,11 +118,12 @@ func readWiredHookNames(settingsPath string) map[string]bool {
 			wired[slug+".py"] = true
 			return
 		}
-		// Legacy absolute-path format: "python3 /abs/.ai/hooks/audit.py" or bare path
-		if strings.Contains(cmd, "/.ai/hooks/") {
+		// Legacy absolute-path format: "python3 /abs/.ai/hooks/audit.py" or bare path.
+		// Check both POSIX and Windows path separators.
+		if strings.Contains(cmd, "/.ai/hooks/") || strings.Contains(cmd, "\\.ai\\hooks\\") {
 			parts := strings.Fields(cmd)
 			for _, p := range parts {
-				if strings.Contains(p, "/.ai/hooks/") {
+				if strings.Contains(p, "/.ai/hooks/") || strings.Contains(p, "\\.ai\\hooks\\") {
 					wired[filepath.Base(p)] = true
 					return
 				}
@@ -496,7 +497,12 @@ const ( PathOK PathStatus = iota; PathMissing; PathShadowed )
 func checkBinPath(binDir, pathVar string) (PathStatus, string) {
 	if binDir == "" { return PathOK, "" }
 	binDir = filepath.Clean(binDir)
-	systemBins := []string{"/usr/local/bin", "/opt/homebrew/bin"}
+	var systemBins []string
+	if runtime.GOOS == "windows" {
+		systemBins = []string{} // Windows PATH ordering check not applicable
+	} else {
+		systemBins = []string{"/usr/local/bin", "/opt/homebrew/bin"}
+	}
 	entries := strings.Split(pathVar, string(os.PathListSeparator))
 	binIdx := -1; systemIdxs := map[string]int{}
 	for i, e := range entries {
