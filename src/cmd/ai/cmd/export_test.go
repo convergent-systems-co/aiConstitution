@@ -54,3 +54,18 @@ func InstallHookFromCatalogForTest(slug, hooksDir string) error {
 // ErrHookNotInCatalogForTest exposes ErrHookNotInCatalog to the external _test
 // package for use with errors.Is assertions.
 var ErrHookNotInCatalogForTest = ErrHookNotInCatalog
+
+// SkillAtomsBaseURLForTest allows tests to redirect skill-atom GitHub
+// Contents API calls to an httptest server.
+var SkillAtomsBaseURLForTest = &SkillAtomsBaseURL
+
+// PluginAtomsBaseURLForTest allows tests to redirect plugin-atoms.com
+// resolution to an httptest server.
+var PluginAtomsBaseURLForTest = &PluginAtomsBaseURL
+
+// BrandHTTPGetForTest allows tests to replace the brand HTTP GET seam.
+var BrandHTTPGetForTest = &brandHTTPGet
+
+// PluginHTTPGetForTest allows tests to replace the plugin archive HTTP
+// GET seam.
+var PluginHTTPGetForTest = &pluginHTTPGet
