@@ -275,6 +275,12 @@ func runSetupPostWizard(aiRoot, claudeDir, copilotDir string, answers map[string
 	// Default to Claude Code when Q36 is absent (e.g. non-interactive/seeds).
 	wireClients(answers, claudeDir, copilotDir, aiRoot)
 
+	// Install Claude Code plugins selected in Q36b/Q36c.
+	// Requires the `claude` binary on PATH; non-fatal if absent.
+	if tools := answers["Q36"]; strings.Contains(tools, "claude-code") || tools == "" {
+		installClaudePlugins(answers)
+	}
+
 	fmt.Println("setup: done — constitution wired. Run `ai doctor` to verify.")
 	return nil
 }
@@ -530,6 +536,87 @@ func wireClients(answers map[string]string, claudeDir, copilotDir, aiRoot string
 		// Fallback: Q36 had a value we don't recognise (e.g. "other") — wire Claude Code.
 		if err := writeClaudeMD(claudeDir, aiRoot); err != nil {
 			fmt.Fprintf(os.Stderr, "setup: warning: Claude Code wiring failed: %v\n", err)
+		}
+	}
+}
+
+// installClaudePlugins installs Claude Code plugins based on Q36b/Q36c answers.
+// Requires the `claude` CLI on PATH. Non-fatal: prints warnings on failure.
+//
+// Plugin mapping (Q36c values → marketplace slugs):
+//   superpowers       → superpowers@claude-plugins-official
+//   amendment-author  → amendment-author@claude-plugins-official
+//   hook-author       → hook-author@claude-plugins-official
+//   atom-publisher    → atom-publisher@claude-plugins-official
+//   review-panel      → review-panel@claude-plugins-official
+//   memory-curator    → memory-curator@claude-plugins-official
+//
+// When Q36b is "pick" and Q36c lists specific plugins, only those are installed.
+// When Q36b is absent/skipped and we're on Claude Code, install security-guidance
+// (the always-on governance plugin) only.
+func installClaudePlugins(answers map[string]string) {
+	claudePath, err := exec.LookPath("claude")
+	if err != nil {
+		return // claude CLI not on PATH — skip silently
+	}
+
+	const marketplace = "claude-plugins-official"
+
+	// Always ensure the official marketplace is registered.
+	ensureMarketplace := func() bool {
+		check := exec.Command(claudePath, "plugin", "marketplace", "list") //nolint:gosec
+		out, _ := check.Output()
+		if strings.Contains(string(out), marketplace) {
+			return true
+		}
+		add := exec.Command(claudePath, "plugin", "marketplace", "add", "anthropics/"+marketplace) //nolint:gosec
+		add.Stdout = os.Stderr // progress to stderr
+		add.Stderr = os.Stderr
+		if err := add.Run(); err != nil {
+			fmt.Fprintf(os.Stderr, "setup: warning: could not add Claude plugin marketplace: %v\n", err)
+			return false
+		}
+		return true
+	}
+
+	install := func(slug string) {
+		full := slug + "@" + marketplace
+		c := exec.Command(claudePath, "plugin", "install", full) //nolint:gosec
+		if out, err := c.CombinedOutput(); err != nil {
+			// Ignore "already installed" errors.
+			if !strings.Contains(string(out), "already installed") {
+				fmt.Fprintf(os.Stderr, "setup: warning: could not install plugin %s: %v\n", full, err)
+			}
+		} else {
+			fmt.Printf("setup: [✓] Installed Claude plugin: %s\n", slug)
+		}
+	}
+
+	q36b := strings.ToLower(answers["Q36b"])
+	q36c := strings.ToLower(answers["Q36c"])
+
+	// security-guidance is always installed for Claude Code users.
+	if !ensureMarketplace() {
+		return
+	}
+	install("security-guidance")
+
+	if q36b != "pick" {
+		return // user opted out of additional plugins
+	}
+
+	// Install plugins the user selected in Q36c.
+	pluginMap := map[string]string{
+		"superpowers":      "superpowers",
+		"amendment-author": "amendment-author",
+		"hook-author":      "hook-author",
+		"atom-publisher":   "atom-publisher",
+		"review-panel":     "review-panel",
+		"memory-curator":   "memory-curator",
+	}
+	for key, slug := range pluginMap {
+		if strings.Contains(q36c, key) {
+			install(slug)
 		}
 	}
 }
