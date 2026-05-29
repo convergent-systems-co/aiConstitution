@@ -18,7 +18,7 @@ const agentsConstSection = `
 Load the following governance document before acting:
 
 ` + "```" + `
-@~/.ai/Constitution.md
+@~/.ai/Constitution.compact.md
 ` + "```" + `
 
 This document governs all AI behavior for this repository. See [aiConstitution](https://github.com/convergent-systems-co/aiConstitution) for details.
@@ -31,7 +31,7 @@ const agentsFileHeader = `# AI Agents Configuration
 // agentsIncludeMarker is the string searched for when deciding whether the
 // @-include is already present. Using only the marker (not the full section)
 // makes the idempotency check robust against minor formatting drift.
-const agentsIncludeMarker = "@~/.ai/Constitution.md"
+const agentsIncludeMarker = "@~/.ai/Constitution.compact.md"
 
 // newInitIntegrateCmd returns the `ai init-integrate` cobra command, which
 // wires AI tool integrations into the current working directory or the user's
@@ -101,11 +101,12 @@ func newInitIntegrateCmd() *cobra.Command {
 // Idempotent: if the symlink already points at the right target, it is left
 // untouched. A stale symlink is replaced.
 func runIntegrateCursor(cwd, aiRoot string) error {
-	runtimeFile := filepath.Join(aiRoot, "Constitution.runtime.md")
-	if _, err := os.Stat(runtimeFile); err != nil {
+	// Cursor receives the compact form — same as Claude Code and Copilot.
+	compactFile := filepath.Join(aiRoot, "Constitution.compact.md")
+	if _, err := os.Stat(compactFile); err != nil {
 		return fmt.Errorf(
-			"Constitution.runtime.md not found at %s — run 'ai generate runtime' first",
-			runtimeFile,
+			"Constitution.compact.md not found at %s — run 'ai compress' first",
+			compactFile,
 		)
 	}
 
@@ -117,7 +118,7 @@ func runIntegrateCursor(cwd, aiRoot string) error {
 	symlinkPath := filepath.Join(rulesDir, "constitution.md")
 
 	if existing, err := os.Readlink(symlinkPath); err == nil {
-		if existing == runtimeFile {
+		if existing == compactFile {
 			fmt.Printf("Cursor rule symlink already up to date: %s\n", symlinkPath)
 			return nil
 		}
@@ -127,10 +128,10 @@ func runIntegrateCursor(cwd, aiRoot string) error {
 		}
 	}
 
-	if err := os.Symlink(runtimeFile, symlinkPath); err != nil {
+	if err := os.Symlink(compactFile, symlinkPath); err != nil {
 		return fmt.Errorf("creating symlink %s: %w", symlinkPath, err)
 	}
-	fmt.Printf("Cursor rule symlink created: %s\n", symlinkPath)
+	fmt.Printf("Cursor rule symlink created: %s → Constitution.compact.md\n", symlinkPath)
 	return nil
 }
 
