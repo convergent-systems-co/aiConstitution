@@ -50,8 +50,12 @@ func TestDoctorTerminalNotifierFound(t *testing.T) {
 	if !strings.Contains(got, "[✓]") || !strings.Contains(got, "terminal-notifier") {
 		t.Errorf("expected [✓] terminal-notifier line in output; got:\n%s", got)
 	}
-	if strings.Contains(got, "[⚠]") && strings.Contains(got, "terminal-notifier") {
-		t.Errorf("got [⚠] for terminal-notifier but it should be found; output:\n%s", got)
+	// Verify no single warning line mentions terminal-notifier — other [⚠] lines
+	// (e.g. missing hooks in the test temp dir) are acceptable.
+	for _, line := range strings.Split(got, "\n") {
+		if strings.Contains(line, "[⚠]") && strings.Contains(line, "terminal-notifier") {
+			t.Errorf("got [⚠] for terminal-notifier but it should be found: %q\nfull output:\n%s", line, got)
+		}
 	}
 }
 
