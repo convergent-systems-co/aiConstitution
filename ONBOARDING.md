@@ -76,7 +76,6 @@ The `ai` binary is structured as a Cobra command tree. Every top-level verb has 
 | `ai constitution` | Backup and restore the unified governance prose |
 | `ai memory` | List, show, codify, archive, and retire memory entries |
 | `ai brand` | Brand token management from `brand-atoms.com` |
-| `ai atoms` | Fetch, list, verify, publish, fork, and GC atoms |
 | `ai mode` | Activate a persona or profile (additive, not exclusive) |
 | `ai focus` | Set the active cognitive focus mode |
 | `ai profile` | Compose, list, show, edit, and remove profiles |

@@ -88,21 +88,16 @@ for the full table and rationale.
 │   │   ├── cmd/                    cobra subcommands (one per SPEC §3 verb)
 │   │   ├── embed/                  embedded assets bundled into the binary
 │   │   │   ├── embed.go            //go:embed directives + Extract* helpers
-│   │   │   ├── hooks/              Python hook source — extracted to ~/.ai/hooks/
-│   │   │   │   ├── patterns.json   canonical secret pattern set
-│   │   │   │   ├── audit.py        interaction logger
-│   │   │   │   ├── secret-block.py PreToolUse secret denier
-│   │   │   │   ├── secret-precommit.py  git pre-commit secret scanner
-│   │   │   │   ├── branch-guard.py protected-branch enforcer
-│   │   │   │   ├── worktree-guard.py    §U17 placement enforcer
-│   │   │   │   ├── no-verify-strip.py   wrapper preHook
-│   │   │   │   ├── destructive-*.py     gh / terraform / kubectl guards
-│   │   │   │   ├── audit-command.py     wrapper postHook
-│   │   │   │   ├── checkpoint-tick.py   30-min HANDOFF.md tick
-│   │   │   │   └── command-wrappers.toml   wrapper config
-│   │   │   └── wrappers/           extracted to ~/.ai/bin/
-│   │   │       ├── git             ~/.ai/bin/git wrapper
-│   │   │       └── gh              ~/.ai/bin/gh  wrapper
+│   │   │   ├── hooks/              hook infrastructure — extracted to ~/.ai/hooks/
+│   │   │   │   ├── _lib.py                  shared hook library (only embedded .py)
+│   │   │   │   ├── command-wrappers.toml    wrapper config
+│   │   │   │   ├── patterns.json            canonical secret pattern set
+│   │   │   │   └── patterns.local.json.example  local override example
+│   │   │   │   (hook scripts sourced from ai-atoms.com catalog at install time)
+│   │   │   └── wrappers/           cross-platform tool wrappers → ~/.ai/bin/
+│   │   │       ├── git / git.cmd / git.ps1  git wrapper (bash/cmd/ps1)
+│   │   │       ├── gh  / gh.cmd  / gh.ps1   gh wrapper (bash/cmd/ps1)
+│   │   │       └── notify-me / notify-me.cmd / notify-me.ps1
 │   │   └── internal/buildinfo/     ldflags-stamped version metadata
 │   ├── internal/                   workspace-internal packages
 │   │   ├── config/                 settings.toml load/save (TBD)
@@ -114,7 +109,9 @@ for the full table and rationale.
 │   ├── pkg/                        public packages
 │   │   ├── patterns/               patterns.json matcher
 │   │   └── version/                spec/wizard/schema version constants
-│   └── plugins/                    Go-loadable plugins (future)
+│   └── plugins/                    Go-loadable plugins (future) — see root plugins/
+├── plugins/                        root plugin artifacts (manifest.yaml + SKILL.md)
+│   └── PLUGINS.toml                plugin registry
 ├── governance/                     repo-shipped governance content
 │   ├── policy/             branch-guard.json + other policy json
 │   ├── wizard/             pointer to ../../questions.yaml
