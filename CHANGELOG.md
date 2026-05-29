@@ -66,6 +66,19 @@ binary version independently — the binary tracks `SemVer` over the
 - `ai hooks list`: `lib.py` filtered (transition artifact); `audit-logger.py` wired to `PreToolUse` (#421)
 - `ai status`: wired hook count now reflects both group and flat settings.json formats (#402)
 
+## [1.4.1] — 2026-05-29
+
+### Added
+
+- **`ai skills available`** — two-line display with full untruncated descriptions; header shows count and install hints (#456).
+- **`ai skills available -p`** — Bubble Tea checkbox TUI: `> [x]` style selection, scrolling viewport, `space` to toggle, `a` to toggle all, `ctrl+d/u` to page, `enter` to install (#457).
+
+### Changed
+
+- **`ai setup` skill step** now uses the same checkbox TUI instead of the old numbered text prompt, and fetches from the ai-atoms catalog (single fetch) instead of per-atom GitHub API calls (#457).
+
+---
+
 ## [1.4.0] — 2026-05-29
 
 ### Added
