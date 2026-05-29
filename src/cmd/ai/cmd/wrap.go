@@ -40,8 +40,14 @@ type hookDef struct {
 	Script      string   `toml:"script"`      // "~/.ai/hooks/branch-guard.py" — slug extracted at runtime
 	Subcommands []string `toml:"subcommands"` // empty = applies to every subcommand
 	StripArgs   []string `toml:"stripArgs"`   // args to remove before invoking real binary
+	Enforcement string   `toml:"enforcement"` // "" or "blocking" = fail closed; "advisory" = skip silently on missing
 	Description string   `toml:"description"`
 }
+
+// isBlocking reports whether a missing or broken hook should block the real
+// binary. Default (empty Enforcement) is blocking so that all existing
+// security-gate hooks fail closed without a TOML change.
+func (h hookDef) isBlocking() bool { return h.Enforcement != "advisory" }
 
 // loadCommandWrappers reads command-wrappers.toml from AI_ROOT/hooks/,
 // falling back to the embedded copy when not found on disk.
