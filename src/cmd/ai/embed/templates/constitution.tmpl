@@ -340,7 +340,13 @@ Ad-hoc placement is forbidden. Use `git worktree remove` (not `rm -rf`) for clea
 
 Operationalizes §3.1.P4 (No Secrets In Artifacts). This section is itself non-overridable.
 
-**4.1 Presence, not value.** To confirm a secret-bearing variable is set, use a presence test that does not emit the value: `test -n "${VAR-}" && echo "VAR is set"`. You MUST NOT use `env`, `printenv`, `set`, `echo "$VAR"`, `cat .env`, or any equivalent that prints the secret to stdout, stderr, logs, or your turn.
+**4.1 Presence, not value.** To confirm a secret-bearing variable is set, use a presence test that does not emit the value. MUST NOT use `env`, `printenv`, `set`, `echo "$VAR"`, `cat .env`, `Get-ChildItem Env:`, `Write-Output $env:VAR`, or any equivalent that prints the secret to stdout, stderr, logs, or your turn. Platform-correct presence tests:
+
+| OS / shell | Allowed presence test |
+|---|---|
+| POSIX sh / bash / zsh | `test -n "${VAR-}" && echo "VAR is set"` |
+| PowerShell (all OSes) | `if ($env:VAR) { "VAR is set" }` |
+| Windows cmd | `if defined VAR echo VAR is set` |
 
 **4.2 Transfer via clipboard.** When the principal needs to move a secret into another tool, copy it to the OS clipboard rather than displaying it.
 
