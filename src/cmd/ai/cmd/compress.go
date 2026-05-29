@@ -131,9 +131,10 @@ func runCheckCoverage(cmd *cobra.Command) error {
 	if err != nil {
 		return fmt.Errorf("compress --check-coverage: read Constitution.md: %w", err)
 	}
-	sections := constitution.ParseSections(string(data))
+	sections := constitution.ParseSectionsAny(string(data))
 	if len(sections) == 0 {
-		return fmt.Errorf("compress --check-coverage: no persona sections found in Constitution.md")
+		return fmt.Errorf("compress --check-coverage: no persona sections found in Constitution.md\n" +
+			"  Constitution.md must have sections in '## N. Name Rules' or '## §N Name' format")
 	}
 
 	compactData, err := os.ReadFile(filepath.Join(root, "Constitution.compact.md")) //nolint:gosec
