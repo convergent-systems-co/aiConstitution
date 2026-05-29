@@ -265,7 +265,7 @@ func uploadBase64(t *testing.T, localPath, remoteDir, fileName string, winrm fun
 	// Write in one PowerShell command (binary is ~8 MB; WinRM limit is ~500 KB per call).
 	// Chunk at 400 KB of base64 (~300 KB binary).
 	const chunkSize = 400 * 1024
-	winrm(t, fmt.Sprintf(`New-Item -ItemType Directory -Force -Path %q | Out-Null`, remoteDir))
+	winrm(t, fmt.Sprintf(`New-Item -ItemType Directory -Force -Path '%s' | Out-Null`, remoteDir))
 	for i := 0; i < len(encoded); i += chunkSize {
 		end := i + chunkSize
 		if end > len(encoded) {
@@ -291,6 +291,13 @@ func TestUTM_Linux_FullWorkflow(t *testing.T) {
 	cfg := loadUTMConfig(t)
 	host := cfg.linuxHost
 
+	// Log remote clock before any tests; skewed clocks cause TLS cert failures
+	// when fetching from ai-atoms.com. The binary handles this gracefully with
+	// a warning, so we continue rather than skip.
+	remoteDate, _ := exec.Command("ssh",
+		"-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=5", host, "date").CombinedOutput()
+	t.Logf("Linux VM clock: %s", strings.TrimSpace(string(remoteDate)))
+
 	t.Log("Building linux/arm64 binary…")
 	binLocal := buildBinary(t, "linux", "arm64")
 
@@ -310,7 +317,6 @@ func TestUTM_Linux_FullWorkflow(t *testing.T) {
 	}
 
 	t.Cleanup(func() {
-		// Best-effort cleanup; SSH key auth so no credential exposure.
 		_ = exec.Command("ssh",
 			"-o", "StrictHostKeyChecking=no",
 			host,
@@ -323,7 +329,6 @@ func TestUTM_Linux_FullWorkflow(t *testing.T) {
 		if !strings.Contains(out, "Constitution") {
 			t.Errorf("setup output missing 'Constitution':\n%s", out)
 		}
-		// Constitution.md must exist on remote.
 		sshRun(t, host, "test -f "+remoteRoot+"/Constitution.md")
 		t.Logf("setup output:\n%s", out)
 	})
@@ -346,12 +351,28 @@ func TestUTM_Linux_FullWorkflow(t *testing.T) {
 	})
 
 	t.Run("hooks_install_command_wrappers", func(t *testing.T) {
-		out := ai(t, "hooks install command-wrappers")
+		// Use a dedicated root so this subtest is independent of the setup
+		// subtest having already installed wrappers. Idempotency is fine; we
+		// verify file presence, not the "N extracted" count.
+		freshRoot := remoteRoot + "-wrappers-fresh"
+		freshAI := func(args string) string {
+			return sshRun(t, host,
+				fmt.Sprintf("AI_ROOT=%s AICONST_SEEDS='Q01=UTM E2E Test' %s %s 2>&1",
+					freshRoot, remoteBin, args))
+		}
+		t.Cleanup(func() {
+			_ = exec.Command("ssh",
+				"-o", "StrictHostKeyChecking=no",
+				host, "rm -rf "+freshRoot).Run()
+		})
+		// Run setup first to create the AI_ROOT dir structure, then install wrappers.
+		freshAI("setup --non-interactive --no-hooks")
+		out := freshAI("hooks install command-wrappers")
 		t.Logf("hooks install output:\n%s", out)
-		// Verify POSIX wrappers exist (not .cmd or .ps1).
-		sshRun(t, host, "test -f "+remoteRoot+"/bin/git")
-		sshRun(t, host, "test -f "+remoteRoot+"/bin/gh")
-		sshRun(t, host, "test ! -f "+remoteRoot+"/bin/git.cmd")
+		// Verify POSIX wrappers (never .cmd or .ps1 on Linux).
+		sshRun(t, host, "test -f "+freshRoot+"/bin/git")
+		sshRun(t, host, "test -f "+freshRoot+"/bin/gh")
+		sshRun(t, host, "test ! -f "+freshRoot+"/bin/git.cmd")
 	})
 
 	t.Run("version", func(t *testing.T) {
@@ -393,17 +414,19 @@ func TestUTM_Windows_FullWorkflow(t *testing.T) {
 	t.Log("Serving windows/arm64 binary via HTTP for Windows to download…")
 	fileURL := serveFile(t, binLocal)
 
-	winrm(t, fmt.Sprintf(`New-Item -ItemType Directory -Force -Path %q | Out-Null`, remoteDir))
+	winrm(t, fmt.Sprintf(`New-Item -ItemType Directory -Force -Path '%s' | Out-Null`, remoteDir))
 	winrm(t, fmt.Sprintf(
 		`Invoke-WebRequest -Uri %q -OutFile %q -UseBasicParsing`,
 		fileURL, remoteBin,
 	))
 
 	// Helper: run ai command on Windows with isolated AI_ROOT.
+	// Use PowerShell single-quoted strings for paths so Go's %q double-escaping
+	// of backslashes doesn't produce literal '\\' in the env var value.
 	ai := func(t *testing.T, args string) string {
 		t.Helper()
 		ps := fmt.Sprintf(
-			`$env:AI_ROOT=%q; $env:AICONST_SEEDS="Q01=UTM E2E Test"; & %q %s 2>&1`,
+			`$env:AI_ROOT='%s'; $env:AICONST_SEEDS='Q01=UTM E2E Test'; & '%s' %s 2>&1`,
 			remoteRoot, remoteBin, args,
 		)
 		return winrm(t, ps)
@@ -418,7 +441,7 @@ func TestUTM_Windows_FullWorkflow(t *testing.T) {
 		if !strings.Contains(out, "Constitution") {
 			t.Errorf("setup output missing 'Constitution':\n%s", out)
 		}
-		exists := winrm(t, fmt.Sprintf(`(Test-Path %q).ToString()`, remoteRoot+`\Constitution.md`))
+		exists := winrm(t, fmt.Sprintf(`(Test-Path '%s').ToString()`, remoteRoot+`\Constitution.md`))
 		if !strings.Contains(exists, "True") {
 			t.Errorf("Constitution.md not created on Windows; Test-Path returned: %q", exists)
 		}
@@ -428,7 +451,7 @@ func TestUTM_Windows_FullWorkflow(t *testing.T) {
 	t.Run("compress", func(t *testing.T) {
 		out := ai(t, "compress")
 		t.Logf("compress output:\n%s", out)
-		exists := winrm(t, fmt.Sprintf(`Test-Path %q`, remoteRoot+`\Constitution.compact.md`))
+		exists := winrm(t, fmt.Sprintf(`Test-Path '%s'`, remoteRoot+`\Constitution.compact.md`))
 		if !strings.Contains(exists, "True") {
 			t.Errorf("Constitution.compact.md not created; compact output:\n%s\nexists: %s", out, exists)
 		}
@@ -447,12 +470,12 @@ func TestUTM_Windows_FullWorkflow(t *testing.T) {
 		t.Logf("hooks install output:\n%s", out)
 		// Windows must produce .cmd and .ps1 shims, not bare "git".
 		for _, name := range []string{"git.cmd", "git.ps1", "gh.cmd", "gh.ps1"} {
-			exists := winrm(t, fmt.Sprintf(`Test-Path %q`, remoteRoot+`\bin\`+name))
+			exists := winrm(t, fmt.Sprintf(`Test-Path '%s'`, remoteRoot+`\bin\`+name))
 			if !strings.Contains(exists, "True") {
 				t.Errorf("expected Windows shim %s not found", name)
 			}
 		}
-		noBare := winrm(t, fmt.Sprintf(`Test-Path %q`, remoteRoot+`\bin\git`))
+		noBare := winrm(t, fmt.Sprintf(`Test-Path '%s'`, remoteRoot+`\bin\git`))
 		if strings.Contains(noBare, "True") {
 			t.Error("bare 'git' shim should not exist on Windows")
 		}
