@@ -404,6 +404,10 @@ func setSkillAtomBaseURL(t *testing.T, baseURL string) {
 
 func TestSkillsInstall_Success(t *testing.T) {
 	root := t.TempDir()
+	// Redirect Claude symlink target to a temp dir so tests don't pollute the
+	// real ~/.claude/skills/ with symlinks pointing into t.TempDir() paths that
+	// are cleaned up after the test completes.
+	t.Setenv("CLAUDE_SKILLS_DIR", t.TempDir())
 	atoms := []map[string]interface{}{
 		{
 			"type":                   "skill",
@@ -818,6 +822,10 @@ func TestCopilotWiringOnInstall(t *testing.T) {
 	setAiAtomsCatalogURL(t, srv.URL+"/catalog.json")
 
 	t.Setenv("AI_ROOT", root)
+	// Redirect Claude symlink target to a temp dir so tests don't pollute the
+	// real ~/.claude/skills/ with symlinks pointing into t.TempDir() paths that
+	// are cleaned up after the test completes.
+	t.Setenv("CLAUDE_SKILLS_DIR", t.TempDir())
 	t.Setenv("COPILOT_INSTRUCTIONS_DIR", copilotDir)
 
 	out, _, err := runSkillsCmd(t, root, "skills", "install", "commit")
@@ -926,6 +934,10 @@ func TestSkillsAvailable_ShowsSlugColumn(t *testing.T) {
 // are installed automatically.
 func TestSkillsInstall_InstallsDependencies(t *testing.T) {
 	root := t.TempDir()
+	// Redirect Claude symlink target to a temp dir so tests don't pollute the
+	// real ~/.claude/skills/ with symlinks pointing into t.TempDir() paths that
+	// are cleaned up after the test completes.
+	t.Setenv("CLAUDE_SKILLS_DIR", t.TempDir())
 
 	// "make" depends on "make-commit" and "make-review"; all in the catalog.
 	atoms := []map[string]interface{}{
@@ -982,6 +994,10 @@ func TestSkillsInstall_InstallsDependencies(t *testing.T) {
 // does not emit any dependency-related output.
 func TestSkillsInstall_NoDependencies(t *testing.T) {
 	root := t.TempDir()
+	// Redirect Claude symlink target to a temp dir so tests don't pollute the
+	// real ~/.claude/skills/ with symlinks pointing into t.TempDir() paths that
+	// are cleaned up after the test completes.
+	t.Setenv("CLAUDE_SKILLS_DIR", t.TempDir())
 	atoms := []map[string]interface{}{
 		{
 			"type":        "skill",
