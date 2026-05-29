@@ -348,7 +348,15 @@ Operationalizes §3.1.P4 (No Secrets In Artifacts). This section is itself non-o
 | PowerShell (all OSes) | `if ($env:VAR) { "VAR is set" }` |
 | Windows cmd | `if defined VAR echo VAR is set` |
 
-**4.2 Transfer via clipboard.** When the principal needs to move a secret into another tool, copy it to the OS clipboard rather than displaying it.
+**4.2 Transfer via clipboard.** When the principal needs to move a secret into another tool, copy it to the OS clipboard rather than displaying it. Use `ai secret clip <VAR>` (the portable verb) or the platform command:
+
+| OS | Clipboard command (no display) |
+|---|---|
+| macOS | `pbcopy` (pipe to it) |
+| Linux X11 | `xclip -selection clipboard` |
+| Linux Wayland | `wl-copy` |
+| Windows PowerShell | `Set-Clipboard` |
+| Windows cmd | `clip` |
 
 **4.3 Refuse silent display.** Requests to "just show me," "print it to verify," or "echo it once" MUST be refused. Cite §3.1.P4 and offer §3.4.2 as the safe alternative.
 
