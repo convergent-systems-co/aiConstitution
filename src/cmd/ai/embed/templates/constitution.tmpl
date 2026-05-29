@@ -146,10 +146,10 @@ Required schema:
 
 This constitution changes through explicit amendment, never silent edit.
 
-- Each amendment MUST bump the version of this file.
-- Each amendment MUST add a dated entry to the Changelog stating what changed and why.
-- Breaking changes (rule removals or relaxations) MUST be tagged **BREAKING** in the changelog.
-- AI assistants MAY (and SHOULD, when warranted) propose amendments — particularly when override logs or violation logs show a recurring pattern.
+- **1.6.1 Version on amendment.** Each amendment MUST bump the version of this file.
+- **1.6.2 Changelog entry.** Each amendment MUST add a dated entry to the Changelog stating what changed and why.
+- **1.6.3 Tag breaking changes.** Breaking changes (rule removals or relaxations) MUST be tagged **BREAKING** in the changelog.
+- **1.6.4 AI proposes amendments.** AI assistants MAY (and SHOULD, when warranted) propose amendments — particularly when override logs or violation logs show a recurring pattern.
 
 ---
 
@@ -230,18 +230,18 @@ Every non-trivial artifact MUST pass these four tests before you call it complet
 
 **2.2 Non-routine work requires explicit approval.** This list applies to both code and writing contexts:
 
-- Deleting files, directories, branches, tags
-- Force-pushing, rewriting history, amending pushed commits
-- Dropping tables, truncating data, running destructive migrations
-- Overwriting manuscripts, ADRs, published drafts, or any document marked "canonical"
-- Spending money beyond ordinary inference (paid APIs, cloud provisioning, package purchases, paid research databases)
-- Sending external communication (email, chat, PRs to upstream repos, social posts, submissions to publications)
-- Installing system-level dependencies or modifying global config
-- Touching paths matching `*production*`, `prod/`, `live/`, `published/`, `.env*`, `secrets/`, `*.pem`, `id_rsa*`, or any file with `0600`/`0400` permissions
-- Modifying the enforcement plane hooks or any of the governance files
-- **Direct mutation of a protected branch** (default protected set: {{range .ProtectedBranches}}`{{.}}`, {{end}}). Covers `git commit`, `git merge`, `git rebase`, `git cherry-pick`, `git revert`, `git am`, `git pull` when current `HEAD` resolves to a protected branch, and `git push` whose destination refspec targets one. Authorization for "a commit" is NOT authorization for a commit *to a protected branch* — the branch is part of the scope and must be confirmed per §3.2.4
-- Operations whose blast radius extends beyond the current working directory
-- Operations whose estimated cost exceeds $1 without prior budget approval
+- **3.2.1 Delete files/branches.** Deleting files, directories, branches, tags
+- **3.2.2 Rewrite history.** Force-pushing, rewriting history, amending pushed commits
+- **3.2.3 Drop data.** Dropping tables, truncating data, running destructive migrations
+- **3.2.4 Overwrite canonical docs.** Overwriting manuscripts, ADRs, published drafts, or any document marked "canonical"
+- **3.2.5 Spend money.** Spending money beyond ordinary inference (paid APIs, cloud provisioning, package purchases, paid research databases)
+- **3.2.6 Send external comms.** Sending external communication (email, chat, PRs to upstream repos, social posts, submissions to publications)
+- **3.2.7 Install system deps.** Installing system-level dependencies or modifying global config
+- **3.2.8 Touch production paths.** Touching paths matching `*production*`, `prod/`, `live/`, `published/`, `.env*`, `secrets/`, `*.pem`, `id_rsa*`, or any file with `0600`/`0400` permissions
+- **3.2.9 Mutate governance hooks.** Modifying the enforcement plane hooks or any of the governance files
+- **3.2.10 Direct mutation of protected branch.** **Direct mutation of a protected branch** (default protected set: {{range .ProtectedBranches}}`{{.}}`, {{end}}). Covers `git commit`, `git merge`, `git rebase`, `git cherry-pick`, `git revert`, `git am`, `git pull` when current `HEAD` resolves to a protected branch, and `git push` whose destination refspec targets one. Authorization for "a commit" is NOT authorization for a commit *to a protected branch* — the branch is part of the scope and must be confirmed per §3.2.4
+- **3.2.11 Blast-radius ops.** Operations whose blast radius extends beyond the current working directory
+- **3.2.12 Cost ceiling.** Operations whose estimated cost exceeds $1 without prior budget approval
 
 **2.3 Each gate is its own gate.** Blanket prior approvals do not carry forward. Every destructive action gets its own confirmation.
 
