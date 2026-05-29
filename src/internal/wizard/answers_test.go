@@ -1,6 +1,7 @@
 package wizard_test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/convergent-systems-co/aiConstitution/src/internal/constitution"
@@ -88,6 +89,111 @@ func TestAnswersToAnswerSet_Defaults(t *testing.T) {
 	}
 	if as.PushbackPersistence != "flag-once" {
 		t.Errorf("PushbackPersistence default = %q", as.PushbackPersistence)
+	}
+}
+
+// TestAnswersToAnswerSet_Q07DomainPicker verifies that the Q07 answer drives
+// the Domains slice correctly for each valid option value.
+func TestAnswersToAnswerSet_Q07DomainPicker(t *testing.T) {
+	cases := []struct {
+		q07          string
+		wantLen      int
+		wantTemplate string // template of the first domain
+		wantSection  int    // SectionNum of the first domain
+	}{
+		{q07: "code", wantLen: 1, wantTemplate: "technical", wantSection: 4},
+		{q07: "writing", wantLen: 1, wantTemplate: "prose", wantSection: 4},
+		{q07: "both", wantLen: 2, wantTemplate: "technical", wantSection: 4},
+		{q07: "other", wantLen: 2, wantTemplate: "technical", wantSection: 4},
+		{q07: "", wantLen: 2, wantTemplate: "technical", wantSection: 4},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run("Q07="+tc.q07, func(t *testing.T) {
+			as, err := wizard.AnswersToAnswerSet(map[string]string{
+				"Q01": "Tester",
+				"Q07": tc.q07,
+			})
+			if err != nil {
+				t.Fatalf("AnswersToAnswerSet() error: %v", err)
+			}
+			if len(as.Domains) != tc.wantLen {
+				t.Errorf("len(Domains) = %d, want %d", len(as.Domains), tc.wantLen)
+			}
+			if len(as.Domains) > 0 {
+				if as.Domains[0].Template != tc.wantTemplate {
+					t.Errorf("Domains[0].Template = %q, want %q", as.Domains[0].Template, tc.wantTemplate)
+				}
+				if as.Domains[0].SectionNum != tc.wantSection {
+					t.Errorf("Domains[0].SectionNum = %d, want %d", as.Domains[0].SectionNum, tc.wantSection)
+				}
+			}
+			// "both" default: verify second domain is prose at §5
+			if tc.wantLen == 2 && len(as.Domains) == 2 {
+				if as.Domains[1].Template != "prose" {
+					t.Errorf("Domains[1].Template = %q, want %q", as.Domains[1].Template, "prose")
+				}
+				if as.Domains[1].SectionNum != 5 {
+					t.Errorf("Domains[1].SectionNum = %d, want 5", as.Domains[1].SectionNum)
+				}
+			}
+		})
+	}
+}
+
+// TestAnswersToAnswerSet_Q07_TechnicalRendering verifies that selecting "code"
+// produces a constitution that contains the technical domain section and does
+// not contain the prose domain section.
+func TestAnswersToAnswerSet_Q07_TechnicalRendering(t *testing.T) {
+	// Minimal constitution template exercising domain rendering.
+	tmpl := `{{range .Domains}}DOMAIN:{{.Template}}:{{.SectionNum}}
+{{end}}`
+
+	as, err := wizard.AnswersToAnswerSet(map[string]string{
+		"Q01": "Tester",
+		"Q07": "code",
+	})
+	if err != nil {
+		t.Fatalf("AnswersToAnswerSet() error: %v", err)
+	}
+	rendered, err := constitution.Render(as, tmpl)
+	if err != nil {
+		t.Fatalf("Render() error: %v", err)
+	}
+
+	if !strings.Contains(rendered, "DOMAIN:technical:4") {
+		t.Errorf("expected technical domain at §4 in rendered output, got:\n%s", rendered)
+	}
+	if strings.Contains(rendered, "DOMAIN:prose") {
+		t.Errorf("expected no prose domain in 'code'-only output, got:\n%s", rendered)
+	}
+}
+
+// TestAnswersToAnswerSet_Q07_ProseRendering verifies that selecting "writing"
+// produces a constitution that contains the prose domain section and does not
+// contain the technical domain section.
+func TestAnswersToAnswerSet_Q07_ProseRendering(t *testing.T) {
+	tmpl := `{{range .Domains}}DOMAIN:{{.Template}}:{{.SectionNum}}
+{{end}}`
+
+	as, err := wizard.AnswersToAnswerSet(map[string]string{
+		"Q01": "Tester",
+		"Q07": "writing",
+	})
+	if err != nil {
+		t.Fatalf("AnswersToAnswerSet() error: %v", err)
+	}
+	rendered, err := constitution.Render(as, tmpl)
+	if err != nil {
+		t.Fatalf("Render() error: %v", err)
+	}
+
+	if !strings.Contains(rendered, "DOMAIN:prose:4") {
+		t.Errorf("expected prose domain at §4 in rendered output, got:\n%s", rendered)
+	}
+	if strings.Contains(rendered, "DOMAIN:technical") {
+		t.Errorf("expected no technical domain in 'writing'-only output, got:\n%s", rendered)
 	}
 }
 

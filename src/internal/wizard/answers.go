@@ -10,9 +10,8 @@ import (
 // AnswersToAnswerSet converts wizard answers (map[qid]value) to a
 // constitution.AnswerSet ready for template rendering.
 //
-// v2.1 reference-first: domains are always technical+prose. Only
-// the 8 personalisation slots are taken from answers; everything else
-// uses the reference constitution's invariant content.
+// Domain selection (Q07) is now wired: "code" → technical only,
+// "writing" → prose only, everything else → both (recommended default).
 func AnswersToAnswerSet(answers map[string]string) (constitution.AnswerSet, error) {
 	principal := strings.TrimSpace(answers["Q01"])
 	if principal == "" {
@@ -36,30 +35,15 @@ func AnswersToAnswerSet(answers map[string]string) (constitution.AnswerSet, erro
 
 	as.WorkContext = orDefault(answers["Q03"], "personal")
 
-	// Domains are always both technical and prose — the reference constitution
-	// includes both by default. Users who need legal/data/research can add
-	// sections after setup via ai amend.
-	as.Domains = []constitution.Domain{
-		{
-			Name:          "Technical Work",
-			SectionNum:    4,
-			Preamble:      "This section governs software engineering, infrastructure, and technical work.",
-			PersonalRules: "",
-			Template:      "technical",
-		},
-		{
-			Name:          "Prose & Writing",
-			SectionNum:    5,
-			Preamble:      "This section governs written artifacts: essays, documentation, journalism, theology, philosophy, and fiction.",
-			PersonalRules: "",
-			Template:      "prose",
-		},
-	}
+	// Q07 — domain selection: "code", "writing", "both", or "other".
+	// Build the Domains slice based on the user's selection; default to both
+	// when the answer is absent or unrecognised (safe fallback, see §U1).
+	as.Domains = domainsFromQ07(answers["Q07"])
 
 	// Q06 — cost ceiling
 	as.CostCeiling = orDefault(answers["Q06"], "$5")
 
-	// Q07 — blast radius (not a question in v2.1; use safe default)
+	// Blast radius — safe default; not a user-facing question in v2.1.
 	as.BlastRadius = 100
 
 	// Q08 — protected branches
@@ -118,6 +102,43 @@ func toolDisplayName(value string) string {
 		return name
 	}
 	return value
+}
+
+// domainsFromQ07 converts the Q07 wizard answer ("code", "writing", "both",
+// "other") into the slice of constitution.Domain values used by the template.
+//
+// Section numbers follow the template layout: §4 for Technical Work, §5 for
+// Prose & Writing. When both domains are included, §4 precedes §5.
+//
+// Assumption: any answer that is not "code" or "writing" is treated as "both"
+// (the recommended default). This includes the empty string, "other", and any
+// future option values we have not yet mapped.
+func domainsFromQ07(q07 string) []constitution.Domain {
+	technical := constitution.Domain{
+		Name:          "Technical Work",
+		SectionNum:    4,
+		Preamble:      "This section governs software engineering, infrastructure, and technical work.",
+		PersonalRules: "",
+		Template:      "technical",
+	}
+	prose := constitution.Domain{
+		Name:          "Prose & Writing",
+		SectionNum:    5,
+		Preamble:      "This section governs written artifacts: essays, documentation, journalism, theology, philosophy, and fiction.",
+		PersonalRules: "",
+		Template:      "prose",
+	}
+
+	switch strings.TrimSpace(q07) {
+	case "code":
+		return []constitution.Domain{technical}
+	case "writing":
+		// Prose is the only domain; give it §4 to keep section numbering tidy.
+		prose.SectionNum = 4
+		return []constitution.Domain{prose}
+	default: // "both", "other", ""
+		return []constitution.Domain{technical, prose}
+	}
 }
 
 // domainTemplateMap and domainNameMap kept for compatibility with any
