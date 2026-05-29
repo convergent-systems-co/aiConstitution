@@ -173,3 +173,36 @@ func TestRuleIDs_StableOrder(t *testing.T) {
 		}
 	}
 }
+
+// TestExtract_ThreeLevelBoldHead verifies that **N.M.K Label.** heads
+// (e.g. 4.2.1 after stripping § from template) are captured with the full ID.
+func TestExtract_ThreeLevelBoldHead(t *testing.T) {
+	body := "**4.2.1 Pattern selection.** Apply Gang-of-Four patterns. MUST apply."
+	s := section(4, "Technical", body)
+	ds, err := compress.Extract(s, "1.0")
+	if err != nil {
+		t.Fatalf("Extract() error = %v", err)
+	}
+	yaml := string(ds.YAML)
+	// 4.2.1 contains two dots so YAML may output it unquoted — accept both forms.
+	if !strings.Contains(yaml, "id: 4.2.1") && !strings.Contains(yaml, `id: "4.2.1"`) {
+		t.Errorf("YAML missing three-level id 4.2.1:\n%s", yaml)
+	}
+}
+
+// TestExtract_ThreeLevelBulletSubRule verifies that - **N.M.K Label.** bullets
+// are captured with the full three-level ID.
+func TestExtract_ThreeLevelBulletSubRule(t *testing.T) {
+	body := "**4.1 Clean Code.** The rules:\n\n- **4.1.1 Names reveal intent.** MUST reveal intent.\n- **4.1.2 Function length.** SHOULD stay under 30 lines."
+	s := section(4, "Technical", body)
+	ds, err := compress.Extract(s, "1.0")
+	if err != nil {
+		t.Fatalf("Extract() error = %v", err)
+	}
+	yaml := string(ds.YAML)
+	for _, wantID := range []string{"4.1.1", "4.1.2"} {
+		if !strings.Contains(yaml, "id: "+wantID) && !strings.Contains(yaml, `id: "`+wantID+`"`) {
+			t.Errorf("YAML missing sub-rule id %s:\n%s", wantID, yaml)
+		}
+	}
+}
