@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 
 	cbterm "github.com/charmbracelet/x/term"
@@ -117,92 +118,182 @@ func fetchSkillAtomFromURL(downloadURL string) (*skillAtom, error) {
 	return &atom, nil
 }
 
+// catalogSkillEntry extends skillRow with sub-skill count for display.
+type catalogSkillEntry struct {
+	slug     string
+	name     string
+	fullDesc string // full, untruncated description
+	subCount int
+}
+
 // runSkillsAvailable implements `ai skills available`.
-// It lists all skills published in the ai-atoms.com catalog, excluding
-// deprecated and retired entries. Sub-skills (referenced via depends_on) are
-// deduplicated from the top-level listing and shown only via the "(+N)" count.
+// With -p/--pick it launches an interactive numbered installer; otherwise it
+// prints a two-line-per-skill list with full untruncated descriptions.
 func runSkillsAvailable(cmd *cobra.Command, _ []string) error {
+	pick, _ := cmd.Flags().GetBool("pick")
+
 	catalog, err := fetchAiAtomsCatalog()
 	if err != nil {
 		return err
 	}
 
-	// Filter to active skill atoms only.
-	var skillAtoms []aiAtomEntry
+	// Collect sub-skill slugs so they are hidden from the top-level list.
+	subSkills := map[string]bool{}
 	for _, a := range catalog {
-		lc := strings.ToLower(a.Lifecycle)
-		if a.Type == "skill" && lc != "deprecated" && lc != "retired" {
-			skillAtoms = append(skillAtoms, a)
+		if strings.ToLower(a.Lifecycle) == "deprecated" || strings.ToLower(a.Lifecycle) == "retired" {
+			continue
+		}
+		if a.Type == "skill" {
+			for _, dep := range a.DependsOn {
+				subSkills[dep] = true
+			}
 		}
 	}
 
-	// First pass: collect sub-skill slugs from depends_on across all skill atoms.
-	type hydrated struct {
-		slug, name, version, description string
-		dependsOn                        []string
-	}
-	var all []hydrated
-	subSkills := map[string]bool{}
-
-	for _, a := range skillAtoms {
+	var entries []catalogSkillEntry
+	for _, a := range catalog {
+		lc := strings.ToLower(a.Lifecycle)
+		if a.Type != "skill" || lc == "deprecated" || lc == "retired" {
+			continue
+		}
 		slug := strings.TrimPrefix(a.ID, "skill/")
+		if subSkills[slug] {
+			continue
+		}
 		name := a.Name
 		if name == "" {
 			name = slug
 		}
-		all = append(all, hydrated{slug, name, a.Version, a.Description, a.DependsOn})
-		for _, dep := range a.DependsOn {
-			subSkills[dep] = true
-		}
+		entries = append(entries, catalogSkillEntry{
+			slug:     slug,
+			name:     name,
+			fullDesc: a.Description,
+			subCount: len(a.DependsOn),
+		})
 	}
 
-	// Second pass: exclude sub-skills from the top-level rows.
-	type row struct{ slug, name, version, description string }
-	var rows []row
-	for _, h := range all {
-		if subSkills[h.slug] {
-			continue
-		}
-		dep := ""
-		if len(h.dependsOn) > 0 {
-			dep = fmt.Sprintf(" (+%d)", len(h.dependsOn))
-		}
-		rows = append(rows, row{h.slug + dep, h.name, h.version, h.description})
-	}
-
-	if len(rows) == 0 {
+	if len(entries) == 0 {
 		fmt.Fprintln(cmd.OutOrStdout(), "(no skills available)")
 		return nil
 	}
 
+	if pick {
+		return runCatalogSkillPicker(cmd, entries)
+	}
+
 	out := cmd.OutOrStdout()
-	// Find longest slug for alignment.
-	maxSlug := 4 // len("SLUG")
-	for _, r := range rows {
-		if len(r.slug) > maxSlug {
-			maxSlug = len(r.slug)
+	fmt.Fprintf(out, "\n  %d skills  •  ai skills install <slug>  •  -p to pick interactively\n\n",
+		len(entries))
+
+	for _, e := range entries {
+		subs := ""
+		if e.subCount > 0 {
+			subs = fmt.Sprintf("  (+%d sub-skills)", e.subCount)
+		}
+		// Slug line in bold.
+		fmt.Fprintf(out, "  \033[1m%s\033[0m%s\n", e.slug, subs)
+		// Description wrapped at 72 chars, indented 4 spaces.
+		desc := e.fullDesc
+		for desc != "" {
+			line := desc
+			if len(line) > 72 {
+				cut := 72
+				for cut > 40 && desc[cut] != ' ' {
+					cut--
+				}
+				line = strings.TrimRight(desc[:cut], " ")
+				desc = strings.TrimLeft(desc[cut:], " ")
+			} else {
+				desc = ""
+			}
+			fmt.Fprintf(out, "    %s\n", line)
+		}
+		fmt.Fprintln(out)
+	}
+	return nil
+}
+
+// runCatalogSkillPicker shows a numbered list of catalog skills and
+// prompts for a selection to install — same UX as the setup wizard step.
+func runCatalogSkillPicker(cmd *cobra.Command, entries []catalogSkillEntry) error {
+	out := cmd.OutOrStdout()
+
+	fmt.Fprint(out, "\033[2J\033[H") // clear screen
+	fmt.Fprintln(out, "╔══════════════════════════════════════════════════════════════╗")
+	fmt.Fprintln(out, "║  Install skills  (-p)                                        ║")
+	fmt.Fprintln(out, "║  Sub-skills install automatically with their parent.         ║")
+	fmt.Fprintln(out, "╚══════════════════════════════════════════════════════════════╝")
+	fmt.Fprintln(out)
+
+	for i, e := range entries {
+		subs := ""
+		if e.subCount > 0 {
+			subs = fmt.Sprintf(" (+%d)", e.subCount)
+		}
+		// Short description — first sentence or first 65 chars.
+		desc := e.fullDesc
+		if dot := strings.Index(desc, ". "); dot > 0 && dot < 90 {
+			desc = desc[:dot+1]
+		} else if len(desc) > 65 {
+			desc = desc[:62] + "..."
+		}
+		fmt.Fprintf(out, "  %3d. \033[1m%s\033[0m%s\n       %s\n", i+1, e.slug, subs, desc)
+	}
+
+	fmt.Fprintln(out)
+	fmt.Fprint(out, `Install which? (e.g. 1,3,5 or "all" or Enter to skip): `)
+
+	scanner := bufio.NewScanner(cmd.InOrStdin())
+	scanner.Scan()
+	line := strings.TrimSpace(scanner.Text())
+
+	if line == "" {
+		fmt.Fprintln(out, "\nSkipping.")
+		return nil
+	}
+
+	var toInstall []string
+	if strings.EqualFold(line, "all") {
+		for _, e := range entries {
+			toInstall = append(toInstall, e.slug)
+		}
+	} else {
+		for _, tok := range strings.Split(line, ",") {
+			tok = strings.TrimSpace(tok)
+			if tok == "" {
+				continue
+			}
+			n, err := strconv.Atoi(tok)
+			if err != nil || n < 1 || n > len(entries) {
+				fmt.Fprintf(out, "Warning: %q is not a valid number — skipping.\n", tok)
+				continue
+			}
+			toInstall = append(toInstall, entries[n-1].slug)
 		}
 	}
-	fmt.Fprintf(out, "  %-*s  %s\n", maxSlug, "SLUG", "DESCRIPTION")
-	fmt.Fprintf(out, "  %-*s  %s\n", maxSlug, strings.Repeat("─", maxSlug), strings.Repeat("─", 50))
-	for _, r := range rows {
-		desc := r.description
-		if len(desc) > 70 {
-			desc = desc[:67] + "..."
+
+	fmt.Fprintln(out)
+	for _, slug := range toInstall {
+		fmt.Fprintf(out, "  Installing %-24s ", slug+"...")
+		if err := runSkillsInstall(cmd, slug); err != nil {
+			fmt.Fprintf(out, "warning: %v\n", err)
+		} else {
+			fmt.Fprintln(out, "done")
 		}
-		fmt.Fprintf(out, "  %-*s  %s\n", maxSlug, r.slug, desc)
 	}
 	return nil
 }
 
 // newSkillsAvailableCmd returns the cobra command for `ai skills available`.
 func newSkillsAvailableCmd() *cobra.Command {
-	return &cobra.Command{
+	c := &cobra.Command{
 		Use:   "available",
 		Short: "List skills available to install from skill-atoms.com",
 		Args:  cobra.NoArgs,
 		RunE:  runSkillsAvailable,
 	}
+	c.Flags().BoolP("pick", "p", false, "interactively pick and install skills")
+	return c
 }
 
 // Deprecated: fetchSkillAtomJSON uses the GitHub API. Use fetchSkillAtomFromCatalog instead.
