@@ -24,40 +24,41 @@ The binary surface is being built out from the spec.
 
 | Command | Purpose |
 |---|---|
-| `ai setup` / `ai --tui` | Guided interview → personalized `Constitution.md` |
-| `ai review` | Memory → amendment loop; default 30-day cadence |
-| `ai doctor` | Detect + repair broken symlinks, missing hooks, stale binary |
-| `ai sync` | Push/pull canonical `~/.ai/` tree to a user-owned remote |
-| `ai restore <url>` | Reproduce the system on a fresh machine from a snapshot or URL |
-| `ai constitution` | Backup, restore, and bootstrap the entire `~/.ai/` directory |
-| `ai backup` | Snapshot the canonical tree to a local archive |
-| `ai migrate` | Migrate from legacy four-file layout to unified `Constitution.md` |
-| `ai amend` | Draft, list, show, publish, and apply governance amendments |
+| `ai amend` | Amendment lifecycle: draft, apply, list, show, publish |
+| `ai audit` | Record overrides and violations into ~/.ai/audit/ |
+| `ai backup` | Snapshot the canonical tree to a local archive (used by migrations) |
+| `ai brand` | Fetch or list brand atoms from brand-atoms.com |
+| `ai clone` | Clone a repo with identity routing + post-clone hook install |
 | `ai compress` | Generate compact constitution or per-persona YAML derivatives |
-| `ai generate` | Generate derived artifacts from `Constitution.md` |
-| `ai mode <name>` | Activate a persona or profile (additive, not exclusive) |
-| `ai focus` | Alias of `ai mode` — activate a cognitive focus mode |
-| `ai profile` | Compose, list, show, edit, and remove profiles |
-| `ai persona` | List, show, create, and share persona atoms |
-| `ai skills` | Install, list, show, validate, and manage skill bundles |
-| `ai plugins` | Install, enable, disable, update, and check plugin status |
-| `ai brand` | Fetch or list brand atoms from `brand-atoms.com` |
-| `ai hooks` | Manage the embedded hook library (propose, install, validate) |
-| `ai update` | Update the binary + reconcile new hooks/skills/personas/questions |
-| `ai settings` | Manage `~/.config/aiConstitution/settings.toml` |
-| `ai clone <url>` | Identity-aware git clone + post-clone hook install |
-| `ai worktree` | Create worktrees in the canonical locations (§U17) |
-| `ai audit` | List and show override/violation audit entries |
-| `ai memory` | Inspect and curate `~/.ai/memory/` |
-| `ai status` | Sprint and system status (sync state, review cadence, doctor warnings) |
-| `ai plan` | Scaffold a work-plan document under `~/.ai/governance/plans/` |
-| `ai issue` | File governance-related GitHub issues |
-| `ai pm-mode` | Activate PM discipline mode (shortcut for `ai mode pm`) |
-| `ai spawn` | Dispatch agentic sub-tasks |
-| `ai init` | Scaffold project integration files in the current directory |
+| `ai constitution` | Backup, restore, and bootstrap the entire ~/.ai/ directory and tool wiring |
+| `ai doctor` | Detect and repair structural damage to the ~/.ai/ tree |
+| `ai focus` | Alias of `ai mode` |
+| `ai generate` | Generate derived artifacts from Constitution.md |
+| `ai hooks` | Hook lifecycle: list, evaluate, propose, share upstream, install |
+| `ai init` | Scaffold project.yaml and AI-tool integration files in the current directory |
 | `ai init-integrate` | Wire AI tool integrations (Cursor, Codex/AGENTS.md) |
+| `ai issue` | File hook / finding issues upstream |
+| `ai memory` | Inspect and curate ~/.ai/memory/ |
+| `ai migrate` | Migrate from four-file constitution to unified v2 format |
+| `ai mode` | Activate a persona or profile (additive; not exclusive) |
 | `ai op` | 1Password CLI integration (env, signin, signout, whoami, clip) |
-| `ai version` | Print the binary version and questions.yaml version |
+| `ai persona` | Inspect persona atoms (agentic + reviewer) |
+| `ai plan` | Manage work-product plans under ~/.ai/governance/plans/ |
+| `ai plugins` | Manage Claude plugins that extend the agent's workflow surface |
+| `ai pm-mode` | Activate PM mode (plan-first discipline) — shortcut for `ai mode pm` |
+| `ai profile` | Manage profiles (compositions of atomic personas) |
+| `ai restore` | Restore ~/.ai/ from a local snapshot (.tar.gz) or a remote URL |
+| `ai review` | Memory-to-amendment review loop (default cadence: 30 days) |
+| `ai settings` | Read or write user preferences at ~/.config/aiConstitution/settings.toml |
+| `ai setup` | Run the guided constitution-setup wizard (TUI by default) |
+| `ai skills` | Manage skill atoms (tarball bundles: SKILL.md + templates + assets) |
+| `ai spawn` | Spawn a persona agent |
+| `ai status` | Print a short status report (sync state, review cadence, doctor warnings) |
+| `ai sync` | Push or pull the canonical tree to a user-owned remote |
+| `ai update` | Update the binary + reconcile new hooks/skills/personas/questions |
+| `ai version` | Print the binary version, Code.md version, and questions.yaml version |
+| `ai worktree` | Create worktrees in the canonical locations (~/.ai/Common.md §U17) |
+| `ai wrap` | Cross-platform tool wrapper (invoked by git/gh shims) |
 
 See [`SPEC.md §3`](./SPEC.md#3-cli-surface) for the authoritative surface definition.
 
