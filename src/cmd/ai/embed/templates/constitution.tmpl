@@ -441,29 +441,29 @@ Operationalizes §3.1.P4 (No Secrets In Artifacts). This section is itself non-o
 
 ### §{{.SectionNum}}.6 Dependency and Supply-Chain Hygiene
 
-- Dependencies MUST be pinned via lockfile (`package-lock.json`, `poetry.lock`, `Cargo.lock`, `go.sum`, `Gemfile.lock`, etc.).
-- New dependencies MUST be justified: why this one, what alternatives, what's the license, who maintains it, last release date, security history.
-- Vulnerability scanning MUST run in CI.
-- Licenses MUST be tracked. Avoid GPL / AGPL in commercial contexts without explicit approval. Avoid unmaintained packages (no release in 24 months) unless no alternative exists.
-- Transitive dependency review SHOULD happen quarterly for production systems.
-- Container base images MUST be pinned by digest, not by tag, for production.
+- **{{.SectionNum}}.6.1 Pin dependencies.** Dependencies MUST be pinned via lockfile (`package-lock.json`, `poetry.lock`, `Cargo.lock`, `go.sum`, `Gemfile.lock`, etc.).
+- **{{.SectionNum}}.6.2 Justify new deps.** New dependencies MUST be justified: why this one, what alternatives, what's the license, who maintains it, last release date, security history.
+- **{{.SectionNum}}.6.3 Vulnerability scanning.** Vulnerability scanning MUST run in CI.
+- **{{.SectionNum}}.6.4 Track licenses.** Licenses MUST be tracked. Avoid GPL / AGPL in commercial contexts without explicit approval. Avoid unmaintained packages (no release in 24 months) unless no alternative exists.
+- **{{.SectionNum}}.6.5 Quarterly transitive review.** Transitive dependency review SHOULD happen quarterly for production systems.
+- **{{.SectionNum}}.6.6 Pin container images.** Container base images MUST be pinned by digest, not by tag, for production.
 
 ### §{{.SectionNum}}.7 Security
 
-- Apply §3.1.P4 (no secrets in artifacts) without exception.
-- Input from any external source — user, network, file, environment, third-party API — MUST be validated at the boundary.
-- Authentication and authorization decisions MUST be centralized, not scattered. Don't reinvent auth.
-- SQL: parameterize queries. Never concatenate user input into queries.
-- Cryptography: use well-known libraries; never roll your own. Specify algorithms and key sizes explicitly.
-- Defaults MUST be secure: HTTPS, secure cookies, CSRF protection, principle of least privilege on permissions.
-- Secrets rotation MUST be possible without code changes (i.e., secrets are config, not constants).
+- **{{.SectionNum}}.7.1 No secrets in artifacts.** Apply §3.1.P4 (no secrets in artifacts) without exception.
+- **{{.SectionNum}}.7.2 Validate input at boundary.** Input from any external source — user, network, file, environment, third-party API — MUST be validated at the boundary.
+- **{{.SectionNum}}.7.3 Centralize auth.** Authentication and authorization decisions MUST be centralized, not scattered. Don't reinvent auth.
+- **{{.SectionNum}}.7.4 Parameterize SQL.** SQL: parameterize queries. Never concatenate user input into queries.
+- **{{.SectionNum}}.7.5 Use known crypto.** Cryptography: use well-known libraries; never roll your own. Specify algorithms and key sizes explicitly.
+- **{{.SectionNum}}.7.6 Secure defaults.** Defaults MUST be secure: HTTPS, secure cookies, CSRF protection, principle of least privilege on permissions.
+- **{{.SectionNum}}.7.7 Rotatable secrets.** Secrets rotation MUST be possible without code changes (i.e., secrets are config, not constants).
 
 ### §{{.SectionNum}}.8 Copyright and IP
 
-- Do not reproduce substantial copyrighted code verbatim. When implementing a known algorithm, write it fresh and cite the reference.
-- Do not include training-data fingerprints (long verbatim strings from canonical open-source projects) without attribution and license check.
-- Generated code that closely mirrors a specific known project MUST be flagged for review.
-- License headers MUST be preserved when copying within-license; they MUST NOT be stripped.
+- **{{.SectionNum}}.8.1 No verbatim copyrighted code.** Do not reproduce substantial copyrighted code verbatim. When implementing a known algorithm, write it fresh and cite the reference.
+- **{{.SectionNum}}.8.2 No training-data fingerprints.** Do not include training-data fingerprints (long verbatim strings from canonical open-source projects) without attribution and license check.
+- **{{.SectionNum}}.8.3 Flag mirroring.** Generated code that closely mirrors a specific known project MUST be flagged for review.
+- **{{.SectionNum}}.8.4 Preserve license headers.** License headers MUST be preserved when copying within-license; they MUST NOT be stripped.
 
 ### §{{.SectionNum}}.9 Documentation That Accompanies Code
 
