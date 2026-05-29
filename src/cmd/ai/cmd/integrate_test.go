@@ -12,12 +12,12 @@ import (
 // ---------------------------------------------------------------------------
 
 // TestIntegrateCursor_CreatesSymlink verifies that runIntegrateCursor creates
-// .cursor/rules/constitution.md → <aiRoot>/Constitution.runtime.md in cwd.
+// .cursor/rules/constitution.md → <aiRoot>/Constitution.compact.md in cwd.
 func TestIntegrateCursor_CreatesSymlink(t *testing.T) {
 	cwd := t.TempDir()
 	aiRoot := t.TempDir()
 
-	runtimeFile := filepath.Join(aiRoot, "Constitution.runtime.md")
+	runtimeFile := filepath.Join(aiRoot, "Constitution.compact.md")
 	if err := os.WriteFile(runtimeFile, []byte("# runtime"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -42,7 +42,7 @@ func TestIntegrateCursor_CreatesRulesDir(t *testing.T) {
 	cwd := t.TempDir()
 	aiRoot := t.TempDir()
 
-	runtimeFile := filepath.Join(aiRoot, "Constitution.runtime.md")
+	runtimeFile := filepath.Join(aiRoot, "Constitution.compact.md")
 	if err := os.WriteFile(runtimeFile, []byte("# runtime"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -67,7 +67,7 @@ func TestIntegrateCursor_Idempotent(t *testing.T) {
 	cwd := t.TempDir()
 	aiRoot := t.TempDir()
 
-	runtimeFile := filepath.Join(aiRoot, "Constitution.runtime.md")
+	runtimeFile := filepath.Join(aiRoot, "Constitution.compact.md")
 	if err := os.WriteFile(runtimeFile, []byte("# runtime"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -95,14 +95,14 @@ func TestIntegrateCursor_Idempotent(t *testing.T) {
 func TestIntegrateCursor_WarnsMissingRuntime(t *testing.T) {
 	cwd := t.TempDir()
 	aiRoot := t.TempDir()
-	// Deliberately do NOT create Constitution.runtime.md.
+	// Deliberately do NOT create Constitution.compact.md.
 
 	err := runIntegrateCursor(cwd, aiRoot)
 	if err == nil {
-		t.Fatal("expected error when Constitution.runtime.md is absent, got nil")
+		t.Fatal("expected error when Constitution.compact.md is absent, got nil")
 	}
-	if !strings.Contains(err.Error(), "Constitution.runtime.md") {
-		t.Errorf("error message = %q, want mention of Constitution.runtime.md", err.Error())
+	if !strings.Contains(err.Error(), "Constitution.compact.md") {
+		t.Errorf("error message = %q, want mention of Constitution.compact.md", err.Error())
 	}
 }
 
@@ -124,8 +124,8 @@ func TestIntegrateCodex_WritesAgentsMD(t *testing.T) {
 	if err != nil {
 		t.Fatalf("AGENTS.md not created: %v", err)
 	}
-	if !strings.Contains(string(content), "@~/.ai/Constitution.md") {
-		t.Errorf("AGENTS.md content = %q, want @~/.ai/Constitution.md", string(content))
+	if !strings.Contains(string(content), "@~/.ai/Constitution.compact.md") {
+		t.Errorf("AGENTS.md content = %q, want @~/.ai/Constitution.compact.md", string(content))
 	}
 }
 
@@ -147,7 +147,7 @@ func TestIntegrateCodex_Idempotent(t *testing.T) {
 		t.Fatalf("AGENTS.md missing: %v", err)
 	}
 
-	count := strings.Count(string(content), "@~/.ai/Constitution.md")
+	count := strings.Count(string(content), "@~/.ai/Constitution.compact.md")
 	if count != 1 {
 		t.Errorf("@-include appears %d times, want exactly 1", count)
 	}
@@ -180,7 +180,7 @@ func TestIntegrateCodex_AppendsToExistingFile(t *testing.T) {
 		t.Error("existing content was lost after append")
 	}
 	// Must add @-include.
-	if !strings.Contains(body, "@~/.ai/Constitution.md") {
+	if !strings.Contains(body, "@~/.ai/Constitution.compact.md") {
 		t.Error("@-include not appended to existing AGENTS.md")
 	}
 }
@@ -191,7 +191,7 @@ func TestIntegrateCodex_SkipsAlreadyPresent(t *testing.T) {
 	cwd := t.TempDir()
 	agentsPath := filepath.Join(cwd, "AGENTS.md")
 
-	existing := "# AI Agents\n\n@~/.ai/Constitution.md\n\nSome extra text.\n"
+	existing := "# AI Agents\n\n@~/.ai/Constitution.compact.md\n\nSome extra text.\n"
 	if err := os.WriteFile(agentsPath, []byte(existing), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -220,7 +220,7 @@ func TestDoctorCopilotCheck_ValidSymlink(t *testing.T) {
 	aiRoot := t.TempDir()
 
 	// Create runtime file.
-	runtimeFile := filepath.Join(aiRoot, "Constitution.runtime.md")
+	runtimeFile := filepath.Join(aiRoot, "Constitution.compact.md")
 	if err := os.WriteFile(runtimeFile, []byte("# runtime"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -275,7 +275,7 @@ func TestDoctorCursorCheck_ValidSymlink(t *testing.T) {
 	cwd := t.TempDir()
 	aiRoot := t.TempDir()
 
-	runtimeFile := filepath.Join(aiRoot, "Constitution.runtime.md")
+	runtimeFile := filepath.Join(aiRoot, "Constitution.compact.md")
 	if err := os.WriteFile(runtimeFile, []byte("# runtime"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -306,11 +306,11 @@ func TestDoctorCursorCheck_NoCursorDir(t *testing.T) {
 }
 
 // TestDoctorAgentsMDCheck_ValidInclude verifies AGENTS.md check returns [✓]
-// when AGENTS.md contains @~/.ai/Constitution.md.
+// when AGENTS.md contains @~/.ai/Constitution.compact.md.
 func TestDoctorAgentsMDCheck_ValidInclude(t *testing.T) {
 	cwd := t.TempDir()
 	agentsPath := filepath.Join(cwd, "AGENTS.md")
-	if err := os.WriteFile(agentsPath, []byte("@~/.ai/Constitution.md\n"), 0o644); err != nil {
+	if err := os.WriteFile(agentsPath, []byte("@~/.ai/Constitution.compact.md\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 

@@ -465,6 +465,10 @@ func checkDoctorAgentsMD(cwd string) doctorResult {
 	data, err := os.ReadFile(filepath.Join(cwd, "AGENTS.md")) //nolint:gosec
 	if os.IsNotExist(err) { return doctorResult{status: doctorSkip} }
 	if err != nil { return doctorResult{status: doctorWarn} }
-	if strings.Contains(string(data), "@~/.ai/Constitution.md") { return doctorResult{status: doctorOK} }
+	// Accept both compact form (current) and full form (legacy installs).
+	content := string(data)
+	if strings.Contains(content, "@~/.ai/Constitution.compact.md") || strings.Contains(content, "@~/.ai/Constitution.md") {
+		return doctorResult{status: doctorOK}
+	}
 	return doctorResult{status: doctorWarn}
 }
