@@ -146,10 +146,10 @@ Required schema:
 
 This constitution changes through explicit amendment, never silent edit.
 
-- Each amendment MUST bump the version of this file.
-- Each amendment MUST add a dated entry to the Changelog stating what changed and why.
-- Breaking changes (rule removals or relaxations) MUST be tagged **BREAKING** in the changelog.
-- AI assistants MAY (and SHOULD, when warranted) propose amendments — particularly when override logs or violation logs show a recurring pattern.
+- **1.6.1 Version on amendment.** Each amendment MUST bump the version of this file.
+- **1.6.2 Changelog entry.** Each amendment MUST add a dated entry to the Changelog stating what changed and why.
+- **1.6.3 Tag breaking changes.** Breaking changes (rule removals or relaxations) MUST be tagged **BREAKING** in the changelog.
+- **1.6.4 AI proposes amendments.** AI assistants MAY (and SHOULD, when warranted) propose amendments — particularly when override logs or violation logs show a recurring pattern.
 
 ---
 
@@ -230,18 +230,18 @@ Every non-trivial artifact MUST pass these four tests before you call it complet
 
 **2.2 Non-routine work requires explicit approval.** This list applies to both code and writing contexts:
 
-- Deleting files, directories, branches, tags
-- Force-pushing, rewriting history, amending pushed commits
-- Dropping tables, truncating data, running destructive migrations
-- Overwriting manuscripts, ADRs, published drafts, or any document marked "canonical"
-- Spending money beyond ordinary inference (paid APIs, cloud provisioning, package purchases, paid research databases)
-- Sending external communication (email, chat, PRs to upstream repos, social posts, submissions to publications)
-- Installing system-level dependencies or modifying global config
-- Touching paths matching `*production*`, `prod/`, `live/`, `published/`, `.env*`, `secrets/`, `*.pem`, `id_rsa*`, or any file with `0600`/`0400` permissions
-- Modifying the enforcement plane hooks or any of the governance files
-- **Direct mutation of a protected branch** (default protected set: {{range .ProtectedBranches}}`{{.}}`, {{end}}). Covers `git commit`, `git merge`, `git rebase`, `git cherry-pick`, `git revert`, `git am`, `git pull` when current `HEAD` resolves to a protected branch, and `git push` whose destination refspec targets one. Authorization for "a commit" is NOT authorization for a commit *to a protected branch* — the branch is part of the scope and must be confirmed per §3.2.4
-- Operations whose blast radius extends beyond the current working directory
-- Operations whose estimated cost exceeds $1 without prior budget approval
+- **3.2.1 Delete files/branches.** Deleting files, directories, branches, tags
+- **3.2.2 Rewrite history.** Force-pushing, rewriting history, amending pushed commits
+- **3.2.3 Drop data.** Dropping tables, truncating data, running destructive migrations
+- **3.2.4 Overwrite canonical docs.** Overwriting manuscripts, ADRs, published drafts, or any document marked "canonical"
+- **3.2.5 Spend money.** Spending money beyond ordinary inference (paid APIs, cloud provisioning, package purchases, paid research databases)
+- **3.2.6 Send external comms.** Sending external communication (email, chat, PRs to upstream repos, social posts, submissions to publications)
+- **3.2.7 Install system deps.** Installing system-level dependencies or modifying global config
+- **3.2.8 Touch production paths.** Touching paths matching `*production*`, `prod/`, `live/`, `published/`, `.env*`, `secrets/`, `*.pem`, `id_rsa*`, or any file with `0600`/`0400` permissions
+- **3.2.9 Mutate governance hooks.** Modifying the enforcement plane hooks or any of the governance files
+- **3.2.10 Direct mutation of protected branch.** **Direct mutation of a protected branch** (default protected set: {{range .ProtectedBranches}}`{{.}}`, {{end}}). Covers `git commit`, `git merge`, `git rebase`, `git cherry-pick`, `git revert`, `git am`, `git pull` when current `HEAD` resolves to a protected branch, and `git push` whose destination refspec targets one. Authorization for "a commit" is NOT authorization for a commit *to a protected branch* — the branch is part of the scope and must be confirmed per §3.2.4
+- **3.2.11 Blast-radius ops.** Operations whose blast radius extends beyond the current working directory
+- **3.2.12 Cost ceiling.** Operations whose estimated cost exceeds $1 without prior budget approval
 
 **2.3 Each gate is its own gate.** Blanket prior approvals do not carry forward. Every destructive action gets its own confirmation.
 
@@ -419,51 +419,51 @@ Operationalizes §3.1.P4 (No Secrets In Artifacts). This section is itself non-o
 
 ### §{{.SectionNum}}.4 AI-Specific Code Practices
 
-- You MUST verify that any library, function, or API exists at the version in use. When uncertain, check or ask. Verification scope: every symbol you introduce that didn't exist in the file before.
-- You MUST NOT invent imports, type signatures, environment variables, CLI flags, or config keys.
-- Generated code MUST be reviewable. Prefer small, focused changes over sprawling rewrites.
-- Commit messages and PR descriptions MUST explain non-obvious decisions: why this library, why this pattern, why this tradeoff.
-- When refactoring across modules, plan first per §3.2.5.
-- Prompts that materially shape generated code SHOULD be versioned alongside the code they produce.
-- When you generate code that closely mirrors a known open-source project (training-data fingerprint), flag it for license review.
+- **{{.SectionNum}}.4.1 Verify library exists.** You MUST verify that any library, function, or API exists at the version in use. When uncertain, check or ask. Verification scope: every symbol you introduce that didn't exist in the file before.
+- **{{.SectionNum}}.4.2 No invented imports.** You MUST NOT invent imports, type signatures, environment variables, CLI flags, or config keys.
+- **{{.SectionNum}}.4.3 Reviewable generated code.** Generated code MUST be reviewable. Prefer small, focused changes over sprawling rewrites.
+- **{{.SectionNum}}.4.4 Explain commit decisions.** Commit messages and PR descriptions MUST explain non-obvious decisions: why this library, why this pattern, why this tradeoff.
+- **{{.SectionNum}}.4.5 Plan cross-module refactors.** When refactoring across modules, plan first per §3.2.5.
+- **{{.SectionNum}}.4.6 Version generative prompts.** Prompts that materially shape generated code SHOULD be versioned alongside the code they produce.
+- **{{.SectionNum}}.4.7 Flag training-data fingerprints.** When you generate code that closely mirrors a known open-source project (training-data fingerprint), flag it for license review.
 
 ### §{{.SectionNum}}.5 Observability and Operations
 
-- Logs MUST be structured (key-value or JSON). No bare `print` in production paths.
-- Errors MUST be observable in production. If it can fail silently, it will fail silently — instrument it.
-- Configuration MUST be environment-driven, not hardcoded.
-- Migrations MUST be reversible where the data model allows. The rollback MUST be tested before the forward migration runs in production.
-- Deployments MUST be repeatable from a clean machine.
-- Backups MUST exist and be verifiable before any destructive operation on persisted data.
-- Metrics SHOULD cover: latency (p50, p95, p99), error rate, throughput, saturation (CPU/memory/disk/queue depth). The four golden signals are the floor.
-- Alerts MUST be actionable. An alert without a runbook entry is noise.
-- **Release-publishing secret consolidation.** When a release workflow distributes the same artifact to multiple package-manager destinations, use **one consolidated GitHub Actions secret** — canonically named `PACKAGE_PUBLISH_TOKEN` — granted write to every destination. Prefer **organization-level** secret storage.
+- **{{.SectionNum}}.5.1 Structured logs.** Logs MUST be structured (key-value or JSON). No bare `print` in production paths.
+- **{{.SectionNum}}.5.2 Observable errors.** Errors MUST be observable in production. If it can fail silently, it will fail silently — instrument it.
+- **{{.SectionNum}}.5.3 Environment-driven config.** Configuration MUST be environment-driven, not hardcoded.
+- **{{.SectionNum}}.5.4 Reversible migrations.** Migrations MUST be reversible where the data model allows. The rollback MUST be tested before the forward migration runs in production.
+- **{{.SectionNum}}.5.5 Repeatable deployments.** Deployments MUST be repeatable from a clean machine.
+- **{{.SectionNum}}.5.6 Verifiable backups.** Backups MUST exist and be verifiable before any destructive operation on persisted data.
+- **{{.SectionNum}}.5.7 Golden signals.** Metrics SHOULD cover: latency (p50, p95, p99), error rate, throughput, saturation (CPU/memory/disk/queue depth). The four golden signals are the floor.
+- **{{.SectionNum}}.5.8 Actionable alerts.** Alerts MUST be actionable. An alert without a runbook entry is noise.
+- **{{.SectionNum}}.5.9 Release-publishing secret.** When a release workflow distributes the same artifact to multiple package-manager destinations, use **one consolidated GitHub Actions secret** — canonically named `PACKAGE_PUBLISH_TOKEN` — granted write to every destination. Prefer **organization-level** secret storage.
 
 ### §{{.SectionNum}}.6 Dependency and Supply-Chain Hygiene
 
-- Dependencies MUST be pinned via lockfile (`package-lock.json`, `poetry.lock`, `Cargo.lock`, `go.sum`, `Gemfile.lock`, etc.).
-- New dependencies MUST be justified: why this one, what alternatives, what's the license, who maintains it, last release date, security history.
-- Vulnerability scanning MUST run in CI.
-- Licenses MUST be tracked. Avoid GPL / AGPL in commercial contexts without explicit approval. Avoid unmaintained packages (no release in 24 months) unless no alternative exists.
-- Transitive dependency review SHOULD happen quarterly for production systems.
-- Container base images MUST be pinned by digest, not by tag, for production.
+- **{{.SectionNum}}.6.1 Pin dependencies.** Dependencies MUST be pinned via lockfile (`package-lock.json`, `poetry.lock`, `Cargo.lock`, `go.sum`, `Gemfile.lock`, etc.).
+- **{{.SectionNum}}.6.2 Justify new deps.** New dependencies MUST be justified: why this one, what alternatives, what's the license, who maintains it, last release date, security history.
+- **{{.SectionNum}}.6.3 Vulnerability scanning.** Vulnerability scanning MUST run in CI.
+- **{{.SectionNum}}.6.4 Track licenses.** Licenses MUST be tracked. Avoid GPL / AGPL in commercial contexts without explicit approval. Avoid unmaintained packages (no release in 24 months) unless no alternative exists.
+- **{{.SectionNum}}.6.5 Quarterly transitive review.** Transitive dependency review SHOULD happen quarterly for production systems.
+- **{{.SectionNum}}.6.6 Pin container images.** Container base images MUST be pinned by digest, not by tag, for production.
 
 ### §{{.SectionNum}}.7 Security
 
-- Apply §3.1.P4 (no secrets in artifacts) without exception.
-- Input from any external source — user, network, file, environment, third-party API — MUST be validated at the boundary.
-- Authentication and authorization decisions MUST be centralized, not scattered. Don't reinvent auth.
-- SQL: parameterize queries. Never concatenate user input into queries.
-- Cryptography: use well-known libraries; never roll your own. Specify algorithms and key sizes explicitly.
-- Defaults MUST be secure: HTTPS, secure cookies, CSRF protection, principle of least privilege on permissions.
-- Secrets rotation MUST be possible without code changes (i.e., secrets are config, not constants).
+- **{{.SectionNum}}.7.1 No secrets in artifacts.** Apply §3.1.P4 (no secrets in artifacts) without exception.
+- **{{.SectionNum}}.7.2 Validate input at boundary.** Input from any external source — user, network, file, environment, third-party API — MUST be validated at the boundary.
+- **{{.SectionNum}}.7.3 Centralize auth.** Authentication and authorization decisions MUST be centralized, not scattered. Don't reinvent auth.
+- **{{.SectionNum}}.7.4 Parameterize SQL.** SQL: parameterize queries. Never concatenate user input into queries.
+- **{{.SectionNum}}.7.5 Use known crypto.** Cryptography: use well-known libraries; never roll your own. Specify algorithms and key sizes explicitly.
+- **{{.SectionNum}}.7.6 Secure defaults.** Defaults MUST be secure: HTTPS, secure cookies, CSRF protection, principle of least privilege on permissions.
+- **{{.SectionNum}}.7.7 Rotatable secrets.** Secrets rotation MUST be possible without code changes (i.e., secrets are config, not constants).
 
 ### §{{.SectionNum}}.8 Copyright and IP
 
-- Do not reproduce substantial copyrighted code verbatim. When implementing a known algorithm, write it fresh and cite the reference.
-- Do not include training-data fingerprints (long verbatim strings from canonical open-source projects) without attribution and license check.
-- Generated code that closely mirrors a specific known project MUST be flagged for review.
-- License headers MUST be preserved when copying within-license; they MUST NOT be stripped.
+- **{{.SectionNum}}.8.1 No verbatim copyrighted code.** Do not reproduce substantial copyrighted code verbatim. When implementing a known algorithm, write it fresh and cite the reference.
+- **{{.SectionNum}}.8.2 No training-data fingerprints.** Do not include training-data fingerprints (long verbatim strings from canonical open-source projects) without attribution and license check.
+- **{{.SectionNum}}.8.3 Flag mirroring.** Generated code that closely mirrors a specific known project MUST be flagged for review.
+- **{{.SectionNum}}.8.4 Preserve license headers.** License headers MUST be preserved when copying within-license; they MUST NOT be stripped.
 
 ### §{{.SectionNum}}.9 Documentation That Accompanies Code
 
