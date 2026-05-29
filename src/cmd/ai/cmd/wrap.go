@@ -40,8 +40,14 @@ type hookDef struct {
 	Script      string   `toml:"script"`      // "~/.ai/hooks/branch-guard.py" — slug extracted at runtime
 	Subcommands []string `toml:"subcommands"` // empty = applies to every subcommand
 	StripArgs   []string `toml:"stripArgs"`   // args to remove before invoking real binary
+	Enforcement string   `toml:"enforcement"` // "" or "blocking" = fail closed; "advisory" = skip silently on missing
 	Description string   `toml:"description"`
 }
+
+// isBlocking reports whether a missing or broken hook should block the real
+// binary. Default (empty Enforcement) is blocking so that all existing
+// security-gate hooks fail closed without a TOML change.
+func (h hookDef) isBlocking() bool { return h.Enforcement != "advisory" }
 
 // loadCommandWrappers reads command-wrappers.toml from AI_ROOT/hooks/,
 // falling back to the embedded copy when not found on disk.
@@ -87,7 +93,22 @@ func hookApplies(hook hookDef, subCmd string) bool {
 	return false
 }
 
+// normalizeFlag strips the =... suffix from a double-dash flag so that
+// "--no-verify=true" matches a strip list entry of "--no-verify".
+// Single-dash flags and positional args are returned unchanged.
+func normalizeFlag(arg string) string {
+	if !strings.HasPrefix(arg, "--") {
+		return arg
+	}
+	if eq := strings.IndexByte(arg, '='); eq >= 0 {
+		return arg[:eq]
+	}
+	return arg
+}
+
 // applyStripArgs removes StripArgs entries from toolArgs.
+// Double-dash flags are normalized before comparison so that
+// "--no-verify=true" is removed when "--no-verify" is in the strip list.
 func applyStripArgs(toolArgs, strip []string) []string {
 	if len(strip) == 0 {
 		return toolArgs
@@ -98,7 +119,7 @@ func applyStripArgs(toolArgs, strip []string) []string {
 	}
 	out := make([]string, 0, len(toolArgs))
 	for _, a := range toolArgs {
-		if !rm[a] {
+		if !rm[normalizeFlag(a)] {
 			out = append(out, a)
 		}
 	}
@@ -147,19 +168,37 @@ func realBinaryCandidates(dir, tool string) []string {
 	return []string{base, base + ".exe"}
 }
 
-// runHookForWrap runs a hook by slug using the cross-platform Python
-// dispatcher. It sets the caller-provided extraEnv (WRAPPED_CMD,
-// WRAPPED_ARGV, etc.) in the hook process's environment.
-// Returns the hook's exit code; returns 0 if the hook is not installed
-// (non-fatal: allows fresh installs where hooks aren't yet extracted).
-func runHookForWrap(slug string, toolArgs, extraEnv []string) int {
+// runHookForWrap runs a hook by slug using the cross-platform Python dispatcher.
+// It sets the caller-provided extraEnv (WRAPPED_CMD, WRAPPED_ARGV, etc.) in
+// the hook process's environment.
+//
+// When blocking is true (the default for security-gate hooks):
+//   - Hook file missing → prints ENFORCEMENT DEGRADED message + returns 1.
+//   - Python 3 absent   → prints ENFORCEMENT DEGRADED message + returns 1.
+//
+// When blocking is false (advisory hooks, e.g. worktree-guard):
+//   - Hook file missing → returns 0 silently.
+//   - Python 3 absent   → prints a warning + returns 0.
+func runHookForWrap(slug string, toolArgs, extraEnv []string, blocking bool) int {
 	hookPath := filepath.Join(paths.HooksDir(), slug+".py")
 	if _, err := os.Stat(hookPath); err != nil {
-		return 0 // not installed — skip silently
+		if blocking {
+			fmt.Fprintf(os.Stderr,
+				"[ai/wrap] ENFORCEMENT DEGRADED: hook %q is wired as blocking but not installed;\n"+
+					"  run 'ai hooks install --all' or 'ai doctor' to restore enforcement.\n", slug)
+			return 1
+		}
+		return 0 // advisory: skip silently
 	}
 	pyArgs := discoverPythonArgs() // defined in hooks.go, same package
 	if pyArgs == nil {
-		fmt.Fprintf(os.Stderr, "[ai/wrap] Python 3 not found; skipping hook %s\n", slug)
+		if blocking {
+			fmt.Fprintf(os.Stderr,
+				"[ai/wrap] ENFORCEMENT DEGRADED: Python 3 is required for blocking hook %q but was not found;\n"+
+					"  install Python 3 or run 'ai doctor' to restore enforcement.\n", slug)
+			return 1
+		}
+		fmt.Fprintf(os.Stderr, "[ai/wrap] Python 3 not found; skipping advisory hook %s\n", slug)
 		return 0
 	}
 	// Build: python <hookPath> --mode=wrapper <toolArgs...>
@@ -221,9 +260,12 @@ func runWrap(tool string, rawArgs []string) error {
 
 	cfg, err := loadCommandWrappers()
 	if err != nil {
-		// Config missing — fail-open: pass through to real binary.
-		fmt.Fprintf(os.Stderr, "[ai/wrap] config error: %v; passing through to real %s\n", err, tool)
-		os.Exit(execRealCapturingCode(tool, "", toolArgs))
+		// Config missing or unparseable — cannot determine which hooks are blocking.
+		// Fail closed: the caller must fix the config or run 'ai hooks install --all'.
+		fmt.Fprintf(os.Stderr,
+			"[ai/wrap] ENFORCEMENT DEGRADED: cannot load command-wrappers.toml: %v\n"+
+				"  Run 'ai hooks install --all' or 'ai doctor' to restore enforcement.\n", err)
+		os.Exit(1)
 	}
 
 	entry, ok := cfg.Command[tool]
@@ -247,7 +289,7 @@ func runWrap(tool string, rawArgs []string) error {
 			continue
 		}
 		effectiveArgs = applyStripArgs(effectiveArgs, h.StripArgs)
-		if code := runHookForWrap(hookSlug(h.Script), effectiveArgs, baseEnv); code != 0 {
+		if code := runHookForWrap(hookSlug(h.Script), effectiveArgs, baseEnv, h.isBlocking()); code != 0 {
 			os.Exit(code)
 		}
 	}
@@ -257,7 +299,8 @@ func runWrap(tool string, rawArgs []string) error {
 	exitCode := execRealCapturingCode(tool, entry.RealCommand, effectiveArgs)
 	duration := int(time.Since(start).Seconds())
 
-	// Post-hooks: always run; ignore failures.
+	// Post-hooks: always run; advisory only (can't block after binary ran).
+	// Failures are surfaced as warnings — audit loss must be visible.
 	postEnv := append(append([]string{}, baseEnv...),
 		fmt.Sprintf("WRAPPED_EXIT=%d", exitCode),
 		fmt.Sprintf("WRAPPED_DURATION=%d", duration),
@@ -266,7 +309,10 @@ func runWrap(tool string, rawArgs []string) error {
 		if !hookApplies(h, subCmd) {
 			continue
 		}
-		_ = runHookForWrap(hookSlug(h.Script), effectiveArgs, postEnv)
+		if code := runHookForWrap(hookSlug(h.Script), effectiveArgs, postEnv, false); code != 0 {
+			fmt.Fprintf(os.Stderr, "[ai/wrap] WARN: post-hook %q failed (exit %d); audit record may be incomplete\n",
+				hookSlug(h.Script), code)
+		}
 	}
 
 	os.Exit(exitCode)
@@ -289,8 +335,9 @@ in ~/.ai/bin/ (git, git.cmd, git.ps1 etc.) delegate to it:
 
 wrap loads command-wrappers.toml, runs the configured pre-hooks for
 the tool and subcommand, invokes the real binary, and runs post-hooks.
-If command-wrappers.toml cannot be loaded, wrap passes through directly
-(fail-open on config error so git/gh are never broken by a bad config).`,
+If command-wrappers.toml cannot be loaded, wrap exits with an error and
+a remediation hint rather than silently passing through — enforcement
+must be explicit, not accidental.`,
 		DisableFlagParsing: true, // forward all flags to the wrapped tool
 		SilenceUsage:       true,
 		RunE: func(_ *cobra.Command, args []string) error {

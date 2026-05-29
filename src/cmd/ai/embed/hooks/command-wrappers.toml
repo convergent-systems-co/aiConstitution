@@ -36,6 +36,7 @@ description = "Strip --no-verify per settings.secret_scanning.allowNoVerifyBypas
 [[command.git.preHooks]]
 script = "~/.ai/hooks/worktree-guard.py"
 subcommands = ["worktree"]
+enforcement = "advisory"
 description = "Enforce canonical worktree placement (Common.md §U17)"
 
 [[command.git.postHooks]]
