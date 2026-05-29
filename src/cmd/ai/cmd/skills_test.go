@@ -85,6 +85,14 @@ func runSkillsCmd(t *testing.T, root string, args ...string) (stdout, stderr str
 
 	// Set AI_ROOT so paths.SkillsManifestDir() resolves to our fixture.
 	t.Setenv("AI_ROOT", root)
+	// Isolate symlink operations from the real home directory, but only when
+	// the test hasn't already configured a specific target directory.
+	if _, ok := os.LookupEnv("CLAUDE_SKILLS_DIR"); !ok {
+		t.Setenv("CLAUDE_SKILLS_DIR", t.TempDir())
+	}
+	if _, ok := os.LookupEnv("COPILOT_INSTRUCTIONS_DIR"); !ok {
+		t.Setenv("COPILOT_INSTRUCTIONS_DIR", t.TempDir())
+	}
 
 	var outBuf, errBuf bytes.Buffer
 	c := cmd.NewRootCmd()
