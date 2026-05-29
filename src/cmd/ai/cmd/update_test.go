@@ -106,7 +106,7 @@ func TestUpdate_VersionUpToDate(t *testing.T) {
 	// Not a git repo — skip the pull so this test is focused on the version check.
 	withFakeUpdateGit(t, nil)
 	// Return the same version that buildinfo.Raw() returns (dev build).
-	withFakeGitHubRelease(t, "v0.8.0-dev", nil)
+	withFakeGitHubRelease(t, "v1.4.0-dev", nil)
 
 	out, err := runUpdateCmd(t)
 	if err != nil {

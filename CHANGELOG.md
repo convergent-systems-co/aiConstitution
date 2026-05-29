@@ -66,6 +66,45 @@ binary version independently — the binary tracks `SemVer` over the
 - `ai hooks list`: `lib.py` filtered (transition artifact); `audit-logger.py` wired to `PreToolUse` (#421)
 - `ai status`: wired hook count now reflects both group and flat settings.json formats (#402)
 
+## [1.4.0] — 2026-05-29
+
+### Added
+
+- **`ai wrap <tool> [-- args...]`** — cross-platform Go dispatcher for command-wrapper interception. All wrapper logic moved from bash to Go; per-OS shims (`git.cmd`, `git.ps1`, `gh.cmd`, `gh.ps1`) delegate to it. Closes the Windows enforcement gap where protected-branch and pre-commit-secret gates silently did not fire (#443).
+- **`ai doctor`: Windows Python App Execution Alias detection + `--fix`** — detects zero-byte Store stubs that shadow a real Python installation; `--fix` removes them automatically (#451).
+- **`ai doctor`: blocking wrapper hook drift check** — verifies every blocking pre-hook in `command-wrappers.toml` is installed on disk; surfaces `[⚠]` with remediation hint (#447).
+- **Per-pattern severity in `patterns.json`** — `block_level: "blocking"` (default, abort) or `"warn"` (emit warning, allow). High-confidence patterns (GitHub, AWS, GCP) are explicitly `"blocking"`; medium-confidence patterns with false-positive risk are `"warn"` (#455).
+- **Local allowlist in `patterns.local.json`** — `disable: ["jwt-token"]` suppresses specific patterns per-repo without touching the global canonical file (#455).
+- **`make docs`** — generates the README command table from `NewRootCmd().Commands()` so it can't drift; `gen_docs.go` is the generator (#454).
+- **`ParseSectionsAny`** in `constitution.go` — handles both legacy `## N. Name Rules` and template-generated `## §N Name` section headers; enables `ai compress --check-coverage` on normally-generated constitutions (#448).
+- **`ai compress --check-coverage`** — compares full-extraction rule IDs against `Constitution.compact.md`; exits non-zero on missing IDs (#446).
+- **Lossless compact form** — `Constitution.compact.md` now generated from the rule extractor rather than a hand-written string; 158 rule IDs verified end-to-end (#448, #449).
+- **Go `BlockLevel` + `IsBlocking()` helpers** in `src/pkg/patterns/patterns.go` — propagates `block_level` from `patterns.json` into `Match` values (#455).
+
+### Changed
+
+- **`ai setup` does a full minimum install** — now runs `installAllHooksAndWire` (catalog + infrastructure + settings.json wiring), `embed.ExtractWrappers` (platform-appropriate command-wrappers), and Windows Python prerequisite fix before writing hooks (#452).
+- **Hook enforcement is now fail-closed** — `runHookForWrap` returns exit 1 + `ENFORCEMENT DEGRADED` message when a blocking hook file is missing or Python is absent, instead of silently returning 0 (#445).
+- **Config error in `ai wrap` fails closed** — unreadable `command-wrappers.toml` exits 1 with a remediation hint instead of passing through to the real binary (#445).
+- **`ai wrap` does not forward tool args to hooks** — hooks read git state via `git diff --staged` / `git branch --show-current`; passing git subcommand tokens caused `argparse` failures in strict-mode hooks (#453).
+- **Hook stdin is `nil` in wrapper mode** — prevents pre-hooks from consuming stdin the real binary needs (A.3) (#453).
+- **`worktree-guard` is advisory** — marked `enforcement = "advisory"` in `command-wrappers.toml`; convention enforcement, not a security gate (#445).
+- **Constitution template is cross-platform** — §3.4.1 presence test now includes per-OS table (POSIX sh / PowerShell / cmd); §3.4.2 clipboard rule has per-OS commands; `0600`/`0400` replaced with portable intent; `ls -la` replaced with platform-neutral description; path-separator normalization clause (§3.2.13); portable path resolution (§3.5.6); shell-neutral command discipline (U18); line-endings/encoding (U19) (#450).
+- **`ruleHeadRe` and `bulletSubRuleRe`** updated to capture three-level IDs (`N.M.K`) in addition to two-level (#448).
+- **Template bold subsection heads** stripped of `§` prefix (`**§N.M.K.**` → `**N.M.K.**`) so the numeric ID is extractable (#448).
+- **`ExtractWrappers` is platform-filtered** — `.cmd`/`.ps1` only on Windows; bash shims only on POSIX; `notify-me` variants on all platforms (#443).
+- **SPEC.md label** standardized to `v1.0.0-draft` everywhere (#447).
+- **README command table** regenerated from `NewRootCmd().Commands()` — alphabetical, source-of-truth, adds `ai wrap` (#454).
+
+### Fixed
+
+- Duplicate `newCompressCmd()` registration in `root.AddCommand` removed (#441).
+- Go version floor standardized to 1.26 across all modules and `.tool-versions` (#441).
+- `renderCompactConstitution` hand-written body replaced with extractor-based generator (#449).
+- §4.1–§4.8 and §3.2.2/§1.6 plain bullets tagged with stable `N.M.K` IDs in constitution template (#449).
+- `TestDoctorTerminalNotifierFound` assertion tightened to per-line check (was false-positive when any `[⚠]` appeared alongside any `terminal-notifier` mention) (#447).
+- `command-wrappers.toml` header updated to reflect post-fail-closed enforcement model (#447).
+
 ## [Unreleased]
 
 ### Spec — v0.10: GitHub Actions trinity

@@ -2,10 +2,13 @@
 //
 // Build with:
 //
-//	go build -ldflags "-X .../buildinfo.version=v0.8.0 -X .../buildinfo.commit=$(git rev-parse HEAD) -X .../buildinfo.date=$(date -u +%FT%TZ)" ...
+//	go build -ldflags "-X .../buildinfo.version=v1.4.0 -X .../buildinfo.commit=$(git rev-parse HEAD) -X .../buildinfo.date=$(date -u +%FT%TZ)" ...
 //
 // .goreleaser.yaml stamps all three at release-build time. Local
 // `make build` leaves the defaults below in place.
+//
+// Stamped format:   "v1.4.0  (commit abc1234, built 2026-05-29T08:00:00Z)"
+// Unstamped format: "v1.4.0-dev  (commit unknown, built unknown)"
 package buildinfo
 
 import "fmt"
@@ -14,7 +17,7 @@ import "fmt"
 // build; release builds stamp them with the tag, commit SHA, and
 // build date.
 var (
-	version = "v0.8.0-dev"
+	version = "v1.4.0-dev"
 	commit  = "unknown"
 	date    = "unknown"
 )
@@ -22,7 +25,7 @@ var (
 // Version returns the embedded version string. Format depends on
 // whether ldflags stamping occurred:
 //   - Stamped:   "v0.8.0  (commit abc1234, built 2026-05-23T08:00:00Z)"
-//   - Unstamped: "v0.8.0-dev  (commit unknown, built unknown)"
+//   - Unstamped: "v1.4.0-dev  (commit unknown, built unknown)"
 func Version() string {
 	return fmt.Sprintf("%s  (commit %s, built %s)", version, shortCommit(), date)
 }
