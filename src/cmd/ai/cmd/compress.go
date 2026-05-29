@@ -18,6 +18,7 @@ func newCompressCmd() *cobra.Command {
 	var personaFlag string
 	var checkFlag bool
 	var personasFlag bool
+	var checkCoverage bool
 
 	c := &cobra.Command{
 		Use:   "compress",
@@ -30,8 +31,14 @@ to update ~/.claude/CLAUDE.md to load the compact version.
 
 With --personas: extracts ## N. <Persona> Rules sections from Constitution.md
 and emits a YAML derivative (<Persona>.md) and compact prose fallback
-(<Persona>.compact.md) per section. Use --check to detect stale derivatives.`,
+(<Persona>.compact.md) per section. Use --check to detect stale derivatives.
+
+With --check-coverage: compares full-extraction rule IDs against
+Constitution.compact.md and exits non-zero if any IDs are missing.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			if checkCoverage {
+				return runCheckCoverage(cmd)
+			}
 			if personasFlag || personaFlag != "" || checkFlag {
 				return runCompressPersonas(cmd, personaFlag, checkFlag)
 			}
@@ -43,6 +50,7 @@ and emits a YAML derivative (<Persona>.md) and compact prose fallback
 	c.Flags().BoolVar(&personasFlag, "personas", false, "extract per-persona YAML + compact.md derivatives")
 	c.Flags().StringVar(&personaFlag, "persona", "", "regenerate only this persona slug (e.g., code)")
 	c.Flags().BoolVar(&checkFlag, "check", false, "exit non-zero if any persona derivative is stale (no writes)")
+	c.Flags().BoolVar(&checkCoverage, "check-coverage", false, "exit non-zero if compact form is missing rule IDs present in full constitution")
 	return c
 }
 
@@ -88,11 +96,12 @@ func runCompressPersonas(cmd *cobra.Command, personaSlug string, check bool) err
 		compactPath := filepath.Join(root, s.Slug+".compact.md")
 
 		if check {
+			ids := compress.RuleIDs(s)
 			if isStale(yamlPath, ds.Hash) {
-				_, _ = fmt.Fprintf(out, "  [stale] %s\n", s.FileName)
+				_, _ = fmt.Fprintf(out, "  [stale] %s (%d rules)\n", s.FileName, len(ids))
 				stale++
 			} else {
-				_, _ = fmt.Fprintf(out, "  [ok]    %s\n", s.FileName)
+				_, _ = fmt.Fprintf(out, "  [ok]    %s (%d rules)\n", s.FileName, len(ids))
 			}
 			continue
 		}
@@ -109,6 +118,51 @@ func runCompressPersonas(cmd *cobra.Command, personaSlug string, check bool) err
 	if stale > 0 {
 		return fmt.Errorf("compress: %d derivative(s) are stale — run `ai compress --personas` to regenerate", stale)
 	}
+	return nil
+}
+
+// runCheckCoverage implements --check-coverage: reads all persona sections from
+// Constitution.md, extracts their rule IDs via compress.RuleIDs, and verifies
+// each ID appears in Constitution.compact.md. Exits non-zero on any missing ID.
+func runCheckCoverage(cmd *cobra.Command) error {
+	root := paths.AIRoot()
+
+	data, err := os.ReadFile(filepath.Join(root, "Constitution.md")) //nolint:gosec
+	if err != nil {
+		return fmt.Errorf("compress --check-coverage: read Constitution.md: %w", err)
+	}
+	sections := constitution.ParseSections(string(data))
+	if len(sections) == 0 {
+		return fmt.Errorf("compress --check-coverage: no persona sections found in Constitution.md")
+	}
+
+	compactData, err := os.ReadFile(filepath.Join(root, "Constitution.compact.md")) //nolint:gosec
+	if err != nil {
+		return fmt.Errorf("compress --check-coverage: read Constitution.compact.md: %w\n"+
+			"  Run 'ai compress' first to generate it.", err)
+	}
+	compactContent := string(compactData)
+
+	out := cmd.OutOrStdout()
+	var missing []string
+	for _, s := range sections {
+		ids := compress.RuleIDs(s)
+		for _, id := range ids {
+			if !strings.Contains(compactContent, "§"+id) {
+				missing = append(missing, fmt.Sprintf("%s §%s", s.Name, id))
+			}
+		}
+		_, _ = fmt.Fprintf(out, "  [checked] %s: %d rule IDs\n", s.Name, len(ids))
+	}
+
+	if len(missing) > 0 {
+		_, _ = fmt.Fprintf(out, "\nMissing from Constitution.compact.md (%d):\n", len(missing))
+		for _, m := range missing {
+			_, _ = fmt.Fprintf(out, "  - %s\n", m)
+		}
+		return fmt.Errorf("compress --check-coverage: %d rule ID(s) missing from compact form", len(missing))
+	}
+	_, _ = fmt.Fprintln(out, "\n[ok] All extracted rule IDs present in Constitution.compact.md")
 	return nil
 }
 
