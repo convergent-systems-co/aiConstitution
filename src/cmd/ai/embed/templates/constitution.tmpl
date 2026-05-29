@@ -429,15 +429,15 @@ Operationalizes §3.1.P4 (No Secrets In Artifacts). This section is itself non-o
 
 ### §{{.SectionNum}}.5 Observability and Operations
 
-- Logs MUST be structured (key-value or JSON). No bare `print` in production paths.
-- Errors MUST be observable in production. If it can fail silently, it will fail silently — instrument it.
-- Configuration MUST be environment-driven, not hardcoded.
-- Migrations MUST be reversible where the data model allows. The rollback MUST be tested before the forward migration runs in production.
-- Deployments MUST be repeatable from a clean machine.
-- Backups MUST exist and be verifiable before any destructive operation on persisted data.
-- Metrics SHOULD cover: latency (p50, p95, p99), error rate, throughput, saturation (CPU/memory/disk/queue depth). The four golden signals are the floor.
-- Alerts MUST be actionable. An alert without a runbook entry is noise.
-- **Release-publishing secret consolidation.** When a release workflow distributes the same artifact to multiple package-manager destinations, use **one consolidated GitHub Actions secret** — canonically named `PACKAGE_PUBLISH_TOKEN` — granted write to every destination. Prefer **organization-level** secret storage.
+- **{{.SectionNum}}.5.1 Structured logs.** Logs MUST be structured (key-value or JSON). No bare `print` in production paths.
+- **{{.SectionNum}}.5.2 Observable errors.** Errors MUST be observable in production. If it can fail silently, it will fail silently — instrument it.
+- **{{.SectionNum}}.5.3 Environment-driven config.** Configuration MUST be environment-driven, not hardcoded.
+- **{{.SectionNum}}.5.4 Reversible migrations.** Migrations MUST be reversible where the data model allows. The rollback MUST be tested before the forward migration runs in production.
+- **{{.SectionNum}}.5.5 Repeatable deployments.** Deployments MUST be repeatable from a clean machine.
+- **{{.SectionNum}}.5.6 Verifiable backups.** Backups MUST exist and be verifiable before any destructive operation on persisted data.
+- **{{.SectionNum}}.5.7 Golden signals.** Metrics SHOULD cover: latency (p50, p95, p99), error rate, throughput, saturation (CPU/memory/disk/queue depth). The four golden signals are the floor.
+- **{{.SectionNum}}.5.8 Actionable alerts.** Alerts MUST be actionable. An alert without a runbook entry is noise.
+- **{{.SectionNum}}.5.9 Release-publishing secret.** When a release workflow distributes the same artifact to multiple package-manager destinations, use **one consolidated GitHub Actions secret** — canonically named `PACKAGE_PUBLISH_TOKEN` — granted write to every destination. Prefer **organization-level** secret storage.
 
 ### §{{.SectionNum}}.6 Dependency and Supply-Chain Hygiene
 
