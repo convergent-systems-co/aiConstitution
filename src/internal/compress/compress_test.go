@@ -97,3 +97,79 @@ func TestExtractRuleIDsUsesSectionDotIndex(t *testing.T) {
 		t.Errorf("YAML missing rule id 2.2, got:\n%s", yaml)
 	}
 }
+
+// TestExtract_CapturesBulletSubRules verifies that a block of bullet-format
+// sub-rules (e.g. "- **13.1 Capacity gate.** ...") is captured as individual
+// rules with their explicit N.M IDs.
+func TestExtract_CapturesBulletSubRules(t *testing.T) {
+	body := "**U13. Context-window discipline.** Treat it as a budget, not a buffer.\n\n" +
+		"- **13.1 Capacity gate.** At or above 80% utilization, stop. MUST stop.\n" +
+		"- **13.2 Clean tree.** You MUST NOT auto-compact on a dirty tree.\n" +
+		"- **13.3 Checkpoint then summarize.** Update HANDOFF.md per U10."
+	s := section(3, "Common", body)
+	ds, err := compress.Extract(s, "1.0")
+	if err != nil {
+		t.Fatalf("Extract() error = %v", err)
+	}
+	yaml := string(ds.YAML)
+	for _, wantID := range []string{`"13.1"`, `"13.2"`, `"13.3"`} {
+		if !strings.Contains(yaml, "id: "+wantID) {
+			t.Errorf("YAML missing sub-rule id %s:\n%s", wantID, yaml)
+		}
+	}
+}
+
+// TestExtract_BulletSubRuleGateInference verifies that MUST in a bullet
+// sub-rule is correctly inferred as a hard gate.
+func TestExtract_BulletSubRuleGateInference(t *testing.T) {
+	body := "**U15. Bounded self-correction.** When not converging, stop.\n\n" +
+		"- **15.1 Three-cycle local cap.** After three failed attempts MUST stop.\n" +
+		"- **15.2 Five-cycle total cap.** After five total attempts, escalate.\n" +
+		"- **15.3 No silent retries.** A retry MUST be visible in your output."
+	s := section(3, "Common", body)
+	ds, err := compress.Extract(s, "1.0")
+	if err != nil {
+		t.Fatalf("Extract() error = %v", err)
+	}
+	yaml := string(ds.YAML)
+	if !strings.Contains(yaml, `id: "15.1"`) {
+		t.Errorf("YAML missing 15.1:\n%s", yaml)
+	}
+	if !strings.Contains(yaml, "gate: hard") {
+		t.Errorf("YAML missing hard gate for MUST rules:\n%s", yaml)
+	}
+}
+
+// TestRuleIDs_IncludesBulletSubRules verifies RuleIDs returns N.M sub-rule IDs.
+func TestRuleIDs_IncludesBulletSubRules(t *testing.T) {
+	body := "**U13. Context discipline.** Treat it as a budget.\n\n" +
+		"- **13.1 Capacity gate.** MUST stop at 80%.\n" +
+		"- **13.2 Clean tree.** MUST NOT compact on dirty tree.\n\n" +
+		"**U14. Independent verification.** MUST cross-reference."
+	s := section(3, "Common", body)
+	ids := compress.RuleIDs(s)
+
+	want := map[string]bool{"13.1": true, "13.2": true}
+	for _, id := range ids {
+		delete(want, id)
+	}
+	for id := range want {
+		t.Errorf("RuleIDs missing expected ID %q; got %v", id, ids)
+	}
+}
+
+// TestRuleIDs_StableOrder verifies RuleIDs returns IDs in consistent order.
+func TestRuleIDs_StableOrder(t *testing.T) {
+	body := "**P1. Honesty.** MUST NOT fabricate.\n\n**P2. Cost.** Ask before exceeding."
+	s := section(1, "Common", body)
+	ids1 := compress.RuleIDs(s)
+	ids2 := compress.RuleIDs(s)
+	if len(ids1) != len(ids2) {
+		t.Fatalf("RuleIDs not stable: %v vs %v", ids1, ids2)
+	}
+	for i := range ids1 {
+		if ids1[i] != ids2[i] {
+			t.Errorf("RuleIDs[%d] differs: %q vs %q", i, ids1[i], ids2[i])
+		}
+	}
+}
