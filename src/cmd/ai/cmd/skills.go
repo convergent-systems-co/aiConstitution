@@ -9,7 +9,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"strconv"
 	"strings"
 
 	cbterm "github.com/charmbracelet/x/term"
@@ -213,75 +212,9 @@ func runSkillsAvailable(cmd *cobra.Command, _ []string) error {
 	return nil
 }
 
-// runCatalogSkillPicker shows a numbered list of catalog skills and
-// prompts for a selection to install — same UX as the setup wizard step.
+// runCatalogSkillPicker launches the Bubble Tea checkbox TUI for skill selection.
 func runCatalogSkillPicker(cmd *cobra.Command, entries []catalogSkillEntry) error {
-	out := cmd.OutOrStdout()
-
-	fmt.Fprint(out, "\033[2J\033[H") // clear screen
-	fmt.Fprintln(out, "╔══════════════════════════════════════════════════════════════╗")
-	fmt.Fprintln(out, "║  Install skills  (-p)                                        ║")
-	fmt.Fprintln(out, "║  Sub-skills install automatically with their parent.         ║")
-	fmt.Fprintln(out, "╚══════════════════════════════════════════════════════════════╝")
-	fmt.Fprintln(out)
-
-	for i, e := range entries {
-		subs := ""
-		if e.subCount > 0 {
-			subs = fmt.Sprintf(" (+%d)", e.subCount)
-		}
-		// Short description — first sentence or first 65 chars.
-		desc := e.fullDesc
-		if dot := strings.Index(desc, ". "); dot > 0 && dot < 90 {
-			desc = desc[:dot+1]
-		} else if len(desc) > 65 {
-			desc = desc[:62] + "..."
-		}
-		fmt.Fprintf(out, "  %3d. \033[1m%s\033[0m%s\n       %s\n", i+1, e.slug, subs, desc)
-	}
-
-	fmt.Fprintln(out)
-	fmt.Fprint(out, `Install which? (e.g. 1,3,5 or "all" or Enter to skip): `)
-
-	scanner := bufio.NewScanner(cmd.InOrStdin())
-	scanner.Scan()
-	line := strings.TrimSpace(scanner.Text())
-
-	if line == "" {
-		fmt.Fprintln(out, "\nSkipping.")
-		return nil
-	}
-
-	var toInstall []string
-	if strings.EqualFold(line, "all") {
-		for _, e := range entries {
-			toInstall = append(toInstall, e.slug)
-		}
-	} else {
-		for _, tok := range strings.Split(line, ",") {
-			tok = strings.TrimSpace(tok)
-			if tok == "" {
-				continue
-			}
-			n, err := strconv.Atoi(tok)
-			if err != nil || n < 1 || n > len(entries) {
-				fmt.Fprintf(out, "Warning: %q is not a valid number — skipping.\n", tok)
-				continue
-			}
-			toInstall = append(toInstall, entries[n-1].slug)
-		}
-	}
-
-	fmt.Fprintln(out)
-	for _, slug := range toInstall {
-		fmt.Fprintf(out, "  Installing %-24s ", slug+"...")
-		if err := runSkillsInstall(cmd, slug); err != nil {
-			fmt.Fprintf(out, "warning: %v\n", err)
-		} else {
-			fmt.Fprintln(out, "done")
-		}
-	}
-	return nil
+	return runCatalogSkillPickerTUI(cmd, entries)
 }
 
 // newSkillsAvailableCmd returns the cobra command for `ai skills available`.
