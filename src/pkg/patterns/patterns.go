@@ -30,9 +30,11 @@ type Set struct {
 
 // Pattern is one entry in the set.
 type Pattern struct {
-	ID        string `json:"id"`
-	Regex     string `json:"regex"`
-	Severity  string `json:"severity"`  // "high" | "medium" | "low"
+	ID         string `json:"id"`
+	Regex      string `json:"regex"`
+	Severity   string `json:"severity"`             // "high" | "medium" | "low" — risk classification
+	BlockLevel string `json:"block_level,omitempty"` // "blocking" (default) | "warn" — action on match
+
 	Redaction string `json:"redaction"` // e.g. "[REDACTED:github-token]"
 
 	// Optional: a short human-readable description. Not used by the
@@ -41,6 +43,12 @@ type Pattern struct {
 
 	// Compiled lazily on first use.
 	compiled *regexp.Regexp
+}
+
+// IsBlocking reports whether a match on this pattern should abort the
+// operation. Patterns without an explicit block_level default to blocking.
+func (p *Pattern) IsBlocking() bool {
+	return p.BlockLevel == "" || p.BlockLevel == "blocking"
 }
 
 // Compile parses every pattern's regex. Returns the first compilation
@@ -59,11 +67,17 @@ func (s *Set) Compile() error {
 // Match represents a single hit.
 type Match struct {
 	PatternID  string
-	Severity   string
+	Severity   string // "high" | "medium" | "low"
+	BlockLevel string // "blocking" | "warn"; empty means blocking
 	Redaction  string
 	LineNumber int
 	Column     int
 	Snippet    string // already redacted
+}
+
+// IsBlocking reports whether this match should abort the operation.
+func (m *Match) IsBlocking() bool {
+	return m.BlockLevel == "" || m.BlockLevel == "blocking"
 }
 
 // Scan walks the input through every compiled pattern and returns
@@ -80,6 +94,7 @@ func (s *Set) Scan(input string) []Match {
 				hits = append(hits, Match{
 					PatternID:  p.ID,
 					Severity:   p.Severity,
+					BlockLevel: p.BlockLevel,
 					Redaction:  p.Redaction,
 					LineNumber: lineIdx + 1,
 					Column:     loc[0] + 1,

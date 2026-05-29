@@ -1,11 +1,15 @@
 {
-  "_note": "Copy this file to patterns.local.json (gitignored) and add project-specific patterns. The loader merges patterns.local.json on top of patterns.json; matching is the union of both sets.",
+  "_note": "Copy this file to patterns.local.json (gitignored) to customize scanning for this repo. Two top-level keys are supported: 'disable' (list of pattern ids to suppress — useful for silencing false positives without touching the global patterns.json) and 'add' (list of additional patterns using the same schema as patterns.json). The loader applies 'disable' first, then merges 'add' on top.",
   "version": "1.0",
-  "patterns": [
+  "disable": [
+    "jwt-token"
+  ],
+  "add": [
     {
       "id": "example-internal-token",
       "regex": "INTERNAL-[A-Z]{4}-[A-Za-z0-9]{32}",
       "severity": "high",
+      "block_level": "blocking",
       "redaction": "[REDACTED:internal-token]",
       "description": "Example pattern for an internal-only token format"
     }
