@@ -57,6 +57,33 @@ type rule struct {
 //   **Label.** rest...
 var ruleHeadRe = regexp.MustCompile(`^\s*\*\*(?:(\d+\.\d+)|[A-Z]\d+\.|)([^*]+?)\.*\*\*(.*)$`)
 
+// bulletSubRuleRe matches bullet-prefixed sub-rules with explicit N.M IDs:
+//   - **13.1 Capacity gate.** rest...
+//   - **16.1 TUI / terminal sessions** — rest...
+// Group 1: the N.M ID; Group 2: the label; Group 3: trailing content.
+var bulletSubRuleRe = regexp.MustCompile(`^[-*]\s+\*\*(\d+\.\d+)\s+([^*]+?)\.*\*\*(.*)$`)
+
+// parseBulletSubRule attempts to parse one line as a bullet sub-rule.
+// Returns nil when the line does not match the N.M bullet format.
+func parseBulletSubRule(line string) *rule {
+	m := bulletSubRuleRe.FindStringSubmatch(strings.TrimSpace(line))
+	if m == nil {
+		return nil
+	}
+	label := strings.TrimSpace(m[2])
+	content := strings.TrimSpace(strings.TrimLeft(m[3], " —-:"))
+	if label == "" {
+		return nil
+	}
+	return &rule{
+		ID:             m[1],
+		Gate:           inferGate(content),
+		NonOverridable: strings.Contains(content, "(Non-overridable.)") || strings.Contains(content, "*(Non-overridable.)*"),
+		Label:          label,
+		Content:        content,
+	}
+}
+
 func extractRules(s constitution.Section) []rule {
 	var rules []rule
 	blocks := strings.Split(s.Body, "\n\n")
@@ -67,13 +94,32 @@ func extractRules(s constitution.Section) []rule {
 			continue
 		}
 		r := parseRuleBlock(s.Number, idx, block)
-		if r == nil {
+		if r != nil {
+			rules = append(rules, *r)
+			idx++
 			continue
 		}
-		rules = append(rules, *r)
-		idx++
+		// Block didn't match as a top-level rule — scan lines for bullet sub-rules.
+		for _, line := range strings.Split(block, "\n") {
+			if sr := parseBulletSubRule(line); sr != nil {
+				rules = append(rules, *sr)
+				idx++
+			}
+		}
 	}
 	return rules
+}
+
+// RuleIDs returns the stable IDs of all rules extracted from section s,
+// in extraction order. Used by ai compress --check-coverage to verify
+// that the compact form covers every rule.
+func RuleIDs(s constitution.Section) []string {
+	rules := extractRules(s)
+	ids := make([]string, 0, len(rules))
+	for _, r := range rules {
+		ids = append(ids, r.ID)
+	}
+	return ids
 }
 
 func parseRuleBlock(sectionNum, ruleIdx int, block string) *rule {
