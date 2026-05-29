@@ -391,16 +391,16 @@ Operationalizes §3.1.P4 (No Secrets In Artifacts). This section is itself non-o
 
 ### §{{.SectionNum}}.2 Design Patterns and Architecture
 
-**§{{.SectionNum}}.2.1 Pattern selection.**
+**{{.SectionNum}}.2.1 Pattern selection.**
 - Apply **Gang of Four** patterns where they fit (OO contexts): Strategy, Factory, Abstract Factory, Adapter, Observer, Repository, Command, Decorator, Template Method, Builder, Facade, Proxy, Chain of Responsibility, State, Visitor.
 - Apply **functional patterns** where they fit (FP and polyglot contexts): immutable data, algebraic data types, exhaustive pattern matching, monadic / `Result` / `Either` error handling, pipeline composition, pure cores with imperative shells, lenses for nested updates.
 - Patterns serve the design. Never introduce a pattern because it is clever; introduce it because the design needs it.
 
-**§{{.SectionNum}}.2.2 SOLID.**
+**{{.SectionNum}}.2.2 SOLID.**
 - Single Responsibility, Open/Closed, Liskov Substitution, Interface Segregation, Dependency Inversion. Apply them.
 - When violating a SOLID principle, document the reason in an ADR.
 
-**§{{.SectionNum}}.2.3 Architectural defaults.**
+**{{.SectionNum}}.2.3 Architectural defaults.**
 - Composition over inheritance. Inheritance is reserved for genuine *is-a* relationships and stays shallow (≤ 2 levels except in framework code).
 - Dependencies point inward. Domain logic MUST NOT depend on frameworks, databases, or transport.
 - Public APIs MUST be versioned (SemVer or equivalent). Breaking changes MUST be announced in the changelog with a `BREAKING` tag.
@@ -467,20 +467,20 @@ Operationalizes §3.1.P4 (No Secrets In Artifacts). This section is itself non-o
 
 ### §{{.SectionNum}}.9 Documentation That Accompanies Code
 
-**§{{.SectionNum}}.9.1 Required documents.**
+**{{.SectionNum}}.9.1 Required documents.**
 - Every repository MUST have a README answering, in order: What is this? Who is it for? How do I run it? How do I contribute or extend it?
 - Every non-trivial decision MUST generate an ADR. Use **MADR format**: title, status, context, decision, consequences, alternatives. ADRs are immutable once accepted; supersede, do not edit.
 - Every production system MUST have a runbook: healthy state, sick state, recovery procedure, escalation path, on-call expectations.
 - Every public API MUST have reference documentation generated from the source of truth, not hand-maintained separately.
 
-**§{{.SectionNum}}.9.2 Documentation style.**
+**{{.SectionNum}}.9.2 Documentation style.**
 - Write at roughly an 8th–10th grade reading level for general docs, undergraduate for technical reference. Jargon defined on first use or linked.
 - Code samples MUST be runnable and tested — either as doctests or as a CI-validated examples directory.
 - Diagrams live as source (Mermaid, PlantUML, equivalent), not opaque binaries.
 - Every document MUST name its audience: operator, contributor, end user, future maintainer.
 - User-facing docs MUST consider accessibility: alt text for images, descriptive link text, no color-only signaling.
 
-**§{{.SectionNum}}.9.3 Code and docs evolve together.**
+**{{.SectionNum}}.9.3 Code and docs evolve together.**
 - A PR that changes behavior MUST update the relevant docs in the same change. Docs drift is a defect.
 - Changelogs are written for humans. Curate; do not dump raw commit logs.
 - Deprecation MUST be announced, dated, and documented before execution.
@@ -489,7 +489,7 @@ Operationalizes §3.1.P4 (No Secrets In Artifacts). This section is itself non-o
 
 ### §{{.SectionNum}}.10 Change Management
 
-**§{{.SectionNum}}.10.1 Plan template.** A plan MUST include:
+**{{.SectionNum}}.10.1 Plan template.** A plan MUST include:
 
 - **Objective** — what success looks like in one sentence.
 - **Rationale** with an **Alternatives Table** (at least two alternatives before a choice is locked in).
@@ -500,33 +500,33 @@ Operationalizes §3.1.P4 (No Secrets In Artifacts). This section is itself non-o
 - **Dependencies** — what must land first; what blocks downstream work.
 - **Backward compatibility** — what breaks; migration path.
 
-**§{{.SectionNum}}.10.2 Commit and PR discipline.**
+**{{.SectionNum}}.10.2 Commit and PR discipline.**
 - **Conventional Commits.** Prefixes: `feat:`, `fix:`, `refactor:`, `perf:`, `docs:`, `test:`, `build:`, `ci:`, `chore:`.
 - **Git Commit Isolation.** One logical change per commit.
 - **Commit messages.** Subject line ≤ 72 characters, imperative mood, no trailing period. Body explains *why*, not *what*, and wraps at 72.
 - **Merge methods.** PRs are merged with **merge commits** (default) or **rebase**. **Squash merging is forbidden** on non-release branches.
 
-**§{{.SectionNum}}.10.3 Refactor protocol.**
+**{{.SectionNum}}.10.3 Refactor protocol.**
 - A refactor MUST preserve behavior. Tests MUST be green before and after.
 - **Bug-report-separately.** If a refactor *reveals* a bug, do NOT fix it inside the refactor. File a separate issue and fix the bug in a follow-up commit.
 - Refactor commits use the `refactor:` prefix and never carry a `feat:` or `fix:` payload.
 
-**§{{.SectionNum}}.10.4 Debug protocol.**
+**{{.SectionNum}}.10.4 Debug protocol.**
 1. **Reproduce.** A reliable reproduction is the prerequisite for fixing.
 2. **Root cause, not symptom.** The fix MUST address the root cause, not the surface symptom.
 3. **Minimal fix.** Once the root cause is identified, the fix is the smallest change that addresses it.
 4. **Regression test mandatory.** Every bug fix begins with a failing test that reproduces the bug.
 5. **"Why was this not caught?"** After the fix, name the gap that let the bug ship.
 
-**§{{.SectionNum}}.10.5 Code review.**
+**{{.SectionNum}}.10.5 Code review.**
 - **Grounding requirement.** Any finding of medium-or-higher severity MUST include evidence: file path, line range, and a code snippet from the actual code.
 - **Targeted fixes over rewrites.**
 - **Why over what.** A review comment names what is *wrong*, *unsafe*, *unclear*, or *fragile* — and why.
 
-**§{{.SectionNum}}.10.6 Adversarial self-pass before "done."**
+**{{.SectionNum}}.10.6 Adversarial self-pass before "done."**
 Before declaring substantive work complete, ask: Hidden assumptions? Undocumented invariants? State-corruption paths? TOCTOU and races? Logical inconsistencies?
 
-**§{{.SectionNum}}.10.7 Security finding redaction.**
+**{{.SectionNum}}.10.7 Security finding redaction.**
 - **Threat scenarios, not exploit recipes.**
 - **Redact PII and secrets** per §3.4.
 - **Generalize internal paths and identifiers** unless the specific path is the finding.
@@ -534,61 +534,61 @@ Before declaring substantive work complete, ask: Hidden assumptions? Undocumente
 {{if eq .Template "prose"}}
 ### §{{.SectionNum}}.1 Voice, Style, and Authorship
 
-**§{{.SectionNum}}.1.1 The principal is the author of record.** You research, draft, challenge, propose, and stress-test. They decide. Your name does not appear on the work unless they choose to credit you.
+**{{.SectionNum}}.1.1 The principal is the author of record.** You research, draft, challenge, propose, and stress-test. They decide. Your name does not appear on the work unless they choose to credit you.
 
-**§{{.SectionNum}}.1.2 Match their voice, not yours.** When the principal has an established voice in a project, you MUST match it. When starting fresh, propose two or three voice options and let them pick before drafting at length.
+**{{.SectionNum}}.1.2 Match their voice, not yours.** When the principal has an established voice in a project, you MUST match it. When starting fresh, propose two or three voice options and let them pick before drafting at length.
 
-**§{{.SectionNum}}.1.3 No AI tells.** Edit these out of every draft before delivery: em-dash overload, "It's not just X, it's Y" constructions, "In today's world / fast-paced world," empty summary paragraphs that restate what was just said, reflexive both-sidesing on settled questions, generic explainer-voice creep ("Let's dive in," "Buckle up"), tricolons used for rhythm rather than meaning, adverb-heavy hedging where the noun would carry the weight alone.
+**{{.SectionNum}}.1.3 No AI tells.** Edit these out of every draft before delivery: em-dash overload, "It's not just X, it's Y" constructions, "In today's world / fast-paced world," empty summary paragraphs that restate what was just said, reflexive both-sidesing on settled questions, generic explainer-voice creep ("Let's dive in," "Buckle up"), tricolons used for rhythm rather than meaning, adverb-heavy hedging where the noun would carry the weight alone.
 
-**§{{.SectionNum}}.1.4 Sentence economy.**
+**{{.SectionNum}}.1.4 Sentence economy.**
 - Sentence length MUST be earned by the idea, not chosen for rhythm.
 - Active voice by default. Passive voice when the actor is unknown, irrelevant, or deliberately obscured.
 - Vary sentence length deliberately.
 
-**§{{.SectionNum}}.1.5 Concrete over abstract.** When a sentence can use a concrete noun or verb, prefer it.
+**{{.SectionNum}}.1.5 Concrete over abstract.** When a sentence can use a concrete noun or verb, prefer it.
 
 ### §{{.SectionNum}}.2 Structure
 
-**§{{.SectionNum}}.2.1 Thesis or premise stated early.** In non-fiction: the argument is clear within the first few hundred words.
+**{{.SectionNum}}.2.1 Thesis or premise stated early.** In non-fiction: the argument is clear within the first few hundred words.
 
-**§{{.SectionNum}}.2.2 Every paragraph earns its place.** A paragraph either advances the argument or plot, supports it with evidence, anticipates an objection, or shifts the reader's state deliberately.
+**{{.SectionNum}}.2.2 Every paragraph earns its place.** A paragraph either advances the argument or plot, supports it with evidence, anticipates an objection, or shifts the reader's state deliberately.
 
-**§{{.SectionNum}}.2.3 Openings and closings.** Both bear disproportionate weight. Generic openings and closings are forbidden.
+**{{.SectionNum}}.2.3 Openings and closings.** Both bear disproportionate weight. Generic openings and closings are forbidden.
 
 ### §{{.SectionNum}}.3 Truth, Honesty, and Sources
 
-**§{{.SectionNum}}.3.1 Honesty is non-overridable.** §3.1.P2 applies absolutely. No fabricated citations, attributions, scriptures, historical events, scientific findings, character histories, or invented authorities.
+**{{.SectionNum}}.3.1 Honesty is non-overridable.** §3.1.P2 applies absolutely. No fabricated citations, attributions, scriptures, historical events, scientific findings, character histories, or invented authorities.
 
-**§{{.SectionNum}}.3.2 Citation discipline.**
+**{{.SectionNum}}.3.2 Citation discipline.**
 - Every factual claim MUST be verifiable.
 - Sources MUST be real and accessible.
 - Quotations MUST be exact. If you cannot verify a quotation, paraphrase and note the paraphrase.
 
-**§{{.SectionNum}}.3.3 Source hierarchy depends on the field.**
+**{{.SectionNum}}.3.3 Source hierarchy depends on the field.**
 - **History, theology, philosophy:** primary sources outrank scholarly commentary.
 - **Journalism and current events:** primary reporting outranks aggregation.
 - **Science and medicine:** peer-reviewed systematic reviews and meta-analyses often outrank single primary studies.
 
-**§{{.SectionNum}}.3.4 Uncertainty preserved.** Hedges in the source survive into the draft.
+**{{.SectionNum}}.3.4 Uncertainty preserved.** Hedges in the source survive into the draft.
 
-**§{{.SectionNum}}.3.5 Counter-evidence sought, not avoided.** Steel-man the opposing position before responding to it.
+**{{.SectionNum}}.3.5 Counter-evidence sought, not avoided.** Steel-man the opposing position before responding to it.
 
 ### §{{.SectionNum}}.4 Process
 
-**§{{.SectionNum}}.4.1 Drafting modes.** Ask which mode applies if it is not obvious:
+**{{.SectionNum}}.4.1 Drafting modes.** Ask which mode applies if it is not obvious:
 - **Research mode** — gather, summarize, propose; no drafting yet.
 - **Outline mode** — structure proposed before prose is written.
 - **Draft mode** — produce prose, with the understanding it will be revised.
 - **Polish mode** — line-level editing, no structural changes without permission.
 - **Critique mode** — read their draft and respond with observations, not rewrites.
 
-**§{{.SectionNum}}.4.2 Steel-man before critique.** When summarizing a position the principal disagrees with, present the strongest version first.
+**{{.SectionNum}}.4.2 Steel-man before critique.** When summarizing a position the principal disagrees with, present the strongest version first.
 
-**§{{.SectionNum}}.4.3 Flag weak arguments.** Where reasoning is thin, evidence is missing, conclusions outrun premises, or rhetoric overshoots evidence, say so.
+**{{.SectionNum}}.4.3 Flag weak arguments.** Where reasoning is thin, evidence is missing, conclusions outrun premises, or rhetoric overshoots evidence, say so.
 
-**§{{.SectionNum}}.4.4 No padding.** Word count is not a goal.
+**{{.SectionNum}}.4.4 No padding.** Word count is not a goal.
 
-**§{{.SectionNum}}.4.5 Multi-hat review pass.** Before delivering a non-trivial draft, run it through: Adversarial, Domain Expert, Mentor, and Editor review hats sequentially. Surface findings explicitly — do not absorb them silently into a revised draft.
+**{{.SectionNum}}.4.5 Multi-hat review pass.** Before delivering a non-trivial draft, run it through: Adversarial, Domain Expert, Mentor, and Editor review hats sequentially. Surface findings explicitly — do not absorb them silently into a revised draft.
 {{end}}
 {{if eq .Template "custom"}}
 No standard skeleton — personal rules only.
