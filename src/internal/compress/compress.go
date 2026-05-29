@@ -52,16 +52,17 @@ type rule struct {
 }
 
 // ruleHeadRe matches rule opening lines:
-//   **N.M Label.** rest...
-//   **PN. Label.** rest...
-//   **Label.** rest...
-var ruleHeadRe = regexp.MustCompile(`^\s*\*\*(?:(\d+\.\d+)|[A-Z]\d+\.|)([^*]+?)\.*\*\*(.*)$`)
+//   **N.M Label.** rest...         (two-level, e.g. §3.4)
+//   **N.M.K Label.** rest...       (three-level, e.g. §4.2.1)
+//   **PN. Label.** rest...         (letter-digit, e.g. P1, U1)
+//   **Label.** rest...             (unlabelled — auto-ID assigned)
+var ruleHeadRe = regexp.MustCompile(`^\s*\*\*(?:(\d+(?:\.\d+)+)|[A-Z]\d+\.|)([^*]+?)\.*\*\*(.*)$`)
 
-// bulletSubRuleRe matches bullet-prefixed sub-rules with explicit N.M IDs:
+// bulletSubRuleRe matches bullet-prefixed sub-rules with explicit N.M[.K] IDs:
 //   - **13.1 Capacity gate.** rest...
-//   - **16.1 TUI / terminal sessions** — rest...
-// Group 1: the N.M ID; Group 2: the label; Group 3: trailing content.
-var bulletSubRuleRe = regexp.MustCompile(`^[-*]\s+\*\*(\d+\.\d+)\s+([^*]+?)\.*\*\*(.*)$`)
+//   - **4.1.1 Names reveal intent.** rest...
+// Group 1: the full numeric ID; Group 2: the label; Group 3: trailing content.
+var bulletSubRuleRe = regexp.MustCompile(`^[-*]\s+\*\*(\d+(?:\.\d+)+)\s+([^*]+?)\.*\*\*(.*)$`)
 
 // parseBulletSubRule attempts to parse one line as a bullet sub-rule.
 // Returns nil when the line does not match the N.M bullet format.
