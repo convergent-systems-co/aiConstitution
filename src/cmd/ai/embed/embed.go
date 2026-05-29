@@ -22,6 +22,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	stdembed "embed"
@@ -58,6 +59,35 @@ func HooksFS() fs.FS {
 		panic(fmt.Errorf("embed: hooks sub-FS: %w", err))
 	}
 	return sub
+}
+
+// windowsShimBasenames is the set of wrapper basenames that have Windows
+// .cmd/.ps1 counterparts. On Windows the bare (bash) form is skipped;
+// on POSIX the .cmd/.ps1 forms are skipped.
+var windowsShimBasenames = map[string]bool{"git": true, "gh": true}
+
+// wrapperAppliesOnOS reports whether a wrapper filename should be installed
+// on the current OS.
+//
+//   - <tool>.cmd / <tool>.ps1 where tool ∈ windowsShimBasenames → Windows only
+//   - bare <tool> where tool ∈ windowsShimBasenames             → POSIX only
+//   - everything else (notify-me variants, tests/, etc.)        → all platforms
+func wrapperAppliesOnOS(name string) bool {
+	isWindows := runtime.GOOS == "windows"
+	ext := filepath.Ext(name)
+	extLower := strings.ToLower(ext)
+	base := strings.TrimSuffix(name, ext)
+
+	// .cmd/.ps1 for a known Windows-shimmed tool → Windows only.
+	if (extLower == ".cmd" || extLower == ".ps1") && windowsShimBasenames[base] {
+		return isWindows
+	}
+	// Bare name for a known Windows-shimmed tool → POSIX only.
+	if ext == "" && windowsShimBasenames[name] {
+		return !isWindows
+	}
+	// Everything else (notify-me, notify-me.cmd, notify-me.ps1, etc.) → all platforms.
+	return true
 }
 
 // WrappersFS returns a sub-FS rooted at the embedded wrappers/ tree.
@@ -139,6 +169,9 @@ func ExtractWrappers(binDir string, overwrite bool) ([]string, error) {
 	written := make([]string, 0, len(entries))
 	for _, e := range entries {
 		if e.IsDir() {
+			continue
+		}
+		if !wrapperAppliesOnOS(e.Name()) {
 			continue
 		}
 		data, err := fs.ReadFile(WrappersFS(), e.Name())
