@@ -66,7 +66,6 @@ See SPEC.md §3.3.`,
 // --reset-head; they are accepted here so the function signature is stable
 // and tests can exercise the check output without triggering mutations.
 func runDoctor(w io.Writer, fix bool, resetHead string) error {
-	_ = fix
 	_ = resetHead
 
 	checkTerminalNotifier(w)
@@ -74,6 +73,7 @@ func runDoctor(w io.Writer, fix bool, resetHead string) error {
 	checkDerivativeFiles(w)
 	checkHookWiring(w, paths.AIRoot(), homeDir())
 	checkWrapperHookDrift(w)
+	checkPythonAvailable(w, fix)
 	_ = checkInstalledSkills(w)
 
 	return nil
@@ -228,6 +228,75 @@ func checkWrapperHookDrift(w io.Writer) {
 	for _, slug := range missing {
 		fmt.Fprintf(w, "[⚠] Blocking hook %q not installed — run: ai hooks install --all\n", slug)
 	}
+}
+
+// checkPythonAvailable verifies that Python 3 is discoverable for hook
+// execution. On Windows, the Microsoft Store App Execution Aliases can shadow
+// a real Python installation with a stub that shows a Store prompt instead of
+// running Python — this breaks every hook. When fix=true and the stub is
+// detected, doctor removes it from %LOCALAPPDATA%\Microsoft\WindowsApps\.
+func checkPythonAvailable(w io.Writer, fix bool) {
+	pyArgs := discoverPythonArgs() // defined in hooks.go
+	if pyArgs == nil {
+		fmt.Fprintln(w, "[⚠] Python 3 not found — hooks cannot run")
+		fmt.Fprintln(w, "     Install Python 3 and ensure it is on PATH")
+		fmt.Fprintln(w, "     Windows: winget install Python.Python.3.12")
+		return
+	}
+
+	// Verify the found Python actually executes (not a Store stub).
+	// Store stubs are zero-byte or fail when invoked with --version.
+	out, err := exec.Command(pyArgs[0], "--version").CombinedOutput() //nolint:gosec
+	if err != nil || len(out) == 0 {
+		if runtime.GOOS == "windows" && fix {
+			removed := fixWindowsPythonStubs(w)
+			if removed > 0 {
+				fmt.Fprintf(w, "[✓] Removed %d Python App Execution Alias stub(s) — re-run: ai doctor\n", removed)
+			} else {
+				fmt.Fprintln(w, "[⚠] Python stub detected but could not remove — disable manually:")
+				fmt.Fprintln(w, "     Settings → Apps → Advanced app settings → App execution aliases → python.exe OFF")
+			}
+		} else {
+			fmt.Fprintf(w, "[⚠] Python found at %s but does not execute\n", pyArgs[0])
+			if runtime.GOOS == "windows" {
+				fmt.Fprintln(w, "     Windows App Execution Aliases may be interfering")
+				fmt.Fprintln(w, "     Run: ai doctor --fix  (removes Store Python stubs)")
+				fmt.Fprintln(w, "     Or:  Settings → Apps → Advanced app settings → App execution aliases → python.exe OFF")
+			}
+		}
+		return
+	}
+	fmt.Fprintf(w, "[✓] Python 3 available: %s\n", strings.TrimSpace(string(out)))
+}
+
+// fixWindowsPythonStubs removes zero-byte Windows Store App Execution Alias
+// stubs for python.exe and python3.exe from %LOCALAPPDATA%\Microsoft\WindowsApps\.
+// These stubs shadow a real Python installation and produce a Store prompt
+// instead of running Python, which breaks all hooks.
+func fixWindowsPythonStubs(w io.Writer) int {
+	appDir := os.Getenv("LOCALAPPDATA")
+	if appDir == "" {
+		return 0
+	}
+	stubDir := filepath.Join(appDir, "Microsoft", "WindowsApps")
+	stubs := []string{"python.exe", "python3.exe", "python3.12.exe", "python3.11.exe"}
+	removed := 0
+	for _, name := range stubs {
+		p := filepath.Join(stubDir, name)
+		info, err := os.Stat(p)
+		if err != nil {
+			continue
+		}
+		// Only remove if it is a stub (zero bytes or very small — real Python is megabytes)
+		if info.Size() > 4096 {
+			continue // looks like a real binary, leave it
+		}
+		if removeErr := os.Remove(p); removeErr == nil {
+			fmt.Fprintf(w, "     Removed stub: %s\n", p)
+			removed++
+		}
+	}
+	return removed
 }
 
 // checkInstalledSkills reports whether any skills are installed under the
