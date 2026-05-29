@@ -340,3 +340,7 @@ HANDOFF.md
 
 # Git worktrees (local-only, never tracked)
 .worktrees/
+
+# Local credential files — NEVER commit these
+env
+.env*
