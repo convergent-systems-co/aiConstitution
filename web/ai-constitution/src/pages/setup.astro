@@ -45,22 +45,30 @@ import Base from '../layouts/Base.astro';
       <li><strong>Review</strong> — inspect the generated constitution before writing it to disk</li>
     </ul>
     <p>
-      On completion, setup writes:
+      On completion, setup writes and wires everything automatically:
     </p>
     <ul>
-      <li><code>~/.ai/Constitution.md</code> — your unified governing document</li>
-      <li><code>~/.ai/Constitution.runtime.md</code> — compact version for Copilot / Cursor</li>
-      <li><code>~/.ai/hooks/</code> — enforcement hook scripts</li>
-      <li><code>~/.claude/CLAUDE.md</code> — <code>@-include</code> so Claude Code loads your constitution</li>
-      <li><code>~/.copilot/instructions/constitution.md</code> — symlink for Copilot CLI</li>
+      <li><code>~/.ai/Constitution.md</code> — your unified governing document (42 KB)</li>
+      <li><code>~/.ai/Constitution.compact.md</code> — compressed form for AI clients (~8 KB, 158 rule IDs)</li>
+      <li><code>~/.ai/hooks/</code> — 13 governance hook scripts from ai-atoms.com</li>
+      <li><code>~/.ai/bin/</code> — <code>git</code>/<code>gh</code> command-wrappers for your OS</li>
+      <li><code>~/.claude/CLAUDE.md</code> — <code>@~/.ai/Constitution.compact.md</code> include</li>
+      <li><code>~/.copilot/instructions/constitution.md</code> — symlink to compact form</li>
+      <li>Claude official plugins — <code>security-guidance</code> always; others from your selection</li>
     </ul>
+    <p>
+      Cursor and Codex/AGENTS.md are per-repo — setup prints a reminder to run
+      <code>ai init-integrate --cursor</code> or <code>--codex</code> in each project.
+    </p>
 
     <h3>3. Verify</h3>
 <pre><code>ai doctor</code></pre>
     <p>
       All checks should show <code>[✓]</code>. Start a new Claude Code session —
-      the constitution loads at session start from <code>~/.claude/CLAUDE.md</code>.
+      the compact constitution loads at session start.
     </p>
+    <p>Check coverage: every operative rule ID present in the compact form:</p>
+<pre><code>ai compress --check-coverage</code></pre>
 
     <h3>4. Run your first review</h3>
 <pre><code>ai review --check</code></pre>
@@ -118,11 +126,11 @@ ai migrate --add-behavioral
 ai migrate --generate-runtime</code></pre>
 
     <h3>4b. If you already have a unified Constitution.md</h3>
-<pre><code># Just regenerate the runtime
-ai generate runtime
+<pre><code># Regenerate the compact form (clients receive this, not the full file)
+ai compress
 
 # Re-wire hooks and tool integrations
-ai hooks install
+ai hooks install --all
 </code></pre>
 
     <h3>5. Verify</h3>

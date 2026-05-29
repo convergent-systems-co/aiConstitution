@@ -3,7 +3,7 @@ import Base from '../layouts/Base.astro';
 ---
 <Base title="Command Reference — aiConstitution">
   <section class="cs-prose">
-    <p class="cs-section-label">CLI · v1.3.0</p>
+    <p class="cs-section-label">CLI · v1.4.4</p>
     <h1>Command Reference</h1>
     <p>
       Every <code>ai</code> command runs against <code>~/.ai/</code> by
@@ -19,39 +19,55 @@ import Base from '../layouts/Base.astro';
 
     <h3><code>ai setup</code></h3>
     <p>
-      Reference-first guided setup. Shows that your constitution is already
-      complete, then asks 8 personalisation questions (name, tools, cost
-      ceiling, protected branches, behavioral style). Generates
-      <code>Constitution.md</code>, installs hooks, and wires tool
-      integrations.
+      One command to go from nothing to fully governed. Runs the guided TUI
+      wizard, then automatically:
     </p>
-<pre><code>ai setup                        # interactive TUI
-ai setup --non-interactive      # use wizard defaults
-ai setup --no-hooks             # generate only — skip wiring</code></pre>
-
-    <h3><code>ai compress [--wire]</code></h3>
+    <ul>
+      <li>Generates <code>Constitution.md</code> and <code>Constitution.compact.md</code></li>
+      <li>Installs 13 governance hooks from <a href="https://ai-atoms.com">ai-atoms.com</a></li>
+      <li>Installs <code>git</code>/<code>gh</code> command-wrappers for your OS</li>
+      <li>Wires Claude Code, Copilot, Cursor, or Codex based on your selections</li>
+      <li>Installs Claude official plugins (<code>security-guidance</code>, <code>superpowers</code>&hellip;)</li>
+    </ul>
+<pre><code>ai setup                        # interactive TUI (recommended)
+ai setup --non-interactive      # use seeded answers
+ai setup --no-hooks             # generate constitution only — skip wiring</code></pre>
     <p>
-      Generates <code>Constitution.compact.md</code> (~5 KB, ~1,400 tokens)
-      from the full <code>Constitution.md</code> (~38 KB). Contains every
-      operative rule; strips rationale prose. Use <code>--wire</code> to
-      switch <code>~/.claude/CLAUDE.md</code> to load the compact version.
-    </p>
-<pre><code>ai compress                     # generate compact version
-ai compress --wire              # generate + activate in Claude Code
-ai compress --output /tmp/c.md  # write to custom path</code></pre>
-    <p>
-      <strong>85% token reduction</strong> — the AI loads 1,400 tokens instead
-      of 9,700 per session. Amend rules in <code>Constitution.md</code>, then
-      re-run <code>ai compress</code>.
+      All clients receive <code>Constitution.compact.md</code> (~8 KB) not the full
+      42 KB source — same operative rules, 80% fewer tokens per session.
     </p>
 
-    <h3><code>ai doctor</code></h3>
+    <h3><code>ai compress</code></h3>
     <p>
-      Runs a health check on the constitution tree. Prompts to install
-      missing tools (e.g. <code>terminal-notifier</code>) rather than just
-      warning.
+      Generates <code>Constitution.compact.md</code> from the full
+      <code>Constitution.md</code>. Run after amending your constitution.
     </p>
-<pre><code>ai doctor</code></pre>
+<pre><code>ai compress                         # regenerate compact form
+ai compress --wire                  # regenerate + activate in Claude Code
+ai compress --check-coverage        # verify compact contains all rule IDs
+ai compress --personas              # extract per-persona YAML derivatives
+ai compress --check                 # detect stale persona derivatives</code></pre>
+
+    <h3><code>ai doctor [--fix]</code></h3>
+    <p>Health check on the constitution tree. Detects and optionally repairs common problems:</p>
+    <ul>
+      <li>Python App Execution Alias stubs on Windows (<code>--fix</code> removes them)</li>
+      <li>Missing <code>Constitution.compact.md</code> (<code>--fix</code> generates it)</li>
+      <li>CLAUDE.md wired to full constitution instead of compact (<code>--fix</code> updates it)</li>
+      <li>Blocking wrapper hooks not installed on disk</li>
+      <li>Hook wiring completeness in <code>settings.json</code></li>
+    </ul>
+<pre><code>ai doctor           # report issues
+ai doctor --fix     # report + auto-repair where safe</code></pre>
+
+    <h3><code>ai wrap &lt;tool&gt; [-- args&hellip;]</code></h3>
+    <p>
+      Cross-platform governance dispatcher invoked by the <code>git</code>/<code>gh</code>
+      shims in <code>~/.ai/bin/</code>. Not called directly by users.
+      Loads <code>command-wrappers.toml</code>, runs pre-hooks
+      (branch-guard, secret-precommit, no-verify-strip&hellip;), execs the real binary,
+      runs post-hooks. Blocking hooks fail closed when not installed.
+    </p>
 
     <h3><code>ai status</code></h3>
     <p>Prints AI root path, constitution file presence, hook status, memory count, and recent audit activity.</p>
@@ -63,89 +79,45 @@ ai compress --output /tmp/c.md  # write to custom path</code></pre>
     <h2>Constitution Lifecycle</h2>
 
     <h3><code>ai constitution backup [--clear-links]</code></h3>
-    <p>
-      Archives all of <code>~/.ai/</code> to
-      <code>~/.ai-backups/&lt;timestamp&gt;.tar.gz</code> — outside
-      <code>~/.ai/</code> so restore doesn't overwrite it. Use
-      <code>--clear-links</code> to also strip tool wiring after backup,
-      leaving a clean session for testing a different constitution.
-    </p>
+    <p>Archives all of <code>~/.ai/</code> to <code>~/.config/aiConstitution/backups/&lt;timestamp&gt;.tar.gz</code>.</p>
 <pre><code>ai constitution backup                # full archive
-ai constitution backup --clear-links  # archive + clear wiring</code></pre>
+ai constitution backup --clear-links  # archive + clear tool wiring</code></pre>
 
-    <h3><code>ai constitution setup</code></h3>
-    <p>
-      Bootstrap a personal AI Constitution via the guided TUI wizard.
-      Equivalent to <code>ai setup</code> — the discoverable entry point
-      from the <code>ai constitution</code> help page.
-    </p>
-<pre><code>ai constitution setup</code></pre>
-
-    <h3><code>ai constitution restore [backup-id]</code></h3>
-    <p>
-      Removes current <code>~/.ai/</code> and extracts the latest (or
-      specified) backup. Re-installs hooks, rewires
-      <code>~/.claude/settings.json</code>, restores
-      <code>CLAUDE.md</code> @-include, recreates the Copilot symlink,
-      and regenerates <code>Constitution.runtime.md</code>.
-    </p>
-<pre><code>ai constitution restore               # restore most recent backup
-ai constitution restore 20260525T120000Z  # restore specific backup
+    <h3><code>ai constitution restore [backup-id | --url &lt;git-url&gt;]</code></h3>
+    <p>Removes current <code>~/.ai/</code> and restores from a backup or remote git repo.</p>
+<pre><code>ai constitution restore
+ai constitution restore 20260529T120000Z
 ai constitution restore --url https://github.com/you/ai.git</code></pre>
 
     <h3><code>ai migrate</code></h3>
-    <p>
-      Migrates a legacy four-file layout to the unified
-      <code>Constitution.md</code> format. Run the three steps in order.
-    </p>
+    <p>Migrates a legacy four-file layout to unified <code>Constitution.md</code>.</p>
 <pre><code>ai migrate --flatten           # merge four files → one Constitution.md
-ai migrate --add-behavioral    # insert §2 Behavioral Standards section
-ai migrate --generate-runtime  # write Constitution.runtime.md</code></pre>
+ai migrate --add-behavioral    # insert §2 Behavioral Standards
+ai migrate --generate-runtime  # write Constitution.compact.md</code></pre>
 
-    <h3><code>ai generate runtime</code></h3>
-    <p>
-      Regenerates <code>Constitution.runtime.md</code> (the ~7 KB compact
-      extract for Copilot CLI and Cursor) from the current
-      <code>Constitution.md</code>.
-    </p>
-<pre><code>ai generate runtime</code></pre>
+    <h3><code>ai init-integrate [--cursor] [--codex]</code></h3>
+    <p>Wire AI tool integrations into the <strong>current project directory</strong>. Run once per repo for Cursor and Codex — Claude Code and Copilot are wired globally by <code>ai setup</code>.</p>
+<pre><code>ai init-integrate --cursor    # .cursor/rules/constitution.md → Constitution.compact.md
+ai init-integrate --codex     # write/update AGENTS.md with @-include</code></pre>
   </section>
 
   <!-- ─── AMENDMENTS ───────────────────────────────────────────────── -->
   <section class="cs-prose" style="margin-block-start: var(--space-16);">
     <h2>Amendments</h2>
-    <p>
-      The amendment lifecycle: violation → draft stub → human edit →
-      apply to constitution → bump version → re-compress.
-    </p>
+    <p>The amendment lifecycle: violation → draft stub → human edit → apply → re-compress.</p>
 
     <h3><code>ai amend draft &lt;violation-file&gt;</code></h3>
-    <p>
-      Reads a violation markdown file, extracts the rule reference and
-      proposed amendment, and writes a draft stub to
-      <code>~/.ai/governance/plans/&lt;timestamp&gt;-&lt;slug&gt;.md</code>.
-      Opens the stub in <code>$EDITOR</code> if set.
-    </p>
-<pre><code>ai amend draft ~/.ai/audit/violations/20260525T120000Z-worktree.md</code></pre>
+<pre><code>ai amend draft ~/.ai/audit/violations/20260529T120000Z-worktree.md</code></pre>
 
     <h3><code>ai amend apply &lt;draft&gt;</code></h3>
-    <p>
-      Patches the target section in <code>Constitution.md</code>, bumps
-      the version, appends a changelog entry, and regenerates the compact
-      runtime.
-    </p>
-<pre><code>ai amend apply ~/.ai/governance/plans/20260525T120000Z-worktree.md</code></pre>
+<pre><code>ai amend apply ~/.ai/governance/plans/20260529T120000Z-worktree.md</code></pre>
 
     <h3><code>ai amend list</code> / <code>ai amend show &lt;slug&gt;</code></h3>
-<pre><code>ai amend list                   # list drafts newest-first
-ai amend show worktree-slug     # cat a specific draft</code></pre>
+<pre><code>ai amend list
+ai amend show worktree-slug</code></pre>
 
     <h3><code>ai review --check</code></h3>
-    <p>
-      Runs a 4-scan governance review: violations, overrides, drift
-      records, and dead rules. Writes a dated report to
-      <code>~/.ai/governance/reports/YYYY-MM-DD.md</code>.
-    </p>
+    <p>4-scan governance review: violations, overrides, drift, dead rules.</p>
 <pre><code>ai review --check</code></pre>
   </section>
 
@@ -153,170 +125,103 @@ ai amend show worktree-slug     # cat a specific draft</code></pre>
   <section class="cs-prose" style="margin-block-start: var(--space-16);">
     <h2>Hooks</h2>
 
-    <h3><code>ai hooks install [--copilot]</code></h3>
-    <p>
-      Extracts embedded hook scripts to <code>~/.ai/hooks/</code> and wires
-      them into <code>~/.claude/settings.json</code>. The
-      <code>--copilot</code> flag also creates the
-      <code>~/.copilot/instructions/constitution.md</code> symlink.
-    </p>
-<pre><code>ai hooks install               # install all hooks
-ai hooks install --copilot     # also wire Copilot CLI symlink</code></pre>
+    <h3><code>ai hooks install</code></h3>
+    <p>Fetch and install hooks from <a href="https://ai-atoms.com">ai-atoms.com</a>. Called automatically by <code>ai setup</code>.</p>
+<pre><code>ai hooks install --all              # all catalog hooks + infrastructure
+ai hooks install secret-precommit  # specific hook
+ai hooks install command-wrappers  # git/gh/notify-me shims for your OS</code></pre>
+    <p>On Windows, <code>command-wrappers</code> installs <code>git.cmd</code>, <code>git.ps1</code>, <code>gh.cmd</code>, <code>gh.ps1</code>.</p>
 
-    <h3><code>ai hooks available</code></h3>
-    <p>
-      List installable hooks from the embedded infrastructure and the
-      <a href="https://ai-atoms.com">ai-atoms.com</a> registry.
-      Sub-skills auto-install when their parent is selected.
-    </p>
-<pre><code>ai hooks available
-ai hooks list            # installed hooks + per-client wiring status</code></pre>
+    <h3><code>ai hooks run &lt;slug&gt; [--self-check]</code></h3>
+    <p>Portable cross-platform hook invocation. Auto-discovers <code>python3</code>/<code>python</code>/<code>py -3</code> on Windows.</p>
+<pre><code>ai hooks run branch-guard
+ai hooks run secret-precommit --self-check   # validate hook loads correctly</code></pre>
 
-    <h3><code>ai hooks run &lt;slug&gt;</code></h3>
-    <p>
-      Invoke an installed hook by slug name. The canonical hook invocation
-      written into <code>settings.json</code> — portable across macOS, Linux,
-      and Windows without hardcoded paths.
-    </p>
-<pre><code>ai hooks run branch-guard</code></pre>
+    <h3><code>ai hooks available</code> / <code>ai hooks list</code></h3>
+<pre><code>ai hooks available    # browse installable hooks from ai-atoms.com
+ai hooks list         # installed hooks + per-client wiring status</code></pre>
 
     <h3><code>ai hooks validate</code> / <code>ai hooks evaluate</code></h3>
-<pre><code>ai hooks validate   # lint hook scripts (shebang, syntax, bare-except)
-ai hooks evaluate   # run each hook with a synthetic event; assert non-crash</code></pre>
+<pre><code>ai hooks validate   # lint hook scripts
+ai hooks evaluate   # run each hook with synthetic event; assert non-crash</code></pre>
   </section>
 
-  <!-- ─── SKILLS / PLUGINS / ATOMS ─────────────────────────────────── -->
+  <!-- ─── SKILLS / PLUGINS ─────────────────────────────────────────── -->
   <section class="cs-prose" style="margin-block-start: var(--space-16);">
-    <h2>Skills, Plugins &amp; Atoms</h2>
+    <h2>Skills &amp; Plugins</h2>
 
     <h3><code>ai skills</code></h3>
-<pre><code>ai skills available              # browse catalog from ai-atoms.com
+<pre><code>ai skills available              # browse 280+ skills from ai-atoms.com
+ai skills available -p           # interactive checkbox picker — select &amp; install
 ai skills install &lt;slug&gt;         # install; auto-installs sub-skills
-ai skills install --all          # install every available skill
 ai skills link                   # symlink installed skills to ~/.claude/skills/
 ai skills list                   # installed skills + descriptions
 ai skills show &lt;name&gt;            # cat a skill's SKILL.md
-ai skills validate               # check each skill dir has valid SKILL.md
-ai skills templates list &lt;skill&gt;  # list template files
-ai skills templates show &lt;skill&gt; &lt;template&gt;  # render with variable substitution</code></pre>
+ai skills validate               # check each skill dir has valid SKILL.md</code></pre>
+    <p>
+      <code>ai skills available -p</code> opens a scrollable checkbox TUI:
+      <kbd>Space</kbd> toggles, <kbd>a</kbd> selects all, <kbd>Enter</kbd> installs,
+      <kbd>↑↓</kbd>/<kbd>jk</kbd> navigate, <kbd>Ctrl+d/u</kbd> page.
+    </p>
 
     <h3><code>ai plugins</code></h3>
 <pre><code>ai plugins install &lt;name[@version]&gt;  # install from plugin-atoms.com
-ai plugins install &lt;url-or-path&gt;     # install from URL or local file
 ai plugins status                     # list installed plugins
-ai plugins enable &lt;name&gt;             # add to active set
-ai plugins disable &lt;name&gt;            # remove from active set
-ai plugins update &lt;name&gt;             # re-fetch from source URL</code></pre>
+ai plugins enable / disable &lt;name&gt;   # manage active set</code></pre>
     <p>
-      Bare names resolve to
-      <code>https://plugin-atoms.com/&lt;name&gt;/&lt;version&gt;/plugin.tar.gz</code>.
+      Claude official plugins are installed automatically by <code>ai setup</code>
+      when Claude Code is selected: <code>security-guidance</code>, <code>superpowers</code>,
+      plus any you pick in the wizard (<code>amendment-author</code>, <code>hook-author</code>&hellip;).
     </p>
-
-    <h3><code>ai atoms</code></h3>
-<pre><code>ai atoms fetch &lt;name[@version]&gt;  # download from constitution-atoms.com
-ai atoms fork &lt;name&gt; [--as &lt;local-name&gt;]  # local working copy
-ai atoms publish --dry-run       # preview publication (full publish: coming soon)
-ai atoms list                    # enumerate installed atoms</code></pre>
 
     <h3><code>ai op</code> — 1Password integration</h3>
 <pre><code>ai op env                    # print KEY=op://vault/item/field lines
-ai op signin                 # sign in to 1Password
-ai op signout                # sign out
-ai op whoami                 # show current account
-ai op clip &lt;op://ref&gt;       # copy secret to clipboard (never prints value)</code></pre>
+ai op signin / signout / whoami
+ai op clip &lt;op://ref&gt;       # copy secret to clipboard — never prints value</code></pre>
   </section>
 
   <!-- ─── IDENTITY / MODE ───────────────────────────────────────────── -->
   <section class="cs-prose" style="margin-block-start: var(--space-16);">
     <h2>Identity &amp; Mode</h2>
-
-    <h3><code>ai clone --identity &lt;name&gt;</code></h3>
-    <p>
-      Clone a repo and apply a git identity from
-      <code>~/.config/aiConstitution/metadata/projects.json</code>.
-      URL-pattern matching auto-selects the identity; <code>--identity</code>
-      forces a named entry.
-    </p>
-<pre><code>ai clone https://github.com/org/repo --identity work</code></pre>
-
-<pre><code>ai profile list/show/new/edit/remove  # manage persona profiles
-ai persona list [--type agentic|reviewer]  # list installed personas
-ai persona show &lt;name&gt;               # cat persona file
+<pre><code>ai clone &lt;url&gt; [--identity &lt;name&gt;]   # git clone + identity routing
+ai profile list/show/new/edit/remove  # manage persona profiles
+ai persona list / show &lt;name&gt;         # installed personas
+ai mode list / current / clear        # inspect and clear active mode
 ai pm-mode                            # activate plan-first discipline
-ai spawn &lt;persona&gt;                   # activate a sub-persona in current session
-ai mode list/current/clear            # inspect and clear active mode</code></pre>
+ai spawn &lt;persona&gt;                   # activate a sub-persona</code></pre>
   </section>
 
   <!-- ─── PORTABILITY ──────────────────────────────────────────────── -->
   <section class="cs-prose" style="margin-block-start: var(--space-16);">
     <h2>Portability</h2>
-
-<pre><code>ai backup                    # snapshot ~/.ai/ to ~/.config/aiConstitution/backups/
-ai sync push                 # push ~/.ai/ to configured git remote
-ai sync pull                 # pull from remote
+<pre><code>ai backup                    # snapshot ~/.ai/ to backups/
+ai sync push / pull          # push/pull ~/.ai/ to configured git remote
 ai restore &lt;snapshot&gt;       # restore from snapshot
-ai init                      # scaffold project.yaml + AI tool integration files
-ai init --cursor             # write .cursor/rules/constitution.md symlink
-ai init --codex              # write AGENTS.md with @-include</code></pre>
-  </section>
-
-  <!-- ─── NOTIFICATIONS ────────────────────────────────────────────── -->
-  <section class="cs-prose" style="margin-block-start: var(--space-16);">
-    <h2>Notifications</h2>
-    <p>
-      The <code>notify-me</code> script (installed by
-      <code>ai hooks install command-wrappers</code>) sends desktop
-      notifications when AI tasks complete.
-    </p>
-<pre><code>notify-me --title "Done" --message "Build finished" --level info
-notify-me --title "Failed" --message "Tests failed" --level urgent
-# --level urgent also pushes to ntfy.sh if ntfy_topic is set in settings.toml</code></pre>
+ai init                      # scaffold project.yaml + AI tool integration files</code></pre>
   </section>
 
   <!-- ─── AUDIT & GOVERNANCE ─────────────────────────────────────── -->
   <section class="cs-prose" style="margin-block-start: var(--space-16);">
     <h2>Audit &amp; Governance</h2>
-
-    <h3><code>ai audit override</code> / <code>ai audit violation</code></h3>
-    <p>
-      Write structured markdown records to <code>~/.ai/audit/</code> per
-      Constitution.md §1.5 schema. Use <code>override</code> when relaxing
-      a rule with the principal's consent; <code>violation</code> when a
-      rule was broken.
-    </p>
 <pre><code>ai audit override --section "§3.2" --scope session \
   --strict "would have blocked" --relaxed "allowed once" \
   --risk "minimal" --confirmation "yes"
 
-ai audit violation --section "§3.1.P2" --what "..." \
-  --noticed self-detected --remediation "corrected output"</code></pre>
+ai audit violation --section "§3.1.P2" \
+  --what "..." --noticed self-detected --remediation "corrected"
 
-    <h3><code>ai issue file</code></h3>
-    <p>
-      Create a GitHub issue on the current repo from a description or an
-      audit log file.
-    </p>
-<pre><code>ai issue file --title "Bug: X" --type finding
-ai issue file --from-audit ~/.ai/audit/violations/2026-05-28T...md</code></pre>
-
-    <h3><code>ai memory retire &lt;name&gt;</code></h3>
-    <p>
-      Archive a named memory entry from <code>~/.ai/memory/</code> and
-      remove it from MEMORY.md.
-    </p>
-<pre><code>ai memory retire user_role</code></pre>
+ai issue file --title "Bug: X" --type finding
+ai memory retire user_role</code></pre>
   </section>
 
   <!-- ─── FULL REFERENCE ───────────────────────────────────────────── -->
   <section class="cs-prose" style="margin-block-start: var(--space-16);">
-    <h2>Every flag</h2>
-    <p>
-      Run <code>ai &lt;command&gt; --help</code> for the full flag list.
-      The top-level <code>ai --help</code> lists all commands.
-    </p>
+    <h2>Full flag reference</h2>
 <pre><code>ai --help
 ai setup --help
 ai compress --help
-ai constitution --help</code></pre>
+ai doctor --help
+ai wrap --help
+ai skills available --help</code></pre>
   </section>
 </Base>
