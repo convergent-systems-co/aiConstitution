@@ -334,3 +334,6 @@ terraform.rc
 
 # Issue creation state map (local-only, never tracked)
 scripts/.issue-map.json
+
+# Git worktrees (local-only, never tracked)
+.worktrees/
