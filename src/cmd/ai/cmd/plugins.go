@@ -19,6 +19,16 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// PluginAtomsBaseURL is the base URL for plugin-atoms.com resolution.
+// Tests override this via PluginAtomsBaseURLForTest (see export_test.go).
+var PluginAtomsBaseURL = "https://plugin-atoms.com"
+
+// pluginHTTPGet is the package-level HTTP GET seam for plugin archive downloads.
+// Tests replace it with a fake that records calls. Mirrors brandHTTPGet in brand.go.
+var pluginHTTPGet = func(url string) (*http.Response, error) {
+	return http.Get(url) //nolint:noctx // simple CLI fetch
+}
+
 // pluginsState is the JSON schema for ~/.config/aiConstitution/plugins.json.
 // It tracks which installed plugins are currently enabled.
 type pluginsState struct {
@@ -414,7 +424,7 @@ func resolvePluginAtomURL(source string) string {
 	if version == "" {
 		version = "latest"
 	}
-	return fmt.Sprintf("https://plugin-atoms.com/%s/%s/plugin.tar.gz", name, version)
+	return fmt.Sprintf("%s/%s/%s/plugin.tar.gz", PluginAtomsBaseURL, name, version)
 }
 
 // fetchArchive downloads or copies a plugin archive (*.tar.gz) to a temp file.
@@ -432,7 +442,7 @@ func fetchArchive(source string) (tmpPath string, err error) {
 	defer tmp.Close()
 
 	if strings.HasPrefix(source, "https://") || strings.HasPrefix(source, "http://") {
-		resp, err := http.Get(source) //nolint:noctx // simple CLI fetch
+		resp, err := pluginHTTPGet(source)
 		if err != nil {
 			return "", fmt.Errorf("plugins: download %q: %w", source, err)
 		}
