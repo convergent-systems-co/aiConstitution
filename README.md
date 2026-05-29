@@ -76,7 +76,7 @@ make build           # produces dist/ai
 
 Requirements:
 
-- Go 1.22 or later (toolchain matrix in CI covers 1.22 and 1.23).
+- Go 1.26 or later (CI builds and tests on 1.26).
 - `python3` on PATH (the hook library is stdlib-only Python).
 - `gh` CLI for upstream-contribution flows.
 
