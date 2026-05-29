@@ -891,7 +891,7 @@ func fakeSkillAtomWithDeps(slug, version, description string, deps []string) []b
 }
 
 // ---------------------------------------------------------------------------
-// #375 — ai skills available: SLUG column
+// #375 — ai skills available: slug appears in output
 // ---------------------------------------------------------------------------
 
 func TestSkillsAvailable_ShowsSlugColumn(t *testing.T) {
@@ -907,18 +907,13 @@ func TestSkillsAvailable_ShowsSlugColumn(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	lines := strings.Split(strings.TrimSpace(out), "\n")
-	if len(lines) == 0 {
-		t.Fatal("output is empty")
-	}
-	// Header must start with "SLUG" as the first column.
-	header := strings.Fields(lines[0])
-	if len(header) == 0 || header[0] != "SLUG" {
-		t.Errorf("expected first column header to be 'SLUG'; got header line: %s", lines[0])
-	}
-	// The slug value "commit" must appear in the data rows.
+	// New format: two-line display with slug on its own line.
 	if !strings.Contains(out, "commit") {
 		t.Errorf("expected slug 'commit' in output; got:\n%s", out)
+	}
+	// Description must appear.
+	if !strings.Contains(out, "Generate commit messages") {
+		t.Errorf("expected description in output; got:\n%s", out)
 	}
 }
 
