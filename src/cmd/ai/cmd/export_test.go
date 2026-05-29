@@ -105,4 +105,5 @@ func LoadCommandWrappersForTest() (*commandWrappersConfig, error) {
 	return loadCommandWrappers()
 }
 
-// NormalizeFlagForTest is added in the flag-normalization commit (Task 4).
+// NormalizeFlagForTest exposes normalizeFlag to external tests.
+func NormalizeFlagForTest(arg string) string { return normalizeFlag(arg) }

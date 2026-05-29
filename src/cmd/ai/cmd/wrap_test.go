@@ -191,3 +191,41 @@ func TestLoadCommandWrappers_CorruptTOML(t *testing.T) {
 		t.Errorf("expected error for corrupt TOML, got config: %+v", cfg)
 	}
 }
+
+// --- Flag normalization tests ---
+
+// TestNormalizeFlag verifies double-dash flag normalization strips =... suffix.
+func TestNormalizeFlag(t *testing.T) {
+	t.Parallel()
+	cases := []struct{ in, want string }{
+		{"--no-verify", "--no-verify"},
+		{"--no-verify=true", "--no-verify"},
+		{"--no-verify=false", "--no-verify"},
+		{"-n", "-n"},
+		{"commit", "commit"},
+		{"--message=hello world", "--message"},
+	}
+	for _, c := range cases {
+		if got := cmd.NormalizeFlagForTest(c.in); got != c.want {
+			t.Errorf("normalizeFlag(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
+// TestApplyStripArgs_EqualForm verifies --flag=value is stripped when
+// --flag appears in the strip list.
+func TestApplyStripArgs_EqualForm(t *testing.T) {
+	t.Parallel()
+	args := []string{"commit", "--no-verify=true", "-m", "msg"}
+	strip := []string{"--no-verify", "-n"}
+	got := cmd.ApplyStripArgsForTest(args, strip)
+	want := []string{"commit", "-m", "msg"}
+	if len(got) != len(want) {
+		t.Fatalf("applyStripArgs = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("[%d] got %q, want %q", i, got[i], want[i])
+		}
+	}
+}

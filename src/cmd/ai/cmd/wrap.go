@@ -93,7 +93,22 @@ func hookApplies(hook hookDef, subCmd string) bool {
 	return false
 }
 
+// normalizeFlag strips the =... suffix from a double-dash flag so that
+// "--no-verify=true" matches a strip list entry of "--no-verify".
+// Single-dash flags and positional args are returned unchanged.
+func normalizeFlag(arg string) string {
+	if !strings.HasPrefix(arg, "--") {
+		return arg
+	}
+	if eq := strings.IndexByte(arg, '='); eq >= 0 {
+		return arg[:eq]
+	}
+	return arg
+}
+
 // applyStripArgs removes StripArgs entries from toolArgs.
+// Double-dash flags are normalized before comparison so that
+// "--no-verify=true" is removed when "--no-verify" is in the strip list.
 func applyStripArgs(toolArgs, strip []string) []string {
 	if len(strip) == 0 {
 		return toolArgs
@@ -104,7 +119,7 @@ func applyStripArgs(toolArgs, strip []string) []string {
 	}
 	out := make([]string, 0, len(toolArgs))
 	for _, a := range toolArgs {
-		if !rm[a] {
+		if !rm[normalizeFlag(a)] {
 			out = append(out, a)
 		}
 	}
