@@ -27,8 +27,8 @@ governance/schemas/  JSON Schemas validating config files
 ## Build
 
 ```bash
-go build -o bin/ai ./src/cmd/ai
-./bin/ai version
+make build           # produces dist/ai
+./dist/ai version
 ```
 
 ## Test
