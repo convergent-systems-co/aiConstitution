@@ -3,9 +3,9 @@ module github.com/convergent-systems-co/aiConstitution/src/cmd/ai
 go 1.26.0
 
 require (
-	github.com/BurntSushi/toml v1.4.0
+	github.com/BurntSushi/toml v1.6.0
 	github.com/charmbracelet/bubbletea v1.3.10
-	github.com/charmbracelet/x/term v0.2.1
+	github.com/charmbracelet/x/term v0.2.2
 	github.com/convergent-systems-co/aiConstitution/src/internal v0.0.0-20260527145119-3c8a82d79014
 	github.com/spf13/cobra v1.10.2
 )
