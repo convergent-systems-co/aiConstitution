@@ -123,13 +123,19 @@ type catalogSkillEntry struct {
 	name     string
 	fullDesc string // full, untruncated description
 	subCount int
+	category string // primary category slug ("" → uncategorized)
 }
 
 // runSkillsAvailable implements `ai skills available`.
-// With -p/--pick it launches an interactive numbered installer; otherwise it
-// prints a two-line-per-skill list with full untruncated descriptions.
+// With -p/--pick it launches an interactive picker; --category <slug> limits
+// the listing to one category. Otherwise it prints skills grouped by category.
 func runSkillsAvailable(cmd *cobra.Command, _ []string) error {
 	pick, _ := cmd.Flags().GetBool("pick")
+	categoryFilter, _ := cmd.Flags().GetString("category")
+	if categoryFilter != "" && !isValidCategory(categoryFilter) {
+		return fmt.Errorf("skills available: unknown category %q (valid: %s)",
+			categoryFilter, strings.Join(categorySlugs(), ", "))
+	}
 
 	catalog, err := fetchAiAtomsCatalog()
 	if err != nil {
@@ -162,6 +168,9 @@ func runSkillsAvailable(cmd *cobra.Command, _ []string) error {
 		if subSkills[slug] {
 			continue
 		}
+		if categoryFilter != "" && a.Category != categoryFilter {
+			continue
+		}
 		name := a.Name
 		if name == "" {
 			name = slug
@@ -171,6 +180,7 @@ func runSkillsAvailable(cmd *cobra.Command, _ []string) error {
 			name:     name,
 			fullDesc: a.Description,
 			subCount: len(a.DependsOn),
+			category: a.Category,
 		})
 	}
 
@@ -184,35 +194,65 @@ func runSkillsAvailable(cmd *cobra.Command, _ []string) error {
 	}
 
 	out := cmd.OutOrStdout()
-	fmt.Fprintf(out, "\n  %d skills  •  ai skills install <slug>  •  -p to pick interactively\n\n",
-		len(entries))
-
-	for _, e := range entries {
-		subs := ""
-		if e.subCount > 0 {
-			subs = fmt.Sprintf("  (+%d sub-skills)", e.subCount)
-		}
-		// Slug line in bold.
-		fmt.Fprintf(out, "  \033[1m%s\033[0m%s\n", e.slug, subs)
-		// Description wrapped at 72 chars, indented 4 spaces.
-		desc := e.fullDesc
-		for desc != "" {
-			line := desc
-			if len(line) > 72 {
-				cut := 72
-				for cut > 40 && desc[cut] != ' ' {
-					cut--
-				}
-				line = strings.TrimRight(desc[:cut], " ")
-				desc = strings.TrimLeft(desc[cut:], " ")
-			} else {
-				desc = ""
-			}
-			fmt.Fprintf(out, "    %s\n", line)
-		}
-		fmt.Fprintln(out)
+	hint := "  •  --category <slug> to filter"
+	if categoryFilter != "" {
+		hint = fmt.Sprintf("  •  category: %s", categoryDisplay(categoryFilter))
 	}
+	fmt.Fprintf(out, "\n  %d skills  •  ai skills install <slug>  •  -p to pick interactively%s\n\n",
+		len(entries), hint)
+
+	printSkillsGroupedByCategory(out, entries)
 	return nil
+}
+
+// printSkillsGroupedByCategory prints entries under bold category headers in
+// taxonomy order, with uncategorized skills last under "Other".
+func printSkillsGroupedByCategory(out io.Writer, entries []catalogSkillEntry) {
+	byCat := map[string][]catalogSkillEntry{}
+	for _, e := range entries {
+		key := e.category
+		if !isValidCategory(key) {
+			key = uncategorizedSlug
+		}
+		byCat[key] = append(byCat[key], e)
+	}
+
+	for _, slug := range append(categorySlugs(), uncategorizedSlug) {
+		group := byCat[slug]
+		if len(group) == 0 {
+			continue
+		}
+		fmt.Fprintf(out, "  \033[1;4m%s\033[0m  (%d)\n\n", categoryDisplay(slug), len(group))
+		for _, e := range group {
+			printSkillEntry(out, e)
+		}
+	}
+}
+
+// printSkillEntry prints one skill: a bold slug line (with sub-skill count)
+// followed by its description wrapped at 72 columns.
+func printSkillEntry(out io.Writer, e catalogSkillEntry) {
+	subs := ""
+	if e.subCount > 0 {
+		subs = fmt.Sprintf("  (+%d sub-skills)", e.subCount)
+	}
+	fmt.Fprintf(out, "    \033[1m%s\033[0m%s\n", e.slug, subs)
+	desc := e.fullDesc
+	for desc != "" {
+		line := desc
+		if len(line) > 72 {
+			cut := 72
+			for cut > 40 && desc[cut] != ' ' {
+				cut--
+			}
+			line = strings.TrimRight(desc[:cut], " ")
+			desc = strings.TrimLeft(desc[cut:], " ")
+		} else {
+			desc = ""
+		}
+		fmt.Fprintf(out, "      %s\n", line)
+	}
+	fmt.Fprintln(out)
 }
 
 // runCatalogSkillPicker launches the Bubble Tea checkbox TUI for skill selection.
@@ -229,7 +269,63 @@ func newSkillsAvailableCmd() *cobra.Command {
 		RunE:  runSkillsAvailable,
 	}
 	c.Flags().BoolP("pick", "p", false, "interactively pick and install skills")
+	c.Flags().String("category", "", "limit listing to one category slug (see `ai skills categories`)")
 	return c
+}
+
+// runSkillsCategories implements `ai skills categories`: a browse menu listing
+// each category with its available (non-sub-skill) count, to narrow selection.
+func runSkillsCategories(cmd *cobra.Command, _ []string) error {
+	catalog, err := fetchAiAtomsCatalog()
+	if err != nil {
+		return err
+	}
+
+	subSkills := map[string]bool{}
+	for _, a := range catalog {
+		if a.Type == "skill" {
+			for _, dep := range a.DependsOn {
+				subSkills[strings.TrimPrefix(dep, "skill/")] = true
+			}
+		}
+	}
+
+	counts := map[string]int{}
+	for _, a := range catalog {
+		lc := strings.ToLower(a.Lifecycle)
+		if a.Type != "skill" || lc == "deprecated" || lc == "retired" {
+			continue
+		}
+		if subSkills[strings.TrimPrefix(a.ID, "skill/")] {
+			continue
+		}
+		key := a.Category
+		if !isValidCategory(key) {
+			key = uncategorizedSlug
+		}
+		counts[key]++
+	}
+
+	out := cmd.OutOrStdout()
+	fmt.Fprintf(out, "\n  Categories  •  ai skills available --category <slug>\n\n")
+	for _, slug := range append(categorySlugs(), uncategorizedSlug) {
+		if counts[slug] == 0 {
+			continue
+		}
+		fmt.Fprintf(out, "  \033[1m%-12s\033[0m %3d  %s\n", slug, counts[slug], categoryDisplay(slug))
+	}
+	fmt.Fprintln(out)
+	return nil
+}
+
+// newSkillsCategoriesCmd returns the cobra command for `ai skills categories`.
+func newSkillsCategoriesCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "categories",
+		Short: "List skill categories with counts (browse menu to cut catalog overwhelm)",
+		Args:  cobra.NoArgs,
+		RunE:  runSkillsCategories,
+	}
 }
 
 // Deprecated: fetchSkillAtomJSON uses the GitHub API. Use fetchSkillAtomFromCatalog instead.
@@ -774,6 +870,7 @@ See SPEC.md §7.10.`,
 		newSkillsValidateCmd(),
 		newSkillsTemplatesCmd(),
 		newSkillsAvailableCmd(),
+		newSkillsCategoriesCmd(),
 		// install/uninstall/upgrade/upgrade-all — implemented in §7.10.2 (#347).
 		func() *cobra.Command {
 			var installAll bool
