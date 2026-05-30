@@ -205,8 +205,58 @@ func runSkillsAvailable(cmd *cobra.Command, _ []string) error {
 	return nil
 }
 
-// printSkillsGroupedByCategory prints entries under bold category headers in
-// taxonomy order, with uncategorized skills last under "Other".
+// terminalWidth returns the current terminal width, or 80 when stdout is not a
+// TTY (piped output, CI) so table layout stays deterministic.
+func terminalWidth() int {
+	if w, _, err := cbterm.GetSize(os.Stdout.Fd()); err == nil && w > 20 {
+		return w
+	}
+	return 80
+}
+
+// wrapText word-wraps s to width columns, hard-breaking any single token longer
+// than width (e.g. URLs). Always returns at least one (possibly empty) line.
+func wrapText(s string, width int) []string {
+	if width < 1 {
+		width = 1
+	}
+	var lines []string
+	for _, para := range strings.Split(s, "\n") {
+		var line string
+		for _, word := range strings.Fields(para) {
+			for len(word) > width { // hard-break a token that can't fit on one line
+				if line != "" {
+					lines = append(lines, line)
+					line = ""
+				}
+				lines = append(lines, word[:width])
+				word = word[width:]
+			}
+			switch {
+			case word == "":
+				// fully consumed by the hard-break above
+			case line == "":
+				line = word
+			case len(line)+1+len(word) <= width:
+				line += " " + word
+			default:
+				lines = append(lines, line)
+				line = word
+			}
+		}
+		if line != "" {
+			lines = append(lines, line)
+		}
+	}
+	if len(lines) == 0 {
+		lines = append(lines, "")
+	}
+	return lines
+}
+
+// printSkillsGroupedByCategory prints each category as a heading followed by a
+// bordered Skill|Description table whose description cell wraps to fit the
+// terminal, so slugs and descriptions never cross over.
 func printSkillsGroupedByCategory(out io.Writer, entries []catalogSkillEntry) {
 	byCat := map[string][]catalogSkillEntry{}
 	for _, e := range entries {
@@ -217,42 +267,80 @@ func printSkillsGroupedByCategory(out io.Writer, entries []catalogSkillEntry) {
 		byCat[key] = append(byCat[key], e)
 	}
 
+	width := terminalWidth()
 	for _, slug := range append(categorySlugs(), uncategorizedSlug) {
 		group := byCat[slug]
 		if len(group) == 0 {
 			continue
 		}
-		fmt.Fprintf(out, "  \033[1;4m%s\033[0m  (%d)\n\n", categoryDisplay(slug), len(group))
-		for _, e := range group {
-			printSkillEntry(out, e)
-		}
+		fmt.Fprintf(out, "\n  \033[1;4m%s\033[0m  (%d)\n", categoryDisplay(slug), len(group))
+		printSkillTable(out, group, width)
 	}
 }
 
-// printSkillEntry prints one skill: a bold slug line (with sub-skill count)
-// followed by its description wrapped at 72 columns.
-func printSkillEntry(out io.Writer, e catalogSkillEntry) {
-	subs := ""
-	if e.subCount > 0 {
-		subs = fmt.Sprintf("  (+%d sub-skills)", e.subCount)
-	}
-	fmt.Fprintf(out, "    \033[1m%s\033[0m%s\n", e.slug, subs)
-	desc := e.fullDesc
-	for desc != "" {
-		line := desc
-		if len(line) > 72 {
-			cut := 72
-			for cut > 40 && desc[cut] != ' ' {
-				cut--
-			}
-			line = strings.TrimRight(desc[:cut], " ")
-			desc = strings.TrimLeft(desc[cut:], " ")
-		} else {
-			desc = ""
+// printSkillTable renders entries as a two-column box-drawing table. The Skill
+// column is sized to the widest slug (capped); the Description column wraps to
+// the remaining width so text stays inside its cell.
+func printSkillTable(out io.Writer, entries []catalogSkillEntry, termWidth int) {
+	const (
+		indent     = "  "
+		maxSlugCol = 32
+		minDescCol = 24
+	)
+	type cell struct{ slug, desc string }
+	cells := make([]cell, len(entries))
+	slugCol := len("Skill")
+	for i, e := range entries {
+		s := e.slug
+		if e.subCount > 0 {
+			s += fmt.Sprintf(" (+%d)", e.subCount)
 		}
-		fmt.Fprintf(out, "      %s\n", line)
+		cells[i] = cell{slug: s, desc: e.fullDesc}
+		if len(s) > slugCol {
+			slugCol = len(s)
+		}
 	}
-	fmt.Fprintln(out)
+	if slugCol > maxSlugCol {
+		slugCol = maxSlugCol
+	}
+	// Row layout: indent + "│ " + <slugCol> + " │ " + <descCol> + " │"
+	descCol := termWidth - len(indent) - slugCol - 7
+	if descCol < minDescCol {
+		descCol = minDescCol
+	}
+
+	rule := func(l, m, r string) string {
+		return indent + l + strings.Repeat("─", slugCol+2) + m + strings.Repeat("─", descCol+2) + r
+	}
+	fmt.Fprintln(out, rule("┌", "┬", "┐"))
+	for i, c := range cells {
+		if i > 0 {
+			fmt.Fprintln(out, rule("├", "┼", "┤"))
+		}
+		slugLines := wrapText(c.slug, slugCol)
+		descLines := wrapText(c.desc, descCol)
+		rows := len(slugLines)
+		if len(descLines) > rows {
+			rows = len(descLines)
+		}
+		for k := 0; k < rows; k++ {
+			s, d := "", ""
+			if k < len(slugLines) {
+				s = slugLines[k]
+			}
+			if k < len(descLines) {
+				d = descLines[k]
+			}
+			// Bold the slug on its first line only; pad with plain spaces so the
+			// ANSI escape doesn't throw off column alignment.
+			sField := s + strings.Repeat(" ", slugCol-len(s))
+			if k == 0 && s != "" {
+				sField = "\033[1m" + s + "\033[0m" + strings.Repeat(" ", slugCol-len(s))
+			}
+			fmt.Fprintf(out, "%s│ %s │ %-*s │\n", indent, sField, descCol, d)
+		}
+	}
+	fmt.Fprintln(out, rule("└", "┴", "┘"))
 }
 
 // runCatalogSkillPicker launches the Bubble Tea checkbox TUI for skill selection.
@@ -307,15 +395,48 @@ func runSkillsCategories(cmd *cobra.Command, _ []string) error {
 	}
 
 	out := cmd.OutOrStdout()
-	fmt.Fprintf(out, "\n  Categories  •  ai skills available --category <slug>\n\n")
+	fmt.Fprintf(out, "\n  Categories  •  ai skills available --category <slug>\n")
+	printCategoriesTable(out, counts)
+	return nil
+}
+
+// printCategoriesTable renders the category counts as a bordered
+// Slug | N | Category table, skipping categories with no skills.
+func printCategoriesTable(out io.Writer, counts map[string]int) {
+	const indent = "  "
+	type row struct {
+		slug, name string
+		n          int
+	}
+	var rows []row
+	slugCol, nameCol := len("Slug"), len("Category")
 	for _, slug := range append(categorySlugs(), uncategorizedSlug) {
 		if counts[slug] == 0 {
 			continue
 		}
-		fmt.Fprintf(out, "  \033[1m%-12s\033[0m %3d  %s\n", slug, counts[slug], categoryDisplay(slug))
+		r := row{slug: slug, name: categoryDisplay(slug), n: counts[slug]}
+		rows = append(rows, r)
+		if len(r.slug) > slugCol {
+			slugCol = len(r.slug)
+		}
+		if len(r.name) > nameCol {
+			nameCol = len(r.name)
+		}
 	}
-	fmt.Fprintln(out)
-	return nil
+	const countCol = 3 // up to 999 skills
+	rule := func(l, m1, m2, r string) string {
+		return indent + l + strings.Repeat("─", slugCol+2) + m1 +
+			strings.Repeat("─", countCol+2) + m2 + strings.Repeat("─", nameCol+2) + r
+	}
+	fmt.Fprintln(out, rule("┌", "┬", "┬", "┐"))
+	fmt.Fprintf(out, "%s│ \033[1m%-*s\033[0m │ %*s │ \033[1m%-*s\033[0m │\n",
+		indent, slugCol, "Slug", countCol, "N", nameCol, "Category")
+	fmt.Fprintln(out, rule("├", "┼", "┼", "┤"))
+	for _, r := range rows {
+		fmt.Fprintf(out, "%s│ %-*s │ %*d │ %-*s │\n",
+			indent, slugCol, r.slug, countCol, r.n, nameCol, r.name)
+	}
+	fmt.Fprintln(out, rule("└", "┴", "┴", "┘"))
 }
 
 // newSkillsCategoriesCmd returns the cobra command for `ai skills categories`.
