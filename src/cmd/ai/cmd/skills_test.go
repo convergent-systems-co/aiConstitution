@@ -657,6 +657,34 @@ func TestSkillsAvailable_Empty(t *testing.T) {
 	}
 }
 
+// TestSkillsAvailable_HidesPrefixedSubSkills guards the prefix-normalization
+// fix: depends_on entries are namespaced ("skill/make-work") while the listed
+// slug is bare ("make-work"). The sub-skill must still be hidden and counted
+// under its parent, not shown as a standalone top-level entry.
+func TestSkillsAvailable_HidesPrefixedSubSkills(t *testing.T) {
+	root := t.TempDir()
+	atoms := []map[string]interface{}{
+		{"type": "skill", "id": "skill/make", "name": "make", "description": "Dispatcher.", "lifecycle": "stable", "version": "1.0.0", "depends_on": []string{"skill/make-work"}},
+		{"type": "skill", "id": "skill/make-work", "name": "make-work", "description": "Sub skill.", "lifecycle": "stable", "version": "1.0.0"},
+	}
+	srv := startSkillsCatalogServer(t, atoms)
+	setAiAtomsCatalogURL(t, srv.URL+"/catalog.json")
+
+	out, _, err := runSkillsCmd(t, root, "skills", "available")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(out, "make") {
+		t.Errorf("parent 'make' should be listed; got:\n%s", out)
+	}
+	if !strings.Contains(out, "(+1 sub-skills)") {
+		t.Errorf("parent should show sub-skill count; got:\n%s", out)
+	}
+	if strings.Contains(out, "make-work") {
+		t.Errorf("sub-skill 'make-work' should be hidden from the top-level list; got:\n%s", out)
+	}
+}
+
 func TestSkillsAvailable_FiltersDeprecated(t *testing.T) {
 	root := t.TempDir()
 	atoms := []map[string]interface{}{

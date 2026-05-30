@@ -144,7 +144,10 @@ func runSkillsAvailable(cmd *cobra.Command, _ []string) error {
 		}
 		if a.Type == "skill" {
 			for _, dep := range a.DependsOn {
-				subSkills[dep] = true
+				// depends_on entries are namespaced ("skill/make-work") while
+				// the slug compared below is the bare form ("make-work"). Strip
+				// the prefix so sub-skills are matched and hidden.
+				subSkills[strings.TrimPrefix(dep, "skill/")] = true
 			}
 		}
 	}
