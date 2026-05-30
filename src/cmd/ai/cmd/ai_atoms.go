@@ -65,7 +65,9 @@ func fetchAiAtomsCatalog() ([]aiAtomEntry, error) {
 }
 
 // aiAtomEntryToSkillAtom converts a catalog entry to the skillAtom shape used
-// by install. The "skill/" prefix is stripped from the ID to produce the slug.
+// by install. The "skill/" prefix is stripped from the ID and from each
+// depends_on entry, so dependency installation resolves bare slugs rather than
+// the namespaced "skill/<slug>" form (which would 404 against the catalog).
 func aiAtomEntryToSkillAtom(e aiAtomEntry) *skillAtom {
 	return &skillAtom{
 		ID:                   strings.TrimPrefix(e.ID, "skill/"),
@@ -73,9 +75,22 @@ func aiAtomEntryToSkillAtom(e aiAtomEntry) *skillAtom {
 		Description:          e.Description,
 		Version:              e.Version,
 		Lifecycle:            e.Lifecycle,
-		DependsOn:            e.DependsOn,
+		DependsOn:            trimSkillPrefixes(e.DependsOn),
 		SystemPromptFragment: e.SystemPromptFragment,
 	}
+}
+
+// trimSkillPrefixes returns deps with the namespacing "skill/" prefix removed
+// from each entry, yielding bare slugs that install can resolve directly.
+func trimSkillPrefixes(deps []string) []string {
+	if len(deps) == 0 {
+		return deps
+	}
+	out := make([]string, len(deps))
+	for i, d := range deps {
+		out[i] = strings.TrimPrefix(d, "skill/")
+	}
+	return out
 }
 
 // fetchSkillAtomFromCatalog fetches the ai-atoms.com catalog and returns the
