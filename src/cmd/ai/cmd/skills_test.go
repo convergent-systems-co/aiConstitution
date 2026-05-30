@@ -731,6 +731,34 @@ func TestSkillsCategories_ListsCountsAndSkipsEmpty(t *testing.T) {
 	}
 }
 
+// TestSkillsAvailable_HidesPrefixedSubSkills guards the prefix-normalization
+// fix: depends_on entries are namespaced ("skill/make-work") while the listed
+// slug is bare ("make-work"). The sub-skill must still be hidden and counted
+// under its parent, not shown as a standalone top-level entry.
+func TestSkillsAvailable_HidesPrefixedSubSkills(t *testing.T) {
+	root := t.TempDir()
+	atoms := []map[string]interface{}{
+		{"type": "skill", "id": "skill/make", "name": "make", "description": "Dispatcher.", "lifecycle": "stable", "version": "1.0.0", "depends_on": []string{"skill/make-work"}},
+		{"type": "skill", "id": "skill/make-work", "name": "make-work", "description": "Sub skill.", "lifecycle": "stable", "version": "1.0.0"},
+	}
+	srv := startSkillsCatalogServer(t, atoms)
+	setAiAtomsCatalogURL(t, srv.URL+"/catalog.json")
+
+	out, _, err := runSkillsCmd(t, root, "skills", "available")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(out, "make") {
+		t.Errorf("parent 'make' should be listed; got:\n%s", out)
+	}
+	if !strings.Contains(out, "(+1 sub-skills)") {
+		t.Errorf("parent should show sub-skill count; got:\n%s", out)
+	}
+	if strings.Contains(out, "make-work") {
+		t.Errorf("sub-skill 'make-work' should be hidden from the top-level list; got:\n%s", out)
+	}
+}
+
 func TestSkillsAvailable_FiltersDeprecated(t *testing.T) {
 	root := t.TempDir()
 	atoms := []map[string]interface{}{
@@ -831,24 +859,61 @@ func TestSkillsLink_LinkedToBoth(t *testing.T) {
 	}
 }
 
-func TestSkillsLink_NoDirs(t *testing.T) {
-	// No CLAUDE_SKILLS_DIR and no existing ~/.copilot/instructions → 0, 0
+func TestSkillsLink_CreatesMissingClaudeDir(t *testing.T) {
+	// #479: link must CREATE the Claude skills dir when it doesn't pre-exist
+	// and link into it, rather than silently no-op. Copilot is disabled here
+	// via an explicit empty override.
 	root := makeSkillsWithSKILLMD(t, "alpha", "beta")
+	claudeDir := filepath.Join(t.TempDir(), "nonexistent", "skills")
 
 	t.Setenv("AI_ROOT", root)
-	// Point CLAUDE_SKILLS_DIR at a non-existent directory.
-	t.Setenv("CLAUDE_SKILLS_DIR", filepath.Join(t.TempDir(), "nonexistent"))
-	// COPILOT_INSTRUCTIONS_DIR not set; no ~/.copilot/instructions exists.
-	t.Setenv("COPILOT_INSTRUCTIONS_DIR", "")
+	t.Setenv("CLAUDE_SKILLS_DIR", claudeDir)
+	t.Setenv("COPILOT_INSTRUCTIONS_DIR", "") // explicit empty → skip Copilot
 
 	out, _, err := runSkillsCmd(t, root, "skills", "link")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+	if strings.Contains(out, "Linked 0 skill(s)") {
+		t.Errorf("link must not no-op when the target dir is absent; got:\n%s", out)
+	}
+	if _, statErr := os.Stat(claudeDir); statErr != nil {
+		t.Errorf("Claude skills dir should have been created; stat err: %v", statErr)
+	}
+	for _, slug := range []string{"alpha", "beta"} {
+		if _, statErr := os.Lstat(filepath.Join(claudeDir, slug)); statErr != nil {
+			t.Errorf("expected Claude symlink %s; got err: %v", slug, statErr)
+		}
+	}
+}
 
-	// Both counts should be 0.
-	if !strings.Contains(out, "0") {
-		t.Errorf("expected 0 links reported; got:\n%s", out)
+func TestSkillsLink_CreatesBothDirsWhenAbsent(t *testing.T) {
+	// Fresh-machine case: neither target dir exists; link creates both.
+	root := makeSkillsWithSKILLMD(t, "alpha", "beta")
+	claudeDir := filepath.Join(t.TempDir(), "claude", "skills")
+	copilotDir := filepath.Join(t.TempDir(), "copilot", "instructions")
+
+	t.Setenv("AI_ROOT", root)
+	t.Setenv("CLAUDE_SKILLS_DIR", claudeDir)
+	t.Setenv("COPILOT_INSTRUCTIONS_DIR", copilotDir)
+
+	out, _, err := runSkillsCmd(t, root, "skills", "link")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	for _, dir := range []string{claudeDir, copilotDir} {
+		if _, statErr := os.Stat(dir); statErr != nil {
+			t.Errorf("expected dir created: %s; err: %v", dir, statErr)
+		}
+	}
+	if _, statErr := os.Lstat(filepath.Join(claudeDir, "alpha")); statErr != nil {
+		t.Errorf("expected Claude symlink alpha; err: %v", statErr)
+	}
+	if _, statErr := os.Lstat(filepath.Join(copilotDir, "alpha.md")); statErr != nil {
+		t.Errorf("expected Copilot symlink alpha.md; err: %v", statErr)
+	}
+	if strings.Contains(out, "Linked 0 skill(s)") {
+		t.Errorf("link must not no-op; got:\n%s", out)
 	}
 }
 

@@ -150,7 +150,10 @@ func runSkillsAvailable(cmd *cobra.Command, _ []string) error {
 		}
 		if a.Type == "skill" {
 			for _, dep := range a.DependsOn {
-				subSkills[dep] = true
+				// depends_on entries are namespaced ("skill/make-work") while
+				// the slug compared below is the bare form ("make-work"). Strip
+				// the prefix so sub-skills are matched and hidden.
+				subSkills[strings.TrimPrefix(dep, "skill/")] = true
 			}
 		}
 	}
@@ -398,6 +401,25 @@ func copilotInstructionsDir() string {
 		return ""
 	}
 	return dir
+}
+
+// copilotInstructionsTargetDir returns the intended ~/.copilot/instructions
+// path (or the $COPILOT_INSTRUCTIONS_DIR override) WITHOUT requiring it to
+// exist. `ai skills link` uses this to create-then-link; the existence-gated
+// copilotInstructionsDir() is for callers (install/upgrade) that should skip
+// Copilot wiring silently on machines without it.
+func copilotInstructionsTargetDir() string {
+	// An explicitly-set override (even empty) wins: empty means "skip Copilot"
+	// and must NOT fall through to the real $HOME (which would touch the home
+	// dir in tests and on machines that opted out via an empty override).
+	if env, ok := os.LookupEnv("COPILOT_INSTRUCTIONS_DIR"); ok {
+		return env
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(home, ".copilot", "instructions")
 }
 
 // writeSkillMD writes a SKILL.md file for the given atom at destPath,
@@ -649,19 +671,31 @@ func runSkillsLink(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("skills link: list installed: %w", err)
 	}
 
+	// `link` is an explicit user action, so create the target dirs if they do
+	// not already exist rather than silently no-op (#479). This uses the
+	// unconditional *target* resolvers, not the existence-gated ones used by
+	// install/upgrade (which skip Copilot wiring on non-Copilot machines).
 	claudeDir := claudeSkillsDir()
-	copilotDir := copilotInstructionsDir()
+	copilotDir := copilotInstructionsTargetDir()
+	if claudeDir != "" {
+		if mkErr := os.MkdirAll(claudeDir, 0o755); mkErr != nil {
+			return fmt.Errorf("skills link: create Claude skills dir %q: %w", claudeDir, mkErr)
+		}
+	}
+	if copilotDir != "" {
+		if mkErr := os.MkdirAll(copilotDir, 0o755); mkErr != nil {
+			return fmt.Errorf("skills link: create Copilot instructions dir %q: %w", copilotDir, mkErr)
+		}
+	}
 
 	var linkedClaude, linkedCopilot int
 	for _, skillPath := range dirs {
 		slug := filepath.Base(skillPath)
 
 		if claudeDir != "" {
-			if _, statErr := os.Stat(claudeDir); statErr == nil {
-				linkPath := filepath.Join(claudeDir, slug)
-				if err := ensureSymlink(skillPath, linkPath); err == nil {
-					linkedClaude++
-				}
+			linkPath := filepath.Join(claudeDir, slug)
+			if err := ensureSymlink(skillPath, linkPath); err == nil {
+				linkedClaude++
 			}
 		}
 
