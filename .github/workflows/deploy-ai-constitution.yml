@@ -86,7 +86,7 @@ jobs:
           fi
           echo "Cloudflare credentials validated — Pages project reachable"
 
-      - uses: convergent-systems-co/action-atoms/composite/cs-page-deployment@7f36ff3b93a3a3ae83bfa805ecafee80cb25e341
+      - uses: convergent-systems-co/action-atoms/composite/cs-page-deployment@d063c246b27f30d806c3902685a1c00b9d4ef1f0
         with:
           site-dir: web/ai-constitution
           project-name: ai-constitution
