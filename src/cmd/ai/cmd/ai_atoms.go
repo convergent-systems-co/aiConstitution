@@ -20,6 +20,7 @@ type aiAtomEntry struct {
 	Name                 string   `json:"name"`
 	Description          string   `json:"description"`
 	Lifecycle            string   `json:"lifecycle"`
+	Category             string   `json:"category,omitempty"` // primary category slug (see categories.go)
 	DependsOn            []string `json:"depends_on,omitempty"`
 	Event                string   `json:"event,omitempty"`
 	Language             string   `json:"language,omitempty"`

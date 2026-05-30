@@ -657,6 +657,80 @@ func TestSkillsAvailable_Empty(t *testing.T) {
 	}
 }
 
+// catalog used by the category tests below.
+func categorizedAtoms() []map[string]interface{} {
+	return []map[string]interface{}{
+		{"type": "skill", "id": "skill/refactor", "name": "refactor", "description": "Refactor code.", "lifecycle": "stable", "version": "1.0.0", "category": "coding"},
+		{"type": "skill", "id": "skill/journal-entry", "name": "journal-entry", "description": "Record a journal entry.", "lifecycle": "stable", "version": "1.0.0", "category": "finance"},
+		{"type": "skill", "id": "skill/loose", "name": "loose", "description": "Uncategorized skill.", "lifecycle": "stable", "version": "1.0.0"},
+	}
+}
+
+func TestSkillsAvailable_GroupsByCategory(t *testing.T) {
+	root := t.TempDir()
+	srv := startSkillsCatalogServer(t, categorizedAtoms())
+	setAiAtomsCatalogURL(t, srv.URL+"/catalog.json")
+
+	out, _, err := runSkillsCmd(t, root, "skills", "available")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	for _, want := range []string{"Engineering & Coding", "Finance & Accounting", "Other", "refactor", "journal-entry", "loose"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("grouped output missing %q; got:\n%s", want, out)
+		}
+	}
+}
+
+func TestSkillsAvailable_CategoryFilter(t *testing.T) {
+	root := t.TempDir()
+	srv := startSkillsCatalogServer(t, categorizedAtoms())
+	setAiAtomsCatalogURL(t, srv.URL+"/catalog.json")
+
+	out, _, err := runSkillsCmd(t, root, "skills", "available", "--category", "finance")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(out, "journal-entry") {
+		t.Errorf("filtered output should include 'journal-entry'; got:\n%s", out)
+	}
+	if strings.Contains(out, "refactor") {
+		t.Errorf("filtered output should exclude 'refactor' (coding); got:\n%s", out)
+	}
+}
+
+func TestSkillsAvailable_CategoryFilterInvalid(t *testing.T) {
+	root := t.TempDir()
+	srv := startSkillsCatalogServer(t, categorizedAtoms())
+	setAiAtomsCatalogURL(t, srv.URL+"/catalog.json")
+
+	_, _, err := runSkillsCmd(t, root, "skills", "available", "--category", "bogus")
+	if err == nil {
+		t.Fatal("expected error for unknown category, got nil")
+	}
+	if !strings.Contains(err.Error(), "bogus") {
+		t.Errorf("error should name the bad category; got: %v", err)
+	}
+}
+
+func TestSkillsCategories_ListsCountsAndSkipsEmpty(t *testing.T) {
+	root := t.TempDir()
+	srv := startSkillsCatalogServer(t, categorizedAtoms())
+	setAiAtomsCatalogURL(t, srv.URL+"/catalog.json")
+
+	out, _, err := runSkillsCmd(t, root, "skills", "categories")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(out, "coding") || !strings.Contains(out, "finance") {
+		t.Errorf("expected populated categories listed; got:\n%s", out)
+	}
+	// A category with no skills must not appear.
+	if strings.Contains(out, "Legal & Compliance") {
+		t.Errorf("empty category 'legal' should be omitted; got:\n%s", out)
+	}
+}
+
 func TestSkillsAvailable_FiltersDeprecated(t *testing.T) {
 	root := t.TempDir()
 	atoms := []map[string]interface{}{
