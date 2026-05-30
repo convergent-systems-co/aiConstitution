@@ -751,7 +751,7 @@ func TestSkillsAvailable_HidesPrefixedSubSkills(t *testing.T) {
 	if !strings.Contains(out, "make") {
 		t.Errorf("parent 'make' should be listed; got:\n%s", out)
 	}
-	if !strings.Contains(out, "(+1 sub-skills)") {
+	if !strings.Contains(out, "(+1)") {
 		t.Errorf("parent should show sub-skill count; got:\n%s", out)
 	}
 	if strings.Contains(out, "make-work") {
