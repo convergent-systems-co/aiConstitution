@@ -251,6 +251,17 @@ func runSetupPostWizard(aiRoot, claudeDir, copilotDir string, answers map[string
 		return fmt.Errorf("setup: write Constitution.compact.md: %w", err)
 	}
 
+	// Configure the sync remote in ~/.ai/ from Q49.
+	// Initializes a git repo there if not already present, then sets or
+	// updates the origin remote so `ai sync push` works immediately.
+	if syncURL := answers["Q49"]; syncURL != "" {
+		if err := configureSyncRemote(aiRoot, syncURL); err != nil {
+			fmt.Fprintf(os.Stderr, "setup: warning: could not configure sync remote: %v\n", err)
+		} else {
+			fmt.Printf("setup: sync remote set to %s\n", syncURL)
+		}
+	}
+
 	if noHooks {
 		fmt.Printf("setup: Constitution.md written (%d bytes), compact: %d bytes. Skipping wiring (--no-hooks).\n",
 			len(rendered), len(compact))
@@ -356,10 +367,14 @@ func saveWizardSettings(answers map[string]string) error {
 	cfg.Wizard.LastSeenWizardVersion = "0.10" // canonical questions.yaml version
 	cfg.Wizard.Answers = answers
 
-	// Map Q09 (autonomy posture) → Focus.DefaultMode as a representative
-	// mapping. Both fields exist in the Settings struct.
+	// Map Q09 (autonomy posture) → Focus.DefaultMode.
 	if posture, ok := answers["Q09"]; ok && posture == "weaken" {
 		cfg.Focus.DefaultMode = "supervised"
+	}
+
+	// Map Q49 (sync repo URL) → Sync.Remote so `ai sync` knows where to push.
+	if remote, ok := answers["Q49"]; ok && remote != "" {
+		cfg.Sync.Remote = remote
 	}
 
 	return config.Save(cfg)
@@ -717,4 +732,33 @@ func installClaudePlugins(answers map[string]string) {
 			install(slug)
 		}
 	}
+}
+
+// configureSyncRemote ensures ~/.ai/ is a git repo and sets (or updates)
+// the origin remote to the given URL. Idempotent: safe to call on every setup.
+func configureSyncRemote(aiRoot, remoteURL string) error {
+	git := func(args ...string) error {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = aiRoot
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			return fmt.Errorf("git %v: %w\n%s", args, err, out)
+		}
+		return nil
+	}
+
+	// Initialize the repo if it doesn't exist yet.
+	if _, err := os.Stat(filepath.Join(aiRoot, ".git")); os.IsNotExist(err) {
+		if err := git("init", "-b", "main"); err != nil {
+			return err
+		}
+	}
+
+	// Set or update the origin remote.
+	check := exec.Command("git", "remote", "get-url", "origin")
+	check.Dir = aiRoot
+	if err := check.Run(); err == nil {
+		return git("remote", "set-url", "origin", remoteURL)
+	}
+	return git("remote", "add", "origin", remoteURL)
 }

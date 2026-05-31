@@ -1215,6 +1215,25 @@ phases:
         allow_defer: false
         persists_to: governance/sync.yaml
 
+      - qid: Q49
+        prompt: "Paste the full URL of your private sync repo (e.g. https://github.com/yourname/ai)"
+        framing: >-
+          Before continuing, create a private GitHub repo to hold your
+          constitution, memories, and audit records. Requirements:
+            • Private repo — never public.
+            • Push to main must be allowed — no branch protection rules on main.
+            • Empty repo is fine; `ai sync push` will initialize it.
+          Paste the HTTPS clone URL (e.g. https://github.com/yourname/ai).
+          Skip if you chose "Skip" on the previous question.
+        time: "~45s"
+        applies_when: "Q42 in ['github', 'git-other']"
+        options: []
+        allow_free_text: true
+        allow_chat: false
+        allow_defer: true
+        persists_to: governance/sync.yaml
+        persists_to_section: remote
+
       - qid: Q45
         prompt: "Schedule a quarterly `ai restore --dest=/tmp/...` dry-run as a calendar reminder?"
         framing: >-
