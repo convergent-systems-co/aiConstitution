@@ -90,8 +90,8 @@ func runSkillsCmd(t *testing.T, root string, args ...string) (stdout, stderr str
 	if _, ok := os.LookupEnv("CLAUDE_SKILLS_DIR"); !ok {
 		t.Setenv("CLAUDE_SKILLS_DIR", t.TempDir())
 	}
-	if _, ok := os.LookupEnv("COPILOT_INSTRUCTIONS_DIR"); !ok {
-		t.Setenv("COPILOT_INSTRUCTIONS_DIR", t.TempDir())
+	if _, ok := os.LookupEnv("COPILOT_SKILLS_DIR"); !ok {
+		t.Setenv("COPILOT_SKILLS_DIR", t.TempDir())
 	}
 
 	var outBuf, errBuf bytes.Buffer
@@ -830,7 +830,7 @@ func TestSkillsLink_LinkedToBoth(t *testing.T) {
 
 	t.Setenv("AI_ROOT", root)
 	t.Setenv("CLAUDE_SKILLS_DIR", claudeDir)
-	t.Setenv("COPILOT_INSTRUCTIONS_DIR", copilotDir)
+	t.Setenv("COPILOT_SKILLS_DIR", copilotDir)
 
 	out, _, err := runSkillsCmd(t, root, "skills", "link")
 	if err != nil {
@@ -850,9 +850,9 @@ func TestSkillsLink_LinkedToBoth(t *testing.T) {
 		}
 	}
 
-	// Copilot symlinks: ~/.copilot/instructions/alpha.md and beta.md
+	// Copilot symlinks: ~/.copilot/skills/alpha and beta
 	for _, slug := range []string{"alpha", "beta"} {
-		linkPath := filepath.Join(copilotDir, slug+".md")
+		linkPath := filepath.Join(copilotDir, slug)
 		if _, err := os.Lstat(linkPath); err != nil {
 			t.Errorf("expected Copilot symlink %s; got err: %v", linkPath, err)
 		}
@@ -868,7 +868,7 @@ func TestSkillsLink_CreatesMissingClaudeDir(t *testing.T) {
 
 	t.Setenv("AI_ROOT", root)
 	t.Setenv("CLAUDE_SKILLS_DIR", claudeDir)
-	t.Setenv("COPILOT_INSTRUCTIONS_DIR", "") // explicit empty → skip Copilot
+	t.Setenv("COPILOT_SKILLS_DIR", "") // explicit empty → skip Copilot
 
 	out, _, err := runSkillsCmd(t, root, "skills", "link")
 	if err != nil {
@@ -895,7 +895,7 @@ func TestSkillsLink_CreatesBothDirsWhenAbsent(t *testing.T) {
 
 	t.Setenv("AI_ROOT", root)
 	t.Setenv("CLAUDE_SKILLS_DIR", claudeDir)
-	t.Setenv("COPILOT_INSTRUCTIONS_DIR", copilotDir)
+	t.Setenv("COPILOT_SKILLS_DIR", copilotDir)
 
 	out, _, err := runSkillsCmd(t, root, "skills", "link")
 	if err != nil {
@@ -909,8 +909,8 @@ func TestSkillsLink_CreatesBothDirsWhenAbsent(t *testing.T) {
 	if _, statErr := os.Lstat(filepath.Join(claudeDir, "alpha")); statErr != nil {
 		t.Errorf("expected Claude symlink alpha; err: %v", statErr)
 	}
-	if _, statErr := os.Lstat(filepath.Join(copilotDir, "alpha.md")); statErr != nil {
-		t.Errorf("expected Copilot symlink alpha.md; err: %v", statErr)
+	if _, statErr := os.Lstat(filepath.Join(copilotDir, "alpha")); statErr != nil {
+		t.Errorf("expected Copilot symlink alpha; err: %v", statErr)
 	}
 	if strings.Contains(out, "Linked 0 skill(s)") {
 		t.Errorf("link must not no-op; got:\n%s", out)
@@ -926,7 +926,7 @@ func TestSkillsLink_Idempotent(t *testing.T) {
 
 	t.Setenv("AI_ROOT", root)
 	t.Setenv("CLAUDE_SKILLS_DIR", claudeDir)
-	t.Setenv("COPILOT_INSTRUCTIONS_DIR", copilotDir)
+	t.Setenv("COPILOT_SKILLS_DIR", copilotDir)
 
 	// First run.
 	if _, _, err := runSkillsCmd(t, root, "skills", "link"); err != nil {
@@ -941,7 +941,7 @@ func TestSkillsLink_Idempotent(t *testing.T) {
 	if _, err := os.Lstat(filepath.Join(claudeDir, "gamma")); err != nil {
 		t.Errorf("Claude symlink missing after idempotent re-link: %v", err)
 	}
-	if _, err := os.Lstat(filepath.Join(copilotDir, "gamma.md")); err != nil {
+	if _, err := os.Lstat(filepath.Join(copilotDir, "gamma")); err != nil {
 		t.Errorf("Copilot symlink missing after idempotent re-link: %v", err)
 	}
 }
@@ -973,7 +973,7 @@ func TestCopilotWiringOnInstall(t *testing.T) {
 	// real ~/.claude/skills/ with symlinks pointing into t.TempDir() paths that
 	// are cleaned up after the test completes.
 	t.Setenv("CLAUDE_SKILLS_DIR", t.TempDir())
-	t.Setenv("COPILOT_INSTRUCTIONS_DIR", copilotDir)
+	t.Setenv("COPILOT_SKILLS_DIR", copilotDir)
 
 	out, _, err := runSkillsCmd(t, root, "skills", "install", "commit")
 	if err != nil {
@@ -983,8 +983,8 @@ func TestCopilotWiringOnInstall(t *testing.T) {
 		t.Errorf("expected install confirmation; got:\n%s", out)
 	}
 
-	// Copilot symlink must exist at ~/.copilot/instructions/commit.md
-	linkPath := filepath.Join(copilotDir, "commit.md")
+	// Copilot symlink must exist at ~/.copilot/skills/commit
+	linkPath := filepath.Join(copilotDir, "commit")
 	info, err := os.Lstat(linkPath)
 	if err != nil {
 		t.Fatalf("expected Copilot symlink at %s; got err: %v", linkPath, err)
@@ -1007,15 +1007,15 @@ func TestCopilotWiringOnUninstall(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Create a fake Copilot instructions dir with a pre-existing symlink.
+	// Create a fake Copilot skills dir with a pre-existing symlink.
 	copilotDir := t.TempDir()
-	linkPath := filepath.Join(copilotDir, "commit.md")
-	if err := os.Symlink(filepath.Join(skillDir, "SKILL.md"), linkPath); err != nil {
+	linkPath := filepath.Join(copilotDir, "commit")
+	if err := os.Symlink(skillDir, linkPath); err != nil {
 		t.Fatal(err)
 	}
 
 	t.Setenv("AI_ROOT", root)
-	t.Setenv("COPILOT_INSTRUCTIONS_DIR", copilotDir)
+	t.Setenv("COPILOT_SKILLS_DIR", copilotDir)
 
 	out, _, err := runSkillsCmd(t, root, "skills", "uninstall", "commit")
 	if err != nil {

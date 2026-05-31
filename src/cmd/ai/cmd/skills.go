@@ -38,7 +38,6 @@ type skillAtom struct {
 	Events []string `json:"events,omitempty"`
 }
 
-
 // skillAtomDirEntry is a single entry in the GitHub Contents API directory
 // listing returned when fetching the /skills/skill path.
 type skillAtomDirEntry struct {
@@ -501,13 +500,13 @@ func claudeSkillsDir() string {
 	return filepath.Join(home, ".claude", "skills")
 }
 
-// copilotInstructionsDir returns the canonical ~/.copilot/instructions/ path.
-// Override priority: $COPILOT_INSTRUCTIONS_DIR env var, then
-// $HOME/.copilot/instructions/ (only when the directory actually exists).
-// Returns "" when the directory is absent — Copilot wiring is silently
-// skipped on machines that have not set up GitHub Copilot.
-func copilotInstructionsDir() string {
-	if env := os.Getenv("COPILOT_INSTRUCTIONS_DIR"); env != "" {
+// copilotSkillsDir returns the canonical ~/.copilot/skills/ path.
+// Override priority: $COPILOT_SKILLS_DIR env var, then
+// $HOME/.copilot/skills/ (only when the directory actually exists).
+// Returns "" when the directory is absent — Copilot skill wiring is silently
+// skipped on machines that have not set up GitHub Copilot skills.
+func copilotSkillsDir() string {
+	if env := os.Getenv("COPILOT_SKILLS_DIR"); env != "" {
 		if _, err := os.Stat(env); err == nil {
 			return env
 		}
@@ -517,30 +516,30 @@ func copilotInstructionsDir() string {
 	if err != nil {
 		return ""
 	}
-	dir := filepath.Join(home, ".copilot", "instructions")
+	dir := filepath.Join(home, ".copilot", "skills")
 	if _, err := os.Stat(dir); os.IsNotExist(err) {
 		return ""
 	}
 	return dir
 }
 
-// copilotInstructionsTargetDir returns the intended ~/.copilot/instructions
-// path (or the $COPILOT_INSTRUCTIONS_DIR override) WITHOUT requiring it to
-// exist. `ai skills link` uses this to create-then-link; the existence-gated
-// copilotInstructionsDir() is for callers (install/upgrade) that should skip
+// copilotSkillsTargetDir returns the intended ~/.copilot/skills path (or the
+// $COPILOT_SKILLS_DIR override) WITHOUT requiring it to exist.
+// `ai skills link` uses this to create-then-link; the existence-gated
+// copilotSkillsDir() is for callers (install/upgrade) that should skip
 // Copilot wiring silently on machines without it.
-func copilotInstructionsTargetDir() string {
+func copilotSkillsTargetDir() string {
 	// An explicitly-set override (even empty) wins: empty means "skip Copilot"
 	// and must NOT fall through to the real $HOME (which would touch the home
 	// dir in tests and on machines that opted out via an empty override).
-	if env, ok := os.LookupEnv("COPILOT_INSTRUCTIONS_DIR"); ok {
+	if env, ok := os.LookupEnv("COPILOT_SKILLS_DIR"); ok {
 		return env
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return ""
 	}
-	return filepath.Join(home, ".copilot", "instructions")
+	return filepath.Join(home, ".copilot", "skills")
 }
 
 // writeSkillMD writes a SKILL.md file for the given atom at destPath,
@@ -585,7 +584,7 @@ func ensureSymlink(target, linkPath string) error {
 }
 
 // runSkillsInstall is the implementation of `ai skills install <name>[@version]`.
-// It fetches the atom JSON, writes SKILL.md, and optionally creates a Claude symlink.
+// It fetches the atom JSON, writes SKILL.md, and optionally creates consumer symlinks.
 func runSkillsInstall(cmd *cobra.Command, slug string) error {
 	// Strip any @version suffix — v1 always fetches latest.
 	slug, _, _ = strings.Cut(slug, "@")
@@ -622,14 +621,11 @@ func runSkillsInstall(cmd *cobra.Command, slug string) error {
 		}
 	}
 
-	// Optional: symlink ~/.copilot/instructions/<slug>.md → SKILL.md
-	if copilotDir := copilotInstructionsDir(); copilotDir != "" {
-		skillMD := filepath.Join(destDir, "SKILL.md")
-		if _, err := os.Stat(skillMD); err == nil {
-			linkPath := filepath.Join(copilotDir, slug+".md")
-			if symlinkErr := ensureSymlink(skillMD, linkPath); symlinkErr != nil {
-				fmt.Fprintf(cmd.ErrOrStderr(), "warning: could not create Copilot symlink: %v\n", symlinkErr)
-			}
+	// Optional: symlink ~/.copilot/skills/<slug> → ~/.ai/skills/<slug>
+	if copilotDir := copilotSkillsDir(); copilotDir != "" {
+		linkPath := filepath.Join(copilotDir, slug)
+		if symlinkErr := ensureSymlink(destDir, linkPath); symlinkErr != nil {
+			fmt.Fprintf(cmd.ErrOrStderr(), "warning: could not create Copilot symlink: %v\n", symlinkErr)
 		}
 	}
 
@@ -693,9 +689,9 @@ func runSkillsUninstall(cmd *cobra.Command, name string) error {
 		}
 	}
 
-	// Remove symlink from ~/.copilot/instructions/ if it exists.
-	if copilotDir := copilotInstructionsDir(); copilotDir != "" {
-		linkPath := filepath.Join(copilotDir, slug+".md")
+	// Remove symlink from ~/.copilot/skills/ if it exists.
+	if copilotDir := copilotSkillsDir(); copilotDir != "" {
+		linkPath := filepath.Join(copilotDir, slug)
 		if _, lstatErr := os.Lstat(linkPath); lstatErr == nil {
 			_ = os.Remove(linkPath)
 		}
@@ -752,6 +748,17 @@ func runSkillsUpgrade(cmd *cobra.Command, name string) error {
 		}
 	}
 
+	// Re-create symlink in Copilot skills dir if it existed before.
+	copilotDir := copilotSkillsDir()
+	if copilotDir != "" {
+		linkPath := filepath.Join(copilotDir, slug)
+		if _, lstatErr := os.Lstat(linkPath); lstatErr == nil {
+			if symlinkErr := ensureSymlink(dir, linkPath); symlinkErr != nil {
+				fmt.Fprintf(cmd.ErrOrStderr(), "warning: could not refresh Copilot symlink: %v\n", symlinkErr)
+			}
+		}
+	}
+
 	fmt.Fprintf(cmd.OutOrStdout(), "Upgraded %s from v%s to v%s\n", slug, oldVersion, atom.Version)
 	return nil
 }
@@ -783,7 +790,7 @@ func runSkillsUpgradeAll(cmd *cobra.Command) error {
 }
 
 // runSkillsLink creates symlinks for all installed skills in both
-// ~/.claude/skills/ and ~/.copilot/instructions/. It is idempotent:
+// ~/.claude/skills/ and ~/.copilot/skills/. It is idempotent:
 // running it multiple times over already-linked skills produces no error.
 func runSkillsLink(cmd *cobra.Command, _ []string) error {
 	skillsDir := skillsManifestDir()
@@ -797,7 +804,7 @@ func runSkillsLink(cmd *cobra.Command, _ []string) error {
 	// unconditional *target* resolvers, not the existence-gated ones used by
 	// install/upgrade (which skip Copilot wiring on non-Copilot machines).
 	claudeDir := claudeSkillsDir()
-	copilotDir := copilotInstructionsTargetDir()
+	copilotDir := copilotSkillsTargetDir()
 	if claudeDir != "" {
 		if mkErr := os.MkdirAll(claudeDir, 0o755); mkErr != nil {
 			return fmt.Errorf("skills link: create Claude skills dir %q: %w", claudeDir, mkErr)
@@ -805,7 +812,7 @@ func runSkillsLink(cmd *cobra.Command, _ []string) error {
 	}
 	if copilotDir != "" {
 		if mkErr := os.MkdirAll(copilotDir, 0o755); mkErr != nil {
-			return fmt.Errorf("skills link: create Copilot instructions dir %q: %w", copilotDir, mkErr)
+			return fmt.Errorf("skills link: create Copilot skills dir %q: %w", copilotDir, mkErr)
 		}
 	}
 
@@ -821,12 +828,9 @@ func runSkillsLink(cmd *cobra.Command, _ []string) error {
 		}
 
 		if copilotDir != "" {
-			skillMD := filepath.Join(skillPath, "SKILL.md")
-			if _, statErr := os.Stat(skillMD); statErr == nil {
-				linkPath := filepath.Join(copilotDir, slug+".md")
-				if err := ensureSymlink(skillMD, linkPath); err == nil {
-					linkedCopilot++
-				}
+			linkPath := filepath.Join(copilotDir, slug)
+			if err := ensureSymlink(skillPath, linkPath); err == nil {
+				linkedCopilot++
 			}
 		}
 	}
@@ -839,12 +843,12 @@ func runSkillsLink(cmd *cobra.Command, _ []string) error {
 func newSkillsLinkCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "link",
-		Short: "Symlink all installed skills to ~/.claude/skills/ and ~/.copilot/instructions/",
+		Short: "Symlink all installed skills to ~/.claude/skills/ and ~/.copilot/skills/",
 		Long: `link iterates every installed skill under ~/.ai/skills/ and creates
 symlinks in both consumer directories:
 
   ~/.claude/skills/<slug>           → ~/.ai/skills/<slug>/
-  ~/.copilot/instructions/<slug>.md → ~/.ai/skills/<slug>/SKILL.md
+  ~/.copilot/skills/<slug>          → ~/.ai/skills/<slug>/
 
 Consumer directories that do not exist are silently skipped.
 The command is idempotent: re-running over already-linked skills is safe.`,

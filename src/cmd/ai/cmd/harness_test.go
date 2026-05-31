@@ -109,7 +109,7 @@ func sandbox(t *testing.T) *Sandbox {
 	t.Setenv("AICONST_CONFIG_DIR", s.ConfigDir)
 	t.Setenv("CLAUDE_CONFIG_DIR", s.ClaudeDir)
 	t.Setenv("CLAUDE_SKILLS_DIR", filepath.Join(s.ClaudeDir, "skills"))
-	t.Setenv("COPILOT_INSTRUCTIONS_DIR", filepath.Join(s.Home, "copilot"))
+	t.Setenv("COPILOT_SKILLS_DIR", filepath.Join(s.Home, "copilot", "skills"))
 	t.Setenv("PATH", filepath.Join(s.AIRoot, "bin")+string(os.PathListSeparator)+os.Getenv("PATH"))
 	t.Setenv("EDITOR", "true") // no-op editor for any command that opens $EDITOR
 	t.Setenv("GH_TOKEN", "sandbox-fake-not-real")
