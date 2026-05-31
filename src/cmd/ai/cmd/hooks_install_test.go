@@ -183,7 +183,7 @@ func TestHooksInstallBranchGuardHasBashMatcher(t *testing.T) {
 	}
 }
 
-// TestHooksInstallStopWiring verifies AC3: Stop → audit.py only.
+// TestHooksInstallStopWiring verifies AC3: Stop → audit-logger + checkpoint-tick.
 func TestHooksInstallStopWiring(t *testing.T) {
 	homeDir := t.TempDir()
 	aiRoot := t.TempDir()
@@ -198,10 +198,10 @@ func TestHooksInstallStopWiring(t *testing.T) {
 	raw, _ := json.Marshal(stop)
 	rawStr := string(raw)
 	if !strings.Contains(rawStr, "ai hooks run audit-logger") {
-		t.Errorf("Stop hooks missing 'ai hooks run audit': %s", rawStr)
+		t.Errorf("Stop hooks missing 'ai hooks run audit-logger': %s", rawStr)
 	}
-	if strings.Contains(rawStr, "ai hooks run checkpoint-tick") {
-		t.Errorf("Stop hooks should not contain 'ai hooks run checkpoint-tick': %s", rawStr)
+	if !strings.Contains(rawStr, "ai hooks run checkpoint-tick") {
+		t.Errorf("Stop hooks missing 'ai hooks run checkpoint-tick': %s", rawStr)
 	}
 }
 

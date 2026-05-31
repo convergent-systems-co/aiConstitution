@@ -537,7 +537,7 @@ func TestCheckHookWiring_NoSettings(t *testing.T) {
 	}
 }
 
-func TestCheckHookWiring_LegacyCheckpointTickWarnsWhenUnwired(t *testing.T) {
+func TestCheckHookWiring_CheckpointTickRequiredWarnsWhenUnwired(t *testing.T) {
 	aiRoot := t.TempDir()
 	home := t.TempDir()
 
@@ -557,10 +557,10 @@ func TestCheckHookWiring_LegacyCheckpointTickWarnsWhenUnwired(t *testing.T) {
 
 	got := out.String()
 	if !strings.Contains(got, "checkpoint-tick.py installed but not wired") {
-		t.Errorf("expected legacy checkpoint-tick warning; got:\n%s", got)
+		t.Errorf("expected required checkpoint-tick warning; got:\n%s", got)
 	}
-	if !strings.Contains(got, "disabled by default") {
-		t.Errorf("expected disabled-by-default guidance; got:\n%s", got)
+	if !strings.Contains(got, "ai hooks install --claude") {
+		t.Errorf("expected install guidance; got:\n%s", got)
 	}
 }
 
