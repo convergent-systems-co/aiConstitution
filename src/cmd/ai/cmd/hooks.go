@@ -682,7 +682,7 @@ func canonicalWiring(_ string) []eventHookSpec {
 			"destructive-terraform-guard.py",
 		)},
 		{event: "PostToolUse", hooks: h("audit-logger.py")},
-		{event: "Stop", hooks: h("audit-logger.py")},
+		{event: "Stop", hooks: h("audit-logger.py", "checkpoint-tick.py")},
 		{event: "SessionEnd", hooks: h("audit-logger.py")},
 		{event: "SubagentStop", hooks: h("audit-logger.py")},
 		{event: "PreCompact", hooks: h("audit-logger.py")},

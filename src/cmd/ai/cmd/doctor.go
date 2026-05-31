@@ -169,10 +169,9 @@ func checkHookWiring(w io.Writer, aiRoot, home string) {
 		"branch-guard.py",
 		"secret-block.py",
 		"worktree-guard.py",
-	}
-	legacyOptionalHooks := []string{
 		"checkpoint-tick.py",
 	}
+	legacyOptionalHooks := []string{}
 
 	hooksDir := filepath.Join(aiRoot, "hooks")
 	settingsPath := filepath.Join(home, ".claude", "settings.json")
