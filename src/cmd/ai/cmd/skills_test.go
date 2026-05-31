@@ -11,7 +11,23 @@ import (
 	"testing"
 
 	"github.com/convergent-systems-co/aiConstitution/src/cmd/ai/cmd"
+	"gopkg.in/yaml.v3"
 )
+
+func frontmatterBlock(t *testing.T, content string) string {
+	t.Helper()
+	lines := strings.Split(content, "\n")
+	if len(lines) == 0 || strings.TrimSpace(lines[0]) != "---" {
+		t.Fatalf("missing frontmatter start:\n%s", content)
+	}
+	for i := 1; i < len(lines); i++ {
+		if strings.TrimSpace(lines[i]) == "---" {
+			return strings.Join(lines[1:i], "\n")
+		}
+	}
+	t.Fatalf("missing frontmatter end:\n%s", content)
+	return ""
+}
 
 // helper: create a populated skills fixture under a temp AI_ROOT.
 // Returns the AI_ROOT dir. Caller responsible for cleanup via t.Cleanup.
@@ -1028,6 +1044,87 @@ func TestCopilotWiringOnUninstall(t *testing.T) {
 	// Copilot symlink must be gone.
 	if _, lstatErr := os.Lstat(linkPath); !os.IsNotExist(lstatErr) {
 		t.Errorf("Copilot symlink should have been removed; lstat: %v", lstatErr)
+	}
+}
+
+func TestSkillsInstall_WritesValidYAMLFrontmatter(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("CLAUDE_SKILLS_DIR", t.TempDir())
+	t.Setenv("COPILOT_SKILLS_DIR", t.TempDir())
+
+	atoms := []map[string]interface{}{
+		{
+			"type":                   "skill",
+			"id":                     "skill/make-release",
+			"version":                "1.0.0",
+			"name":                   "Make Release",
+			"description":            "Full release pipeline: ensure all PRs are closed or merged, then trigger release.yml.",
+			"system_prompt_fragment": "Run the release pipeline.",
+			"lifecycle":              "stable",
+		},
+	}
+	srv := startSkillsCatalogServer(t, atoms)
+	setAiAtomsCatalogURL(t, srv.URL+"/catalog.json")
+
+	if _, _, err := runSkillsCmd(t, root, "skills", "install", "make-release"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(root, "skills", "make-release", "SKILL.md"))
+	if err != nil {
+		t.Fatalf("reading SKILL.md: %v", err)
+	}
+
+	var fm map[string]any
+	if err := yaml.Unmarshal([]byte(frontmatterBlock(t, string(data))), &fm); err != nil {
+		t.Fatalf("frontmatter should parse as YAML: %v\n%s", err, string(data))
+	}
+}
+
+func TestSkillsLink_RepairsLegacyMalformedFrontmatter(t *testing.T) {
+	root := t.TempDir()
+	claudeDir := t.TempDir()
+	copilotDir := t.TempDir()
+	t.Setenv("AI_ROOT", root)
+	t.Setenv("CLAUDE_SKILLS_DIR", claudeDir)
+	t.Setenv("COPILOT_SKILLS_DIR", copilotDir)
+
+	skillDir := filepath.Join(root, "skills", "make-status")
+	if err := os.MkdirAll(skillDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	legacy := `---
+name: Make Status
+description: Sprint status snapshot: open PRs and their CI state, stale branches, sync gap between local and origin, and any uncommitted work.
+version: 1.0.0
+user-invocable: true
+allowed-tools:
+  - Bash
+  - Read
+---
+# Make Status
+
+Report sprint status across the repo set.
+`
+	if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte(legacy), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, _, err := runSkillsCmd(t, root, "skills", "link"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(skillDir, "SKILL.md"))
+	if err != nil {
+		t.Fatalf("reading repaired SKILL.md: %v", err)
+	}
+
+	var fm map[string]any
+	if err := yaml.Unmarshal([]byte(frontmatterBlock(t, string(data))), &fm); err != nil {
+		t.Fatalf("repaired frontmatter should parse as YAML: %v\n%s", err, string(data))
+	}
+	if _, err := os.Lstat(filepath.Join(copilotDir, "make-status")); err != nil {
+		t.Fatalf("expected Copilot symlink after repair: %v", err)
 	}
 }
 

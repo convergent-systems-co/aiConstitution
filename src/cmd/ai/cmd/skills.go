@@ -9,10 +9,12 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 
 	cbterm "github.com/charmbracelet/x/term"
 	"github.com/spf13/cobra"
+	"gopkg.in/yaml.v3"
 )
 
 // SkillAtomsBaseURL is the base URL for fetching skill atoms from the GitHub
@@ -36,6 +38,14 @@ type skillAtom struct {
 	// Events is populated for ai-hook atoms (type: "ai-hook") and lists the
 	// Claude hook events the hook attaches to (e.g. "PreToolUse", "PostToolUse").
 	Events []string `json:"events,omitempty"`
+}
+
+type skillFrontmatter struct {
+	Name          string   `yaml:"name"`
+	Description   string   `yaml:"description"`
+	Version       string   `yaml:"version,omitempty"`
+	UserInvocable bool     `yaml:"user-invocable,omitempty"`
+	AllowedTools  []string `yaml:"allowed-tools,omitempty"`
 }
 
 // skillAtomDirEntry is a single entry in the GitHub Contents API directory
@@ -555,21 +565,131 @@ func writeSkillMD(destPath string, atom *skillAtom) error {
 		slug = strings.TrimPrefix(atom.ID, "skill/")
 	}
 
-	content := fmt.Sprintf(`---
-name: %s
-description: %s
-version: %s
-user-invocable: true
-allowed-tools:
-  - Bash
-  - Read
----
-# %s
-
-%s
-`, slug, atom.Description, atom.Version, atom.Name, atom.SystemPromptFragment)
+	content, err := renderSkillMD(skillFrontmatter{
+		Name:          slug,
+		Description:   atom.Description,
+		Version:       atom.Version,
+		UserInvocable: true,
+		AllowedTools:  []string{"Bash", "Read"},
+	}, atom.Name, atom.SystemPromptFragment)
+	if err != nil {
+		return err
+	}
 
 	return os.WriteFile(destPath, []byte(content), 0o644) //nolint:gosec // 0644 is intentional for skill files
+}
+
+func renderSkillMD(meta skillFrontmatter, title, body string) (string, error) {
+	fm, err := yaml.Marshal(meta)
+	if err != nil {
+		return "", fmt.Errorf("skills: marshal frontmatter: %w", err)
+	}
+	if title == "" {
+		title = meta.Name
+	}
+
+	var b strings.Builder
+	b.WriteString("---\n")
+	b.Write(fm)
+	b.WriteString("---\n")
+	if title != "" {
+		b.WriteString("# ")
+		b.WriteString(title)
+		b.WriteString("\n\n")
+	}
+	b.WriteString(body)
+	if body != "" && !strings.HasSuffix(body, "\n") {
+		b.WriteString("\n")
+	}
+	return b.String(), nil
+}
+
+func repairLegacySkillMD(mdPath string) error {
+	data, err := os.ReadFile(mdPath)
+	if err != nil {
+		return err
+	}
+	content := string(data)
+	lines := strings.Split(content, "\n")
+	if len(lines) == 0 || strings.TrimSpace(lines[0]) != "---" {
+		return nil
+	}
+
+	end := -1
+	for i := 1; i < len(lines); i++ {
+		if strings.TrimSpace(lines[i]) == "---" {
+			end = i
+			break
+		}
+	}
+	if end == -1 {
+		return nil
+	}
+
+	var meta skillFrontmatter
+	if err := yaml.Unmarshal([]byte(strings.Join(lines[1:end], "\n")), &meta); err == nil {
+		return nil
+	}
+
+	fields := parseFrontmatter(content)
+	if fields["name"] == "" || fields["description"] == "" {
+		return nil
+	}
+
+	meta.Name = unquoteFrontmatterValue(fields["name"])
+	meta.Description = unquoteFrontmatterValue(fields["description"])
+	meta.Version = unquoteFrontmatterValue(fields["version"])
+	meta.UserInvocable = strings.EqualFold(unquoteFrontmatterValue(fields["user-invocable"]), "true")
+	meta.AllowedTools = parseAllowedTools(lines[1:end])
+
+	body := strings.Join(lines[end+1:], "\n")
+	body = strings.TrimPrefix(body, "\n")
+	title := meta.Name
+	if strings.HasPrefix(body, "# ") {
+		if nl := strings.IndexByte(body, '\n'); nl >= 0 {
+			title = strings.TrimSpace(strings.TrimPrefix(body[:nl], "# "))
+			body = strings.TrimPrefix(body[nl+1:], "\n")
+		} else {
+			title = strings.TrimSpace(strings.TrimPrefix(body, "# "))
+			body = ""
+		}
+	}
+
+	rewritten, err := renderSkillMD(meta, title, body)
+	if err != nil {
+		return err
+	}
+	if rewritten == content {
+		return nil
+	}
+	return os.WriteFile(mdPath, []byte(rewritten), 0o644) //nolint:gosec // 0644 is intentional for skill files
+}
+
+func parseAllowedTools(lines []string) []string {
+	var tools []string
+	inAllowedTools := false
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		switch {
+		case trimmed == "allowed-tools:":
+			inAllowedTools = true
+		case inAllowedTools && strings.HasPrefix(trimmed, "- "):
+			tools = append(tools, strings.TrimSpace(strings.TrimPrefix(trimmed, "- ")))
+		case inAllowedTools && trimmed == "":
+			continue
+		case inAllowedTools:
+			return tools
+		}
+	}
+	return tools
+}
+
+func unquoteFrontmatterValue(v string) string {
+	v = strings.TrimSpace(v)
+	if unquoted, err := strconv.Unquote(v); err == nil {
+		return unquoted
+	}
+	return v
 }
 
 // ensureSymlink creates or replaces a symlink at linkPath → target.
@@ -819,6 +939,9 @@ func runSkillsLink(cmd *cobra.Command, _ []string) error {
 	var linkedClaude, linkedCopilot int
 	for _, skillPath := range dirs {
 		slug := filepath.Base(skillPath)
+		if err := repairLegacySkillMD(filepath.Join(skillPath, "SKILL.md")); err != nil && !os.IsNotExist(err) {
+			fmt.Fprintf(cmd.ErrOrStderr(), "warning: could not repair SKILL.md for %s: %v\n", slug, err)
+		}
 
 		if claudeDir != "" {
 			linkPath := filepath.Join(claudeDir, slug)
