@@ -1007,13 +1007,14 @@ phases:
       - qid: Q40
         prompt: "Install 30-minute background `/checkpoint auto` tick?"
         framing: >-
-          On long sessions, the tick writes a HANDOFF.md every 30 minutes
-          so context-window resets don't lose state. Useful if you do
-          multi-hour sessions; noisy if you don't.
+          The legacy tick writes a HANDOFF.md every 30 minutes, which can
+          create noisy untracked files in working repos. Leave it off by
+          default; prefer GitHub issues for continuity until issue-backed
+          checkpointing lands. Legacy enablement may require manual wiring.
         time: "~10s"
         options:
-          - { label: "Yes (recommended for long sessions)", value: "enabled" }
-          - { label: "No",                                   value: "disabled" }
+          - { label: "Yes (deprecated legacy behavior)", value: "enabled" }
+          - { label: "No (default)",                 value: "disabled" }
         allow_free_text: false
         allow_chat: true
         allow_defer: false

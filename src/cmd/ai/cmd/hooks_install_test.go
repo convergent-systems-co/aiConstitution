@@ -28,7 +28,7 @@ var expectedHookMapping = map[string][]string{
 	"SessionStart":     {"ai hooks run audit-logger"},
 	"UserPromptSubmit": {"ai hooks run audit-logger"},
 	"PostToolUse":      {"ai hooks run audit-logger"},
-	"Stop":             {"ai hooks run audit-logger", "ai hooks run checkpoint-tick"},
+	"Stop":             {"ai hooks run audit-logger"},
 	"SessionEnd":       {"ai hooks run audit-logger"},
 	"SubagentStop":     {"ai hooks run audit-logger"},
 	"PreCompact":       {"ai hooks run audit-logger"},
@@ -183,7 +183,7 @@ func TestHooksInstallBranchGuardHasBashMatcher(t *testing.T) {
 	}
 }
 
-// TestHooksInstallStopWiring verifies AC3: Stop → audit.py + checkpoint-tick.py.
+// TestHooksInstallStopWiring verifies AC3: Stop → audit.py only.
 func TestHooksInstallStopWiring(t *testing.T) {
 	homeDir := t.TempDir()
 	aiRoot := t.TempDir()
@@ -200,8 +200,8 @@ func TestHooksInstallStopWiring(t *testing.T) {
 	if !strings.Contains(rawStr, "ai hooks run audit-logger") {
 		t.Errorf("Stop hooks missing 'ai hooks run audit': %s", rawStr)
 	}
-	if !strings.Contains(rawStr, "ai hooks run checkpoint-tick") {
-		t.Errorf("Stop hooks missing 'ai hooks run checkpoint-tick': %s", rawStr)
+	if strings.Contains(rawStr, "ai hooks run checkpoint-tick") {
+		t.Errorf("Stop hooks should not contain 'ai hooks run checkpoint-tick': %s", rawStr)
 	}
 }
 
@@ -239,9 +239,9 @@ func TestHooksInstallPreservesExistingKeys(t *testing.T) {
 		t.Fatalf("mkdir %s: %v", claudeDir, err)
 	}
 	existing := map[string]any{
-		"model":               "claude-sonnet",
-		"someOtherKey":        "preserve-me",
-		"todoFeatureEnabled":  false,
+		"model":              "claude-sonnet",
+		"someOtherKey":       "preserve-me",
+		"todoFeatureEnabled": false,
 	}
 	existingData, _ := json.MarshalIndent(existing, "", "  ")
 	if err := os.WriteFile(filepath.Join(claudeDir, "settings.json"), existingData, 0o644); err != nil {

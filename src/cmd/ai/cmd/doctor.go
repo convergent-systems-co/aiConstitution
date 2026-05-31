@@ -169,6 +169,8 @@ func checkHookWiring(w io.Writer, aiRoot, home string) {
 		"branch-guard.py",
 		"secret-block.py",
 		"worktree-guard.py",
+	}
+	legacyOptionalHooks := []string{
 		"checkpoint-tick.py",
 	}
 
@@ -185,6 +187,16 @@ func checkHookWiring(w io.Writer, aiRoot, home string) {
 		}
 		if !wiredSet[hook] {
 			fmt.Fprintf(w, "[⚠] %s installed but not wired — run: ai hooks install --claude\n", hook)
+			allOK = false
+		}
+	}
+	for _, hook := range legacyOptionalHooks {
+		hookPath := filepath.Join(hooksDir, hook)
+		if !fileExists(hookPath) {
+			continue
+		}
+		if !wiredSet[hook] {
+			fmt.Fprintf(w, "[⚠] %s installed but not wired — legacy HANDOFF.md hook is disabled by default\n", hook)
 			allOK = false
 		}
 	}
@@ -369,11 +381,11 @@ func checkCompactConstitution(w io.Writer, fix bool, aiRoot, home string) {
 //
 // Output format:
 //
-//	  OK    N skill(s) installed
-//	  WARN  No skills installed
-//	        Run: ai skills available  (to see what's installable)
-//	        Run: ai skills install <name>  (to install)
-//	  WARN  Skills installed but not linked to Claude — run: ai skills link
+//	OK    N skill(s) installed
+//	WARN  No skills installed
+//	      Run: ai skills available  (to see what's installable)
+//	      Run: ai skills install <name>  (to install)
+//	WARN  Skills installed but not linked to Claude — run: ai skills link
 func checkInstalledSkills(w io.Writer) error {
 	installedSkills, _ := listSkillDirs(skillsManifestDir())
 	if len(installedSkills) == 0 {
@@ -492,10 +504,17 @@ func checkTerminalNotifier(w io.Writer) {
 
 // PathStatus and companion types — needed by export_test.go and integrate_test.go
 type PathStatus int
-const ( PathOK PathStatus = iota; PathMissing; PathShadowed )
+
+const (
+	PathOK PathStatus = iota
+	PathMissing
+	PathShadowed
+)
 
 func checkBinPath(binDir, pathVar string) (PathStatus, string) {
-	if binDir == "" { return PathOK, "" }
+	if binDir == "" {
+		return PathOK, ""
+	}
 	binDir = filepath.Clean(binDir)
 	var systemBins []string
 	if runtime.GOOS == "windows" {
@@ -504,36 +523,73 @@ func checkBinPath(binDir, pathVar string) (PathStatus, string) {
 		systemBins = []string{"/usr/local/bin", "/opt/homebrew/bin"}
 	}
 	entries := strings.Split(pathVar, string(os.PathListSeparator))
-	binIdx := -1; systemIdxs := map[string]int{}
+	binIdx := -1
+	systemIdxs := map[string]int{}
 	for i, e := range entries {
 		clean := filepath.Clean(strings.TrimSpace(e))
-		if clean == binDir && binIdx < 0 { binIdx = i }
-		for _, s := range systemBins { if clean == s { if _, ok := systemIdxs[s]; !ok { systemIdxs[s] = i } } }
+		if clean == binDir && binIdx < 0 {
+			binIdx = i
+		}
+		for _, s := range systemBins {
+			if clean == s {
+				if _, ok := systemIdxs[s]; !ok {
+					systemIdxs[s] = i
+				}
+			}
+		}
 	}
-	if binIdx < 0 { return PathMissing, fmt.Sprintf("%s not on PATH", binDir) }
-	for _, s := range systemBins { if si, ok := systemIdxs[s]; ok && si < binIdx { return PathShadowed, fmt.Sprintf("%s after %s", binDir, s) } }
+	if binIdx < 0 {
+		return PathMissing, fmt.Sprintf("%s not on PATH", binDir)
+	}
+	for _, s := range systemBins {
+		if si, ok := systemIdxs[s]; ok && si < binIdx {
+			return PathShadowed, fmt.Sprintf("%s after %s", binDir, s)
+		}
+	}
 	return PathOK, fmt.Sprintf("%s before system bins", binDir)
 }
 
 type doctorStatus int
-const ( doctorOK doctorStatus = iota; doctorWarn; doctorSkip )
-type doctorResult struct { name string; status doctorStatus; message string }
+
+const (
+	doctorOK doctorStatus = iota
+	doctorWarn
+	doctorSkip
+)
+
+type doctorResult struct {
+	name    string
+	status  doctorStatus
+	message string
+}
 
 func checkDoctorCopilot(home string) doctorResult {
 	dir := filepath.Join(home, ".copilot", "instructions")
-	if _, err := os.Stat(dir); os.IsNotExist(err) { return doctorResult{status: doctorSkip} }
-	if _, err := os.Lstat(filepath.Join(dir, "constitution.md")); os.IsNotExist(err) { return doctorResult{status: doctorWarn, message: "Copilot symlink missing"} }
+	if _, err := os.Stat(dir); os.IsNotExist(err) {
+		return doctorResult{status: doctorSkip}
+	}
+	if _, err := os.Lstat(filepath.Join(dir, "constitution.md")); os.IsNotExist(err) {
+		return doctorResult{status: doctorWarn, message: "Copilot symlink missing"}
+	}
 	return doctorResult{status: doctorOK, message: "Copilot symlink present"}
 }
 func checkDoctorCursor(cwd string) doctorResult {
-	if _, err := os.Stat(filepath.Join(cwd, ".cursor", "rules")); os.IsNotExist(err) { return doctorResult{status: doctorSkip} }
-	if _, err := os.Lstat(filepath.Join(cwd, ".cursor", "rules", "constitution.md")); os.IsNotExist(err) { return doctorResult{status: doctorWarn} }
+	if _, err := os.Stat(filepath.Join(cwd, ".cursor", "rules")); os.IsNotExist(err) {
+		return doctorResult{status: doctorSkip}
+	}
+	if _, err := os.Lstat(filepath.Join(cwd, ".cursor", "rules", "constitution.md")); os.IsNotExist(err) {
+		return doctorResult{status: doctorWarn}
+	}
 	return doctorResult{status: doctorOK}
 }
 func checkDoctorAgentsMD(cwd string) doctorResult {
 	data, err := os.ReadFile(filepath.Join(cwd, "AGENTS.md")) //nolint:gosec
-	if os.IsNotExist(err) { return doctorResult{status: doctorSkip} }
-	if err != nil { return doctorResult{status: doctorWarn} }
+	if os.IsNotExist(err) {
+		return doctorResult{status: doctorSkip}
+	}
+	if err != nil {
+		return doctorResult{status: doctorWarn}
+	}
 	// Accept both compact form (current) and full form (legacy installs).
 	content := string(data)
 	if strings.Contains(content, "@~/.ai/Constitution.compact.md") || strings.Contains(content, "@~/.ai/Constitution.md") {
