@@ -242,8 +242,8 @@ Original text was insufficient.
 	if !strings.Contains(string(got), newBody) {
 		t.Errorf("Constitution.md does not contain new body %q\n---\n%s", newBody, string(got))
 	}
-	if strings.Contains(string(got), origBody) {
-		t.Errorf("Constitution.md still contains original body %q after apply", origBody)
+	if !strings.Contains(string(got), origBody) {
+		t.Errorf("Constitution.md should preserve original body %q after apply", origBody)
 	}
 }
 
