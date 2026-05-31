@@ -295,6 +295,22 @@ func runSetupPostWizard(aiRoot, claudeDir, copilotDir string, answers map[string
 	}
 
 	fmt.Println("setup: done — constitution wired. Run `ai doctor` to verify.")
+	fmt.Println()
+	fmt.Println("Recommended: set up automated governance reviews in Claude Code")
+	fmt.Println("  Open Claude Code and run /schedule for each of the following:")
+	fmt.Println()
+	fmt.Println("  1. Violation & Override Audit Review (weekly)")
+	fmt.Println("     Scans ~/.ai/audit/violations/ and audit/overrides/, identifies")
+	fmt.Println("     patterns, and opens a PR with proposed constitutional amendments.")
+	fmt.Println("     Cadence: every Monday at 9am local time.")
+	fmt.Println()
+	fmt.Println("  2. Memory Review (monthly)")
+	fmt.Println("     Reviews all memory files for staleness, redundancy, and gaps,")
+	fmt.Println("     then opens a PR with proposed updates. You merge to approve.")
+	fmt.Println("     Cadence: 1st of each month.")
+	fmt.Println()
+	fmt.Println("  Both routines open PRs against your personal ai repo — merge to approve.")
+	fmt.Println("  Manage routines: https://claude.ai/code/routines")
 	return nil
 }
 
