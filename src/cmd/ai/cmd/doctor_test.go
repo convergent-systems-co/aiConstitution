@@ -427,17 +427,17 @@ func TestCheckHookWiring_AllWired(t *testing.T) {
 	aiRoot := t.TempDir()
 	home := t.TempDir()
 
-	// Install all 5 required hooks.
+	// Install all required hooks.
 	hooksDir := filepath.Join(aiRoot, "hooks")
 	if err := os.MkdirAll(hooksDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	required := []string{"audit-logger.py", "branch-guard.py", "secret-block.py", "worktree-guard.py", "checkpoint-tick.py"}
+	required := []string{"audit-logger.py", "branch-guard.py", "secret-block.py", "worktree-guard.py"}
 	for _, h := range required {
 		_ = os.WriteFile(filepath.Join(hooksDir, h), []byte("# hook"), 0o644)
 	}
 
-	// Wire all 5 in settings.json.
+	// Wire all required hooks in settings.json.
 	settingsPath := filepath.Join(home, ".claude", "settings.json")
 	writeSettingsJSON(t, settingsPath, required)
 
@@ -519,7 +519,7 @@ func TestCheckHookWiring_NoSettings(t *testing.T) {
 	if err := os.MkdirAll(hooksDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	required := []string{"audit-logger.py", "branch-guard.py", "secret-block.py", "worktree-guard.py", "checkpoint-tick.py"}
+	required := []string{"audit-logger.py", "branch-guard.py", "secret-block.py", "worktree-guard.py"}
 	for _, h := range required {
 		_ = os.WriteFile(filepath.Join(hooksDir, h), []byte("# hook"), 0o644)
 	}
@@ -534,6 +534,33 @@ func TestCheckHookWiring_NoSettings(t *testing.T) {
 		if !strings.Contains(got, h) {
 			t.Errorf("expected warning mentioning %s when settings.json absent; got:\n%s", h, got)
 		}
+	}
+}
+
+func TestCheckHookWiring_LegacyCheckpointTickWarnsWhenUnwired(t *testing.T) {
+	aiRoot := t.TempDir()
+	home := t.TempDir()
+
+	hooksDir := filepath.Join(aiRoot, "hooks")
+	if err := os.MkdirAll(hooksDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(hooksDir, "checkpoint-tick.py"), []byte("# hook"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	settingsPath := filepath.Join(home, ".claude", "settings.json")
+	writeSettingsJSON(t, settingsPath, []string{"audit-logger.py"})
+
+	var out bytes.Buffer
+	checkHookWiring(&out, aiRoot, home)
+
+	got := out.String()
+	if !strings.Contains(got, "checkpoint-tick.py installed but not wired") {
+		t.Errorf("expected legacy checkpoint-tick warning; got:\n%s", got)
+	}
+	if !strings.Contains(got, "disabled by default") {
+		t.Errorf("expected disabled-by-default guidance; got:\n%s", got)
 	}
 }
 

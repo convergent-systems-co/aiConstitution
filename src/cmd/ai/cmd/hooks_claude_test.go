@@ -154,16 +154,17 @@ func TestPurgeMalformed_PreservesCanonicalGroups(t *testing.T) {
 
 func TestPurgeMalformed_DropsRetiredCommands(t *testing.T) {
 	// Retired wiring (catalog renamed audit→audit-logger; audit-command is a
-	// wrapper post-hook, never a Claude event hook) must be scrubbed even when
-	// it appears inside an otherwise-canonical group.
+	// wrapper post-hook, never a Claude event hook; checkpoint-tick is now
+	// opt-in because it writes HANDOFF.md into working trees) must be scrubbed
+	// even when it appears inside an otherwise-canonical group.
 	settings := map[string]any{
 		"hooks": map[string]any{
 			"PreToolUse": []any{
 				map[string]any{
 					"hooks": []any{
-						map[string]any{"type": "command", "command": "ai hooks run audit"},          // retired
-						map[string]any{"type": "command", "command": "ai hooks run audit-command"},  // retired
-						map[string]any{"type": "command", "command": "ai hooks run audit-logger"},   // keep
+						map[string]any{"type": "command", "command": "ai hooks run audit"},         // retired
+						map[string]any{"type": "command", "command": "ai hooks run audit-command"}, // retired
+						map[string]any{"type": "command", "command": "ai hooks run audit-logger"},  // keep
 					},
 				},
 			},
@@ -171,6 +172,7 @@ func TestPurgeMalformed_DropsRetiredCommands(t *testing.T) {
 				map[string]any{
 					"hooks": []any{
 						map[string]any{"type": "command", "command": "ai hooks run audit"}, // retired
+						map[string]any{"type": "command", "command": "ai hooks run checkpoint-tick"},
 					},
 				},
 			},
@@ -554,6 +556,14 @@ func TestSettingsJSON_ValidAfterRepairingCorruption(t *testing.T) {
 		t.Fatalf("repair: %v", err)
 	}
 	readAndValidate(t, settingsPath)
+
+	out, err := os.ReadFile(settingsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(out), "ai hooks run checkpoint-tick") {
+		t.Errorf("settings.json should scrub retired checkpoint-tick wiring:\n%s", out)
+	}
 }
 
 // TestSettingsJSON_RepeatedWritesStayValid verifies the writer remains valid

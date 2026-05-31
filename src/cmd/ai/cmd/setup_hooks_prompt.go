@@ -20,7 +20,7 @@ var hookDescriptions = map[string]string{ //nolint:gosec // G101: false positive
 	"audit.py":                       "Log every tool use to ~/.ai/audit/ (required for governance)",
 	"audit-command.py":               "Log Bash commands and arguments before execution",
 	"branch-guard.py":                "Block direct commits/pushes to protected branches (main/master)",
-	"checkpoint-tick.py":             "Write CHECKPOINT.md snapshot on each turn for session recovery",
+	"checkpoint-tick.py":             "Legacy HANDOFF.md checkpoint hook (manual wiring only; disabled by default)",
 	"destructive-gh-guard.py":        "Block destructive gh CLI operations (delete, force-push)",
 	"destructive-kubectl-guard.py":   "Block destructive kubectl operations (delete, drain, cordon)",
 	"destructive-terraform-guard.py": "Block destructive terraform operations (destroy, force-replace)",
