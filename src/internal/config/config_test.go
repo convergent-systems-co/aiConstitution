@@ -116,3 +116,38 @@ func TestSaveRoundTrips(t *testing.T) {
 		t.Errorf("Review.CadenceDays = %d, want 45", got.Review.CadenceDays)
 	}
 }
+
+// TestWizardSettingsRoundTrip verifies that the new LastRenderedChecksum and
+// Answers fields survive a Save/Load round-trip via settings.toml.
+func TestWizardSettingsRoundTrip(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("AICONST_CONFIG_DIR", tmp)
+
+	want := config.Defaults()
+	want.Wizard.LastRenderedChecksum = "abc123def456"
+	want.Wizard.Answers = map[string]string{
+		"Q01": "Alice",
+		"Q07": "code",
+	}
+
+	if err := config.Save(want); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+
+	got, err := config.Load()
+	if err != nil {
+		t.Fatalf("Load() after Save() error = %v", err)
+	}
+	if got.Wizard.LastRenderedChecksum != "abc123def456" {
+		t.Errorf("LastRenderedChecksum = %q, want %q", got.Wizard.LastRenderedChecksum, "abc123def456")
+	}
+	if len(got.Wizard.Answers) != 2 {
+		t.Fatalf("Answers len = %d, want 2", len(got.Wizard.Answers))
+	}
+	if got.Wizard.Answers["Q01"] != "Alice" {
+		t.Errorf("Answers[Q01] = %q, want %q", got.Wizard.Answers["Q01"], "Alice")
+	}
+	if got.Wizard.Answers["Q07"] != "code" {
+		t.Errorf("Answers[Q07] = %q, want %q", got.Wizard.Answers["Q07"], "code")
+	}
+}
