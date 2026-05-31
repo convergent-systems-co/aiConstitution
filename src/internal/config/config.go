@@ -140,7 +140,9 @@ type FocusSettings struct {
 // WizardSettings carries the [wizard] section — the questions.yaml
 // version the user's answers were generated against.
 type WizardSettings struct {
-	LastSeenWizardVersion string `toml:"lastSeenWizardVersion"`
+	LastSeenWizardVersion string            `toml:"lastSeenWizardVersion"`
+	LastRenderedChecksum  string            `toml:"lastRenderedChecksum"` // sha256 hex of last written Constitution.md
+	Answers               map[string]string `toml:"answers"`              // raw Q-key → value from last wizard run
 }
 
 // SyncSettings carries the [sync] section — whether settings.toml

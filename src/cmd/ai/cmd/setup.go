@@ -1,12 +1,15 @@
 package cmd
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	cbterm "github.com/charmbracelet/x/term"
@@ -126,8 +129,14 @@ func runSetupTUI(cmd *cobra.Command, noHooks bool) error {
 	fmt.Println("└─────────────────────────────────────────────────────────┘")
 	fmt.Println()
 
-	// Run the Bubble Tea program.
-	m := tui.NewModel(*tax)
+	// Run the Bubble Tea program, pre-filled with any prior wizard answers.
+	priorAnswers := loadPriorWizardAnswers()
+	var m tui.Model
+	if len(priorAnswers) > 0 {
+		m = tui.NewModelWithDefaults(*tax, priorAnswers)
+	} else {
+		m = tui.NewModel(*tax)
+	}
 	prog := tea.NewProgram(m)
 	finalModel, err := prog.Run()
 	if err != nil {
@@ -224,9 +233,13 @@ func runSetupPostWizard(aiRoot, claudeDir, copilotDir string, answers map[string
 		}
 	}
 	constitutionPath := filepath.Join(aiRoot, "Constitution.md")
+	// Auto-backup and checksum guard before overwriting Constitution.md.
+	autoBackupConstitution(aiRoot)
+	warnIfHandEdited(constitutionPath)
 	if err := os.WriteFile(constitutionPath, []byte(rendered), 0o600); err != nil { //nolint:gosec
 		return fmt.Errorf("setup: write Constitution.md: %w", err)
 	}
+	updateRenderedChecksum(rendered)
 
 	// Generate Constitution.compact.md — the compressed form that clients load.
 	// This is what Claude Code and Copilot receive; the full Constitution.md is
@@ -325,6 +338,7 @@ func saveWizardSettings(answers map[string]string) error {
 	// Annotate it with the taxonomy version so `ai review` knows which
 	// questions were answered.
 	cfg.Wizard.LastSeenWizardVersion = "0.10" // canonical questions.yaml version
+	cfg.Wizard.Answers = answers
 
 	// Map Q09 (autonomy posture) → Focus.DefaultMode as a representative
 	// mapping. Both fields exist in the Settings struct.
@@ -333,6 +347,74 @@ func saveWizardSettings(answers map[string]string) error {
 	}
 
 	return config.Save(cfg)
+}
+
+// loadPriorWizardAnswers returns the answers stored from the last wizard run.
+// Returns nil when settings cannot be loaded or no answers were stored.
+func loadPriorWizardAnswers() map[string]string {
+	cfg, err := config.Load()
+	if err != nil || len(cfg.Wizard.Answers) == 0 {
+		return nil
+	}
+	return cfg.Wizard.Answers
+}
+
+// autoBackupConstitution writes a snapshot of aiRoot to the backups dir.
+// Best-effort: if the backup fails, setup continues with a warning.
+func autoBackupConstitution(aiRoot string) {
+	backupDir := filepath.Join(paths.ConfigDir(), "backups")
+	if err := os.MkdirAll(backupDir, 0o750); err != nil {
+		fmt.Fprintf(os.Stderr, "setup: warning: could not create backup dir: %v\n", err)
+		return
+	}
+	name := "pre-setup-" + time.Now().UTC().Format("20060102-150405") + ".tar.gz"
+	dest := filepath.Join(backupDir, name)
+	if err := writeBackupArchive(aiRoot, dest); err != nil {
+		fmt.Fprintf(os.Stderr, "setup: warning: auto-backup failed: %v (proceeding)\n", err)
+		return
+	}
+	fmt.Printf("setup: backed up existing constitution to %s\n", dest)
+}
+
+// warnIfHandEdited compares the sha256 of constitutionPath against the
+// stored checksum from the last setup run. If they diverge, the user has
+// hand-edited the file and is warned to migrate edits to Constitution.local.md
+// or via `ai amend` before relying on setup for upgrades.
+func warnIfHandEdited(constitutionPath string) {
+	cfg, err := config.Load()
+	if err != nil || cfg.Wizard.LastRenderedChecksum == "" {
+		return // first run or unreadable config — no baseline to compare
+	}
+	data, err := os.ReadFile(constitutionPath) //nolint:gosec
+	if err != nil {
+		return // file doesn't exist yet — not a hand-edit
+	}
+	sum := sha256File(data)
+	if sum != cfg.Wizard.LastRenderedChecksum {
+		fmt.Fprintln(os.Stderr, "setup: WARNING: Constitution.md has been hand-edited since the last setup run.")
+		fmt.Fprintln(os.Stderr, "       Your edits are included in the backup above.")
+		fmt.Fprintln(os.Stderr, "       To preserve customizations across upgrades, use one of:")
+		fmt.Fprintln(os.Stderr, "         · Constitution.local.md   (overlay; never touched by setup)")
+		fmt.Fprintln(os.Stderr, "         · ai amend draft          (structured amendment store)")
+		fmt.Fprintln(os.Stderr, "       Proceeding with re-derive from template + wizard answers.")
+	}
+}
+
+// updateRenderedChecksum stores the sha256 of the just-written rendered content
+// into settings.toml so future runs can detect hand-edits.
+func updateRenderedChecksum(rendered string) {
+	cfg, err := config.Load()
+	if err != nil {
+		return
+	}
+	cfg.Wizard.LastRenderedChecksum = sha256File([]byte(rendered))
+	_ = config.Save(cfg) // best-effort; doctor will surface if settings are broken
+}
+
+// sha256File returns the lowercase hex-encoded SHA-256 digest of data.
+func sha256File(data []byte) string {
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:])
 }
 
 // writeClaudeMD writes (or updates) ~/.claude/CLAUDE.md so that it contains

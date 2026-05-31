@@ -7,6 +7,8 @@ import (
 	"testing"
 
 	"github.com/spf13/cobra"
+
+	"github.com/convergent-systems-co/aiConstitution/src/internal/config"
 )
 
 // TestWriteClaudeMDCreatesFile verifies that writeClaudeMD writes a file
@@ -214,5 +216,74 @@ func TestRunSetupWritesConstitutionFiles(t *testing.T) {
 	}
 	if !strings.Contains(string(content), "@~/.ai/Constitution.compact.md") {
 		t.Errorf("CLAUDE.md missing @-include; got:\n%s", content)
+	}
+}
+
+// TestSetupAutoBackupCreatesArchive verifies that runSetupPostWizard writes a
+// backup archive into ConfigDir/backups/ before overwriting Constitution.md.
+func TestSetupAutoBackupCreatesArchive(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("AI_ROOT", filepath.Join(tmp, ".ai"))
+	t.Setenv("AICONST_CONFIG_DIR", filepath.Join(tmp, ".config"))
+
+	aiRoot := filepath.Join(tmp, ".ai")
+	claudeDir := filepath.Join(tmp, ".claude")
+	copilotDir := filepath.Join(tmp, ".copilot")
+
+	// Pre-create a Constitution.md to simulate re-run.
+	if err := os.MkdirAll(aiRoot, 0o750); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(aiRoot, "Constitution.md"), []byte("old content"), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	answers := map[string]string{"Q01": "Test", "Q07": "both"}
+	if err := runSetupPostWizard(aiRoot, claudeDir, copilotDir, answers, true); err != nil {
+		t.Fatalf("runSetupPostWizard: %v", err)
+	}
+
+	backupDir := filepath.Join(tmp, ".config", "backups")
+	entries, err := os.ReadDir(backupDir)
+	if err != nil {
+		t.Fatalf("backups dir missing: %v", err)
+	}
+	var found bool
+	for _, e := range entries {
+		if strings.HasPrefix(e.Name(), "pre-setup-") && strings.HasSuffix(e.Name(), ".tar.gz") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("no pre-setup-*.tar.gz backup found in backups dir")
+	}
+}
+
+// TestSetupChecksumUpdatedAfterWrite verifies that after a first setup run,
+// LastRenderedChecksum is stored in settings.toml and Answers are persisted.
+func TestSetupChecksumUpdatedAfterWrite(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("AI_ROOT", filepath.Join(tmp, ".ai"))
+	t.Setenv("AICONST_CONFIG_DIR", filepath.Join(tmp, ".config"))
+
+	aiRoot := filepath.Join(tmp, ".ai")
+	claudeDir := filepath.Join(tmp, ".claude")
+	copilotDir := filepath.Join(tmp, ".copilot")
+
+	answers := map[string]string{"Q01": "Test", "Q07": "both"}
+	if err := runSetupPostWizard(aiRoot, claudeDir, copilotDir, answers, true); err != nil {
+		t.Fatalf("runSetupPostWizard: %v", err)
+	}
+
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatalf("config.Load: %v", err)
+	}
+	if cfg.Wizard.LastRenderedChecksum == "" {
+		t.Error("LastRenderedChecksum not stored after setup run")
+	}
+	if len(cfg.Wizard.Answers) == 0 {
+		t.Error("Wizard.Answers not persisted after setup run")
 	}
 }

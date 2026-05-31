@@ -90,6 +90,17 @@ func NewModel(tax internalwizard.Taxonomy) Model {
 	}
 }
 
+// NewModelWithDefaults constructs a Model pre-populated with default answers
+// from a prior wizard run. The wizard presents these as the starting value for
+// each question so a re-run preserves the user's previous choices.
+func NewModelWithDefaults(tax internalwizard.Taxonomy, defaults map[string]string) Model {
+	m := NewModel(tax)
+	for k, v := range defaults {
+		m.answers[k] = v
+	}
+	return m
+}
+
 // Init satisfies the tea.Model interface. The wizard needs no startup command.
 func (m Model) Init() tea.Cmd {
 	return nil
