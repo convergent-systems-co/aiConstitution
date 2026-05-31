@@ -134,6 +134,8 @@ func parseViolationFile(path string) (violationFields, error) {
 		line := scanner.Text()
 		if v, ok := extractField(line, "**File / Rule violated:**"); ok {
 			out.ruleRef = v
+		} else if v, ok := extractField(line, "**Section / Rule violated:**"); ok {
+			out.ruleRef = v
 		} else if v, ok := extractField(line, "**What happened:**"); ok {
 			out.whatHappened = v
 		} else if v, ok := extractField(line, "**Proposed amendment (if any):**"); ok {
@@ -174,7 +176,7 @@ func writeAmendmentStub(fields violationFields) (string, error) {
 	}
 
 	stubPath := filepath.Join(plansDir, filename)
-	content := buildStubContent(slug, fields)
+	content := buildStubContent(slug, buildTargetBlock(fields.ruleRef), fields)
 	if err := os.WriteFile(stubPath, []byte(content), 0o644); err != nil {
 		return "", err
 	}
@@ -200,7 +202,7 @@ func deriveSlug(ruleRef string) string {
 }
 
 // buildStubContent assembles the amendment stub file body.
-func buildStubContent(slug string, fields violationFields) string {
+func buildStubContent(slug, targetBlock string, fields violationFields) string {
 	proposed := fields.proposedAmendment
 	if proposed == "" {
 		proposed = "(fill in proposed change)"
@@ -210,7 +212,7 @@ func buildStubContent(slug string, fields violationFields) string {
 		rationale = "(fill in rationale)"
 	}
 	return fmt.Sprintf("# Amendment Draft — %s\n\n## Target\n%s\n\n## Proposed Change\n%s\n\n## Rationale\n%s\n",
-		slug, fields.ruleRef, proposed, rationale)
+		slug, targetBlock, proposed, rationale)
 }
 
 // execEditor launches the user's $EDITOR with stubPath. Blocks until editor
@@ -259,14 +261,18 @@ bumps the file's minor version, and appends a Changelog entry.`,
 				return fmt.Errorf("amend apply: parse plan: %w", err)
 			}
 
-			// The canonical file to patch is always Constitution.md (per spec
-			// note: §-ref resolution to the right file is deferred; Constitution
-			// is the primary target for now).
-			constPath := filepath.Join(aiRoot(), "Constitution.md")
+			targetFile := target.File
+			if targetFile == "" {
+				targetFile = "Constitution.md"
+			}
+			if err := validateCanonicalAmendFile(targetFile); err != nil {
+				return fmt.Errorf("amend apply: %w", err)
+			}
+			constPath := filepath.Join(aiRoot(), targetFile)
 
 			constData, err := os.ReadFile(constPath)
 			if err != nil {
-				return fmt.Errorf("amend apply: read Constitution.md: %w", err)
+				return fmt.Errorf("amend apply: read %s: %w", targetFile, err)
 			}
 
 			patched, newVersion, err := patchConstitution(string(constData), target, proposedChange, filepath.Base(planPath))
@@ -275,7 +281,7 @@ bumps the file's minor version, and appends a Changelog entry.`,
 			}
 
 			if err := os.WriteFile(constPath, []byte(patched), 0o644); err != nil {
-				return fmt.Errorf("amend apply: write Constitution.md: %w", err)
+				return fmt.Errorf("amend apply: write %s: %w", targetFile, err)
 			}
 
 			fmt.Fprintf(cmd.OutOrStdout(), "Applied: bumped version to %s\n", newVersion) //nolint:errcheck
@@ -284,19 +290,27 @@ bumps the file's minor version, and appends a Changelog entry.`,
 	}
 }
 
+type planTarget struct {
+	Raw     string
+	File    string
+	Section string
+	Rule    string
+}
+
 // parsePlanStub extracts the ## Target and ## Proposed Change sections from a
 // plan stub file.
-func parsePlanStub(content string) (target, proposedChange string, err error) {
+func parsePlanStub(content string) (target planTarget, proposedChange string, err error) {
 	// Extract ## Target section.
-	target = extractSection(content, "## Target")
-	if target == "" {
-		return "", "", fmt.Errorf("plan stub missing '## Target' section")
+	targetBlock := extractSection(content, "## Target")
+	if targetBlock == "" {
+		return planTarget{}, "", fmt.Errorf("plan stub missing '## Target' section")
 	}
+	target = parsePlanTarget(targetBlock)
 
 	// Extract ## Proposed Change section.
 	proposedChange = extractSection(content, "## Proposed Change")
 	if proposedChange == "" {
-		return "", "", fmt.Errorf("plan stub missing '## Proposed Change' section")
+		return planTarget{}, "", fmt.Errorf("plan stub missing '## Proposed Change' section")
 	}
 
 	return target, proposedChange, nil
@@ -326,10 +340,11 @@ func extractSection(content, header string) string {
 	return strings.TrimSpace(buf.String())
 }
 
-// patchConstitution locates the section identified by target in constitutionText,
-// replaces its body with proposedChange, bumps the minor version, appends a
-// Changelog entry, and returns the patched text plus the new version string.
-func patchConstitution(constitutionText, target, proposedChange, planFilename string) (patched, newVersion string, err error) {
+// patchConstitution locates the target block in constitutionText, appends the
+// proposed change at the smallest safe granularity, bumps the minor version,
+// appends a Changelog entry, and returns the patched text plus the new version
+// string.
+func patchConstitution(constitutionText string, target planTarget, proposedChange, planFilename string) (patched, newVersion string, err error) {
 	// 1. Bump version.
 	currentVersion, err := extractVersion(constitutionText)
 	if err != nil {
@@ -344,8 +359,8 @@ func patchConstitution(constitutionText, target, proposedChange, planFilename st
 		fmt.Sprintf("**Version:** %s", newVersion),
 		1)
 
-	// 2. Find and replace the section body.
-	patched, err = replaceSectionBody(patched, target, proposedChange)
+	// 2. Find the safest insertion point and append the proposed change.
+	patched, err = appendTargetedChange(patched, target, proposedChange)
 	if err != nil {
 		return "", "", err
 	}
@@ -390,56 +405,17 @@ func bumpMinor(version string) (string, error) {
 // replaceSectionBody finds the section whose heading matches target (case-insensitive
 // normalized) and replaces its body (lines between this heading and next ##)
 // with proposedChange.
-func replaceSectionBody(content, target, proposedChange string) (string, error) {
-	lines := strings.Split(content, "\n")
-	var result []string
-	var inTarget bool
-	var replaced bool
-
-	normalTarget := strings.ToLower(strings.TrimSpace(target))
-
-	for i := 0; i < len(lines); i++ {
-		line := lines[i]
-
-		// Detect a ## heading line.
-		if strings.HasPrefix(line, "## ") {
-			headingText := strings.TrimPrefix(line, "## ")
-			normalHeading := strings.ToLower(strings.TrimSpace(headingText))
-
-			if normalHeading == normalTarget {
-				// Enter target section.
-				inTarget = true
-				result = append(result, line)
-				// Skip original body lines until next ## or EOF.
-				for i+1 < len(lines) {
-					next := lines[i+1]
-					if strings.HasPrefix(next, "## ") {
-						break
-					}
-					i++
-				}
-				// Insert proposed change.
-				result = append(result, "")
-				result = append(result, proposedChange)
-				result = append(result, "")
-				replaced = true
-				inTarget = false
-				continue
-			}
-
-			inTarget = false
-		}
-
-		if !inTarget {
-			result = append(result, line)
-		}
+func appendTargetedChange(content string, target planTarget, proposedChange string) (string, error) {
+	resolved, err := resolvePlanTarget(content, target)
+	if err != nil {
+		return "", err
 	}
 
-	if !replaced {
-		return "", fmt.Errorf("section %q not found in Constitution.md", target)
+	insertAt, err := findInsertOffset(content, resolved)
+	if err != nil {
+		return "", err
 	}
-
-	return strings.Join(result, "\n"), nil
+	return spliceInsertedText(content, insertAt, proposedChange), nil
 }
 
 // appendChangelogEntry appends entry as a new bullet under the "## Changelog"
@@ -704,4 +680,370 @@ func resolvePlanPath(slugOrPath string) (string, error) {
 		return slugOrPath, nil
 	}
 	return findPlanBySlug(slugOrPath)
+}
+
+var canonicalAmendFiles = map[string]struct{}{
+	"Constitution.md": {},
+	"Common.md":       {},
+	"Code.md":         {},
+	"Writing.md":      {},
+}
+
+func validateCanonicalAmendFile(name string) error {
+	base := filepath.Base(strings.TrimSpace(name))
+	if base != strings.TrimSpace(name) {
+		return fmt.Errorf("target file %q is not a canonical governance file", name)
+	}
+	if _, ok := canonicalAmendFiles[base]; !ok {
+		return fmt.Errorf("target file %q is not a supported canonical governance file", name)
+	}
+	return nil
+}
+
+type resolvedTarget struct {
+	File       string
+	Section    string
+	RuleID     string
+	RuleLine   string
+	SourceText string
+}
+
+type documentRule struct {
+	Major   string
+	Section string
+	RuleID  string
+	RuleLine string
+}
+
+type documentHeading struct {
+	Body string
+}
+
+var (
+	headingLineRe     = regexp.MustCompile(`^(#+)\s+(.*)$`)
+	ruleStartRe       = regexp.MustCompile(`^\s*(?:[-*]\s+)?\*\*([A-Z]\d+|\d+(?:\.\d+)+)\.`)
+	filePrefixRe      = regexp.MustCompile(`^([A-Za-z0-9_.-]+\.md)\s+(.+)$`)
+	explicitRuleIDRe  = regexp.MustCompile(`(?:^|[^A-Za-z0-9])([A-Z]\d+|\d+(?:\.\d+)+)(?:[^A-Za-z0-9]|$)`)
+	compactOrdinalRe  = regexp.MustCompile(`^§?(\d+)\.(\d+)$`)
+)
+
+func buildTargetBlock(ruleRef string) string {
+	resolved, ok := resolveRuleReference(ruleRef, aiRoot())
+	if !ok {
+		return strings.TrimSpace(ruleRef)
+	}
+
+	lines := []string{"File: " + resolved.File}
+	if resolved.Section != "" {
+		lines = append(lines, "Section: "+resolved.Section)
+	}
+	if resolved.RuleID != "" {
+		lines = append(lines, "Rule: "+resolved.RuleID)
+	}
+	return strings.Join(lines, "\n")
+}
+
+func parsePlanTarget(block string) planTarget {
+	target := planTarget{Raw: strings.TrimSpace(block)}
+	for _, line := range strings.Split(block, "\n") {
+		line = strings.TrimSpace(line)
+		switch {
+		case strings.HasPrefix(line, "File: "):
+			target.File = strings.TrimSpace(strings.TrimPrefix(line, "File: "))
+		case strings.HasPrefix(line, "Section: "):
+			target.Section = strings.TrimSpace(strings.TrimPrefix(line, "Section: "))
+		case strings.HasPrefix(line, "Rule: "):
+			target.Rule = strings.TrimSpace(strings.TrimPrefix(line, "Rule: "))
+		}
+	}
+	return target
+}
+
+func resolvePlanTarget(content string, target planTarget) (resolvedTarget, error) {
+	file := target.File
+	if file == "" {
+		file = "Constitution.md"
+	}
+
+	if target.Section != "" || target.Rule != "" {
+		rt := resolvedTarget{
+			File:       file,
+			Section:    strings.TrimSpace(target.Section),
+			RuleID:     strings.TrimSpace(target.Rule),
+			SourceText: strings.TrimSpace(target.Raw),
+		}
+		if rt.Section == "" && rt.RuleID == "" {
+			rt.SourceText = strings.TrimSpace(target.Raw)
+		}
+		if rt.RuleID != "" {
+			rules := scanDocumentRules(content)
+			for _, rule := range rules {
+				if strings.EqualFold(rule.RuleID, rt.RuleID) {
+					rt.Section = rule.Section
+					rt.RuleLine = rule.RuleLine
+					break
+				}
+			}
+			if rt.RuleLine == "" {
+				return resolvedTarget{}, fmt.Errorf("rule %q not found in %s", rt.RuleID, file)
+			}
+		}
+		if rt.Section != "" {
+			if !documentHasSection(content, rt.Section) {
+				return resolvedTarget{}, fmt.Errorf("section %q not found in %s", rt.Section, file)
+			}
+		}
+		if rt.Section == "" && rt.RuleLine == "" {
+			return resolvedTarget{}, fmt.Errorf("target %q could not be resolved in %s", target.Raw, file)
+		}
+		return rt, nil
+	}
+
+	resolved, ok := resolveRuleReferenceContent(file, strings.TrimSpace(target.Raw), content)
+	if !ok {
+		return resolvedTarget{}, fmt.Errorf("target %q not found in %s", target.Raw, file)
+	}
+	return resolved, nil
+}
+
+func resolveRuleReference(ruleRef, root string) (resolvedTarget, bool) {
+	file, token := splitRuleReference(ruleRef)
+	if err := validateCanonicalAmendFile(file); err != nil {
+		return resolvedTarget{}, false
+	}
+	data, err := os.ReadFile(filepath.Join(root, file))
+	if err != nil {
+		return resolvedTarget{}, false
+	}
+	return resolveRuleReferenceContent(file, token, string(data))
+}
+
+func resolveRuleReferenceContent(file, ruleRef, content string) (resolvedTarget, bool) {
+	token := trimRuleReference(ruleRef)
+	if token == "" {
+		return resolvedTarget{}, false
+	}
+
+	headings := scanDocumentHeadings(content)
+	for _, heading := range headings {
+		if headingMatches(heading.Body, token) {
+			return resolvedTarget{File: file, Section: heading.Body, SourceText: ruleRef}, true
+		}
+	}
+
+	rules := scanDocumentRules(content)
+	if ruleID, ok := extractExplicitRuleID(token); ok {
+		for _, rule := range rules {
+			if strings.EqualFold(rule.RuleID, ruleID) {
+				return resolvedTarget{
+					File:       file,
+					Section:    rule.Section,
+					RuleID:     rule.RuleID,
+					RuleLine:   rule.RuleLine,
+					SourceText: ruleRef,
+				}, true
+			}
+		}
+	}
+
+	if m := compactOrdinalRe.FindStringSubmatch(strings.TrimPrefix(token, file+" ")); m != nil {
+		major := m[1]
+		ordinal, err := strconv.Atoi(m[2])
+		if err == nil && ordinal > 0 {
+			count := 0
+			for _, rule := range rules {
+				if rule.Major != major {
+					continue
+				}
+				count++
+				if count == ordinal {
+					return resolvedTarget{
+						File:       file,
+						Section:    rule.Section,
+						RuleID:     rule.RuleID,
+						RuleLine:   rule.RuleLine,
+						SourceText: ruleRef,
+					}, true
+				}
+			}
+		}
+	}
+
+	return resolvedTarget{}, false
+}
+
+func splitRuleReference(ruleRef string) (file, token string) {
+	ref := strings.TrimSpace(ruleRef)
+	if ref == "" {
+		return "Constitution.md", ""
+	}
+	if slash := strings.Index(ref, "/"); slash > 0 && strings.HasSuffix(ref[:slash], ".md") {
+		return strings.TrimSpace(ref[:slash]), strings.TrimSpace(ref[slash+1:])
+	}
+	if m := filePrefixRe.FindStringSubmatch(ref); m != nil {
+		return m[1], strings.TrimSpace(m[2])
+	}
+	return "Constitution.md", ref
+}
+
+func trimRuleReference(ruleRef string) string {
+	s := strings.TrimSpace(ruleRef)
+	for _, sep := range []string{" — ", " – ", " - "} {
+		if idx := strings.Index(s, sep); idx >= 0 {
+			return strings.TrimSpace(s[:idx])
+		}
+	}
+	return s
+}
+
+func scanDocumentHeadings(content string) []documentHeading {
+	lines := strings.Split(content, "\n")
+	headings := make([]documentHeading, 0, len(lines))
+	for _, line := range lines {
+		if m := headingLineRe.FindStringSubmatch(line); m != nil {
+			headings = append(headings, documentHeading{Body: strings.TrimSpace(m[2])})
+		}
+	}
+	return headings
+}
+
+func scanDocumentRules(content string) []documentRule {
+	lines := strings.Split(content, "\n")
+	rules := make([]documentRule, 0)
+	currentSection := ""
+	currentMajor := ""
+	for _, line := range lines {
+		if m := headingLineRe.FindStringSubmatch(line); m != nil {
+			currentSection = strings.TrimSpace(m[2])
+			if major := extractHeadingMajor(currentSection); major != "" {
+				currentMajor = major
+			}
+			continue
+		}
+		if m := ruleStartRe.FindStringSubmatch(line); m != nil {
+			rules = append(rules, documentRule{
+				Major:    currentMajor,
+				Section:  currentSection,
+				RuleID:   strings.TrimSpace(m[1]),
+				RuleLine: strings.TrimSpace(line),
+			})
+		}
+	}
+	return rules
+}
+
+func extractHeadingMajor(body string) string {
+	body = strings.TrimSpace(body)
+	if body == "" || !strings.HasPrefix(body, "§") {
+		return ""
+	}
+	body = strings.TrimPrefix(body, "§")
+	major := body
+	if idx := strings.IndexAny(major, " ."); idx >= 0 {
+		major = major[:idx]
+	}
+	if dot := strings.IndexByte(major, '.'); dot >= 0 {
+		major = major[:dot]
+	}
+	return strings.TrimSpace(major)
+}
+
+func extractExplicitRuleID(token string) (string, bool) {
+	m := explicitRuleIDRe.FindStringSubmatch(token)
+	if m == nil {
+		return "", false
+	}
+	return strings.TrimSpace(m[1]), true
+}
+
+func headingMatches(body, token string) bool {
+	normalizedBody := normalizeTargetText(body)
+	normalizedToken := normalizeTargetText(token)
+	return normalizedBody == normalizedToken || strings.HasPrefix(normalizedBody, normalizedToken+" ")
+}
+
+func normalizeTargetText(s string) string {
+	s = strings.TrimSpace(strings.TrimPrefix(s, "#"))
+	return strings.Join(strings.Fields(strings.ToLower(s)), " ")
+}
+
+func documentHasSection(content, want string) bool {
+	for _, heading := range scanDocumentHeadings(content) {
+		if headingMatches(heading.Body, want) {
+			return true
+		}
+	}
+	return false
+}
+
+func findInsertOffset(content string, target resolvedTarget) (int, error) {
+	lines := strings.Split(content, "\n")
+	offsets := make([]int, len(lines)+1)
+	acc := 0
+	for i, line := range lines {
+		offsets[i] = acc
+		acc += len(line) + 1
+	}
+	offsets[len(lines)] = acc
+
+	sectionLine := -1
+	sectionDepth := 0
+	for i, line := range lines {
+		m := headingLineRe.FindStringSubmatch(line)
+		if m == nil {
+			continue
+		}
+		if headingMatches(strings.TrimSpace(m[2]), target.Section) {
+			sectionLine = i
+			sectionDepth = len(m[1])
+			break
+		}
+	}
+	if sectionLine < 0 {
+		return 0, fmt.Errorf("section %q not found in %s", target.Section, target.File)
+	}
+
+	sectionEndLine := len(lines)
+	for i := sectionLine + 1; i < len(lines); i++ {
+		m := headingLineRe.FindStringSubmatch(lines[i])
+		if m != nil && len(m[1]) <= sectionDepth {
+			sectionEndLine = i
+			break
+		}
+	}
+
+	if target.RuleID == "" {
+		return offsets[sectionEndLine], nil
+	}
+
+	ruleLine := -1
+	for i := sectionLine + 1; i < sectionEndLine; i++ {
+		m := ruleStartRe.FindStringSubmatch(lines[i])
+		if m != nil && strings.EqualFold(strings.TrimSpace(m[1]), target.RuleID) {
+			ruleLine = i
+			break
+		}
+	}
+	if ruleLine < 0 {
+		return 0, fmt.Errorf("rule %q not found in %s", target.RuleID, target.File)
+	}
+
+	ruleEndLine := sectionEndLine
+	for i := ruleLine + 1; i < sectionEndLine; i++ {
+		if headingLineRe.MatchString(lines[i]) || ruleStartRe.MatchString(lines[i]) {
+			ruleEndLine = i
+			break
+		}
+	}
+	return offsets[ruleEndLine], nil
+}
+
+func spliceInsertedText(content string, insertAt int, proposedChange string) string {
+	before := strings.TrimRight(content[:insertAt], "\n")
+	after := strings.TrimLeft(content[insertAt:], "\n")
+	insert := strings.TrimSpace(proposedChange)
+	if after == "" {
+		return before + "\n\n" + insert + "\n"
+	}
+	return before + "\n\n" + insert + "\n\n" + after
 }
