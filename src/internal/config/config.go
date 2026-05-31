@@ -148,7 +148,8 @@ type WizardSettings struct {
 // SyncSettings carries the [sync] section — whether settings.toml
 // itself is included in `ai sync push`.
 type SyncSettings struct {
-	IncludeSettingsFile bool `toml:"includeSettingsFile"`
+	IncludeSettingsFile bool   `toml:"includeSettingsFile"`
+	Remote              string `toml:"remote"`
 }
 
 // PathsSettings carries the [paths] section — overrides for the

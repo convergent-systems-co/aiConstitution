@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/convergent-systems-co/aiConstitution/src/internal/config"
 	"github.com/convergent-systems-co/aiConstitution/src/internal/paths"
 
 	"github.com/spf13/cobra"
@@ -74,12 +75,16 @@ func runGitTo(stdout, stderr io.Writer, dir string, args ...string) error {
 	return nil
 }
 
-// syncRemote returns the configured sync remote. Reads AI_SYNC_REMOTE
-// first; falls back to "origin". The settings.toml [sync].remote key
-// will subsume this in a later release (per SPEC.md §12).
+// syncRemote returns the configured sync remote. Priority:
+//  1. AI_SYNC_REMOTE env var
+//  2. settings.toml [sync].remote
+//  3. "origin" (git default)
 func syncRemote() string {
 	if env := os.Getenv("AI_SYNC_REMOTE"); env != "" {
 		return env
+	}
+	if cfg, err := config.Load(); err == nil && cfg.Sync.Remote != "" {
+		return cfg.Sync.Remote
 	}
 	return "origin"
 }
