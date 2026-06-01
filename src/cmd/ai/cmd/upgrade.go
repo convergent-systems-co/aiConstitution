@@ -36,6 +36,11 @@ var runUpgradeExternal = func(name string, args ...string) error {
 	return c.Run()
 }
 
+// osExecutable is the indirection point used by detectSelfUpgradeCommand so
+// tests can drive the heuristic with a constructed path without spawning a
+// child process.
+var osExecutable = os.Executable
+
 func newUpgradeCmd() *cobra.Command {
 	var opts upgradeOptions
 	c := &cobra.Command{
@@ -155,7 +160,7 @@ func detectSelfUpgradeCommand() upgradeCommand {
 		}
 	}
 
-	exe, _ := os.Executable()
+	exe, _ := osExecutable()
 	exe = filepath.ToSlash(exe)
 	if runtime.GOOS == "darwin" && strings.Contains(exe, "/Cellar/ai/") {
 		if _, err := exec.LookPath("brew"); err == nil {
