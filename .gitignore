@@ -338,6 +338,9 @@ scripts/.issue-map.json
 # AI checkpoint file generated at context boundaries — transient, not project state.
 HANDOFF.md
 
+# Memcore session claims are local Kafka-agent coordination state.
+memcore-sessions/
+
 # Git worktrees (local-only, never tracked)
 .worktrees/
 

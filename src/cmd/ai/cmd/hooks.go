@@ -94,13 +94,14 @@ Previously, install wrote a non-portable absolute path:
 			copilotLink := filepath.Join(home, ".copilot", "instructions", "constitution.md")
 			_, copilotLinked := os.Lstat(copilotLink)
 			copilotWired := copilotLinked == nil
+			codexWired := fileContains(filepath.Join(".", "AGENTS.md"), agentsIncludeMarker)
 
 			out := cmd.OutOrStdout()
 			const hookW = 32
-			fmt.Fprintf(out, "  %-*s  %-9s  %-9s  %s\n", hookW, "HOOK", "INSTALLED", "CLAUDE", "COPILOT")
-			fmt.Fprintf(out, "  %-*s  %-9s  %-9s  %s\n",
+			fmt.Fprintf(out, "  %-*s  %-9s  %-9s  %-9s  %s\n", hookW, "HOOK", "INSTALLED", "CLAUDE", "COPILOT", "CODEX")
+			fmt.Fprintf(out, "  %-*s  %-9s  %-9s  %-9s  %s\n",
 				hookW, strings.Repeat("─", hookW),
-				strings.Repeat("─", 9), strings.Repeat("─", 9), strings.Repeat("─", 7))
+				strings.Repeat("─", 9), strings.Repeat("─", 9), strings.Repeat("─", 9), strings.Repeat("─", 5))
 
 			count := 0
 			for _, e := range entries {
@@ -118,8 +119,12 @@ Previously, install wrote a non-portable absolute path:
 				if copilotWired {
 					copilotStatus = "wired"
 				}
-				fmt.Fprintf(out, "  %-*s  %-9s  %-9s  %s\n",
-					hookW, e.Name(), "✓", claudeStatus, copilotStatus)
+				codexStatus := "-"
+				if codexWired {
+					codexStatus = "agents"
+				}
+				fmt.Fprintf(out, "  %-*s  %-9s  %-9s  %-9s  %s\n",
+					hookW, e.Name(), "✓", claudeStatus, copilotStatus, codexStatus)
 				count++
 			}
 			if count == 0 {
@@ -218,6 +223,7 @@ Prints [✓] or [✗] per hook. Exit 1 if any [✗].`,
 	var installClaude bool
 	var installClaudeRoot string
 	var installCopilot bool
+	var installCodex bool
 	install := &cobra.Command{
 		Use:   "install [<name>]",
 		Short: "Install hooks from ai-atoms.com catalog into ~/.ai/ (idempotent)",
@@ -236,6 +242,8 @@ them to ~/.ai/hooks/, alongside infrastructure files from the binary.
                                           the current repo
   ai hooks install --copilot              symlink Constitution.runtime.md
                                           into ~/.copilot/instructions/
+  ai hooks install --codex                refresh AGENTS.md with
+                                          aiConstitution hook guidance
 
   --force                overwrite existing files
   --repo=<path>          (with no positional) install a pre-commit
@@ -244,6 +252,7 @@ them to ~/.ai/hooks/, alongside infrastructure files from the binary.
   --claude               wire ~/.ai/hooks/*.py into .claude/settings.json
   --claude-root=<path>   directory containing .claude/ (default ".")
   --copilot              symlink Constitution.runtime.md into ~/.copilot/instructions/
+  --codex                update AGENTS.md in the current repo with hook guidance
 
 Per SPEC.md §3.10 + §10.2 + §14.1.`,
 		Args: cobra.MaximumNArgs(1),
@@ -252,23 +261,38 @@ Per SPEC.md §3.10 + §10.2 + §14.1.`,
 			if len(args) == 1 {
 				target = args[0]
 			}
-			if installClaude {
-				return runHooksInstallClaude(cmd, installClaudeRoot)
-			}
-			if installCopilot {
-				home, err := os.UserHomeDir()
-				if err != nil {
-					return err
+			if installClaude || installCopilot || installCodex {
+				if installClaude {
+					if err := runHooksInstallClaude(cmd, installClaudeRoot); err != nil {
+						return err
+					}
 				}
-				aiRoot := os.Getenv("AI_ROOT")
-				if aiRoot == "" {
-					aiRoot = filepath.Join(home, ".ai")
+				if installCopilot {
+					home, err := os.UserHomeDir()
+					if err != nil {
+						return err
+					}
+					aiRoot := os.Getenv("AI_ROOT")
+					if aiRoot == "" {
+						aiRoot = filepath.Join(home, ".ai")
+					}
+					if err := runHooksCopilotInstall(aiRoot, home); err != nil {
+						return err
+					}
+					fmt.Fprintf(cmd.OutOrStdout(), "Wired Constitution.runtime.md into ~/.copilot/instructions/constitution.md\n")
 				}
-				if err := runHooksCopilotInstall(aiRoot, home); err != nil {
-					return err
+				if installCodex {
+					cwd, err := os.Getwd()
+					if err != nil {
+						return fmt.Errorf("getting cwd: %w", err)
+					}
+					if err := runIntegrateCodex(cwd); err != nil {
+						return err
+					}
 				}
-				fmt.Fprintf(cmd.OutOrStdout(), "Wired Constitution.runtime.md into ~/.copilot/instructions/constitution.md\n")
-				return nil
+				if target == "" && installRepo == "" && !installAllHooks && !installAll {
+					return nil
+				}
 			}
 			return runHooksInstall(installRepo, target, installAllHooks || installAll, installForce)
 		},
@@ -280,9 +304,15 @@ Per SPEC.md §3.10 + §10.2 + §14.1.`,
 	install.Flags().BoolVar(&installClaude, "claude", false, "wire ~/.ai/hooks/*.py into .claude/settings.json")
 	install.Flags().StringVar(&installClaudeRoot, "claude-root", ".", "directory containing .claude/ (default: current dir)")
 	install.Flags().BoolVar(&installCopilot, "copilot", false, "symlink Constitution.runtime.md into ~/.copilot/instructions/")
+	install.Flags().BoolVar(&installCodex, "codex", false, "update AGENTS.md in cwd with aiConstitution hook guidance")
 
 	c.AddCommand(propose, install)
 	return c
+}
+
+func fileContains(path, needle string) bool {
+	data, err := os.ReadFile(filepath.Clean(path))
+	return err == nil && strings.Contains(string(data), needle)
 }
 
 // runHooksAvailable implements `ai hooks available`. It lists:
@@ -553,7 +583,11 @@ func installAllHooksAndWire(hooksDir, home string, force bool) error {
 	}
 
 	// Step 2: install active hook atoms that carry a script field.
+	// installed = newly written this run; skipped = already on disk and
+	// preserved (the default idempotent path). Both are reported so a re-run
+	// over an existing install does not look like a no-op.
 	installed := 0
+	skipped := 0
 	for _, a := range atoms {
 		lc := strings.ToLower(a.Lifecycle)
 		if a.Type != "hook" || a.Script == "" || lc == "deprecated" || lc == "retired" {
@@ -569,7 +603,8 @@ func installAllHooksAndWire(hooksDir, home string, force bool) error {
 		dest := filepath.Join(hooksDir, filename+ext)
 		if !force {
 			if _, statErr := os.Stat(dest); statErr == nil {
-				continue // skip if already installed
+				skipped++
+				continue
 			}
 		}
 		// 0755 is intentional: hooks must be executable.
@@ -585,8 +620,13 @@ func installAllHooksAndWire(hooksDir, home string, force bool) error {
 		fmt.Printf("Warning: could not extract infrastructure files: %v\n", infraErr)
 	}
 
-	fmt.Printf("Installed %d hook(s) from ai-atoms.com + %d infrastructure file(s) from binary\n",
-		installed, len(written))
+	if installed == 0 && len(written) == 0 && skipped > 0 {
+		fmt.Printf("All %d hook(s) from ai-atoms.com already present in %s; nothing to do (pass --force to overwrite).\n",
+			skipped, hooksDir)
+	} else {
+		fmt.Printf("Installed %d new hook(s), %d already present, from ai-atoms.com + %d infrastructure file(s) from binary\n",
+			installed, skipped, len(written))
+	}
 
 	// Step 4: wire hooks into ~/.claude/settings.json.
 	// CLAUDE_CONFIG_DIR overrides the default ~/.claude location for testing.
@@ -665,7 +705,8 @@ func canonicalWiring(_ string) []eventHookSpec {
 	// a Claude Code event hook.
 	return []eventHookSpec{
 		{event: "SessionStart", hooks: h("audit-logger.py")},
-		{event: "UserPromptSubmit", hooks: h("audit-logger.py")},
+		// memcore-claim.py is opt-in (AI_MEMCORE_ENABLED=1) — no-ops silently when unset.
+		{event: "UserPromptSubmit", hooks: h("audit-logger.py", "memcore-claim.py")},
 		// PreToolUse: all-tools group (governance + secret + worktree + redaction + no-verify)
 		{event: "PreToolUse", matcher: "", hooks: h(
 			"audit-logger.py",
@@ -682,7 +723,8 @@ func canonicalWiring(_ string) []eventHookSpec {
 			"destructive-terraform-guard.py",
 		)},
 		{event: "PostToolUse", hooks: h("audit-logger.py")},
-		{event: "Stop", hooks: h("audit-logger.py", "checkpoint-tick.py")},
+		// memcore-session-flush.py is opt-in (AI_MEMCORE_ENABLED=1) — no-ops silently when unset.
+		{event: "Stop", hooks: h("audit-logger.py", "checkpoint-tick.py", "memcore-session-flush.py")},
 		{event: "SessionEnd", hooks: h("audit-logger.py")},
 		{event: "SubagentStop", hooks: h("audit-logger.py")},
 		{event: "PreCompact", hooks: h("audit-logger.py")},

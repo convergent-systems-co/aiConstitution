@@ -127,6 +127,11 @@ func TestIntegrateCodex_WritesAgentsMD(t *testing.T) {
 	if !strings.Contains(string(content), "@~/.ai/Constitution.compact.md") {
 		t.Errorf("AGENTS.md content = %q, want @~/.ai/Constitution.compact.md", string(content))
 	}
+	for _, want := range []string{"skill-atoms.com", "ai-atoms.com", "plugin-atoms.com", "~/.codex/skills/"} {
+		if !strings.Contains(string(content), want) {
+			t.Errorf("AGENTS.md content missing %q:\n%s", want, string(content))
+		}
+	}
 }
 
 // TestIntegrateCodex_Idempotent verifies that running twice does NOT

@@ -294,6 +294,7 @@ func TestDoctorSkillsCheck_WithSkills(t *testing.T) {
 	// unlinked-skills check does not produce a WARN in this count-focused test.
 	claudeDir := t.TempDir()
 	t.Setenv("CLAUDE_SKILLS_DIR", claudeDir)
+	t.Setenv("CODEX_SKILLS_DIR", "")
 	for _, slug := range slugs {
 		skillDir := filepath.Join(root, "skills", slug)
 		if err := os.Symlink(skillDir, filepath.Join(claudeDir, slug)); err != nil {
@@ -337,6 +338,7 @@ func TestDoctorDetectsUnlinkedSkills(t *testing.T) {
 	// Create a Claude skills dir that has NO symlinks yet.
 	claudeDir := t.TempDir()
 	t.Setenv("CLAUDE_SKILLS_DIR", claudeDir)
+	t.Setenv("CODEX_SKILLS_DIR", "")
 
 	var out bytes.Buffer
 	if err := checkInstalledSkills(&out); err != nil {
@@ -364,6 +366,7 @@ func TestDoctorLinkedSkills_NoWarn(t *testing.T) {
 	slugs := []string{"alpha", "beta"}
 	claudeDir := t.TempDir()
 	t.Setenv("CLAUDE_SKILLS_DIR", claudeDir)
+	t.Setenv("CODEX_SKILLS_DIR", "")
 
 	// Create skill dirs and corresponding symlinks in the Claude dir.
 	for _, slug := range slugs {

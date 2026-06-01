@@ -8,9 +8,7 @@ version: 2
 
 before:
   hooks:
-    - go work sync
-    - go mod tidy -C ./src/cmd/ai
-    - go mod tidy -C ./src/internal
+    - go mod tidy
 
 builds:
   - id: ai

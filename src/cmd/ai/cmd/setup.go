@@ -18,9 +18,9 @@ import (
 	"github.com/convergent-systems-co/aiConstitution/src/cmd/ai/embed"
 	tui "github.com/convergent-systems-co/aiConstitution/src/cmd/ai/internal/wizard"
 	"github.com/convergent-systems-co/aiConstitution/src/internal/config"
-	internalwizard "github.com/convergent-systems-co/aiConstitution/src/internal/wizard"
 	"github.com/convergent-systems-co/aiConstitution/src/internal/constitution"
 	"github.com/convergent-systems-co/aiConstitution/src/internal/paths"
+	internalwizard "github.com/convergent-systems-co/aiConstitution/src/internal/wizard"
 )
 
 // newSetupCmd implements `ai setup [--tui] [--non-interactive] [--profile=…]`.
@@ -470,10 +470,10 @@ func writeClaudeMD(claudeDir, _ string) error {
 
 	// Stale includes from earlier layouts that cause silent context failures.
 	staleIncludes := map[string]bool{
-		"@~/.ai/Constitution.md":  true, // superseded by compact form
-		"@~/.ai/Common.md":        true,
-		"@~/.ai/Code.md":          true,
-		"@~/.ai/Writing.md":       true,
+		"@~/.ai/Constitution.md": true, // superseded by compact form
+		"@~/.ai/Common.md":       true,
+		"@~/.ai/Code.md":         true,
+		"@~/.ai/Writing.md":      true,
 	}
 
 	existing := ""
@@ -602,6 +602,7 @@ func runSetupNonInteractive(_ string) error {
 //   - copilot-cli → ~/.copilot/instructions/constitution.md symlink (global)
 //   - cursor      → per-project: prints a reminder to run `ai init-integrate --cursor` in each repo
 //   - codex       → per-project: prints a reminder to run `ai init-integrate --codex` in each repo
+//     and use `ai skills link` for ~/.codex/skills/
 //
 // If Q36 is absent (non-interactive / seeds that omit it), Claude Code is wired
 // as the safe default so setup never produces an unwired installation.
@@ -643,6 +644,7 @@ func wireClients(answers map[string]string, claudeDir, copilotDir, aiRoot string
 	if tools["codex"] {
 		fmt.Println("setup: [i] Codex/AGENTS.md is per-repo — run in each project:")
 		fmt.Println("         ai init-integrate --codex")
+		fmt.Println("         ai skills link")
 	}
 
 	if !tools["claude-code"] && !tools["copilot-cli"] && !tools["cursor"] && !tools["codex"] {
@@ -657,12 +659,13 @@ func wireClients(answers map[string]string, claudeDir, copilotDir, aiRoot string
 // Requires the `claude` CLI on PATH. Non-fatal: prints warnings on failure.
 //
 // Plugin mapping (Q36c values → marketplace slugs):
-//   superpowers       → superpowers@claude-plugins-official
-//   amendment-author  → amendment-author@claude-plugins-official
-//   hook-author       → hook-author@claude-plugins-official
-//   atom-publisher    → atom-publisher@claude-plugins-official
-//   review-panel      → review-panel@claude-plugins-official
-//   memory-curator    → memory-curator@claude-plugins-official
+//
+//	superpowers       → superpowers@claude-plugins-official
+//	amendment-author  → amendment-author@claude-plugins-official
+//	hook-author       → hook-author@claude-plugins-official
+//	atom-publisher    → atom-publisher@claude-plugins-official
+//	review-panel      → review-panel@claude-plugins-official
+//	memory-curator    → memory-curator@claude-plugins-official
 //
 // When Q36b is "pick" and Q36c lists specific plugins, only those are installed.
 // When Q36b is absent/skipped and we're on Claude Code, install security-guidance
@@ -683,7 +686,7 @@ func installClaudePlugins(answers map[string]string) {
 			return true
 		}
 		add := exec.Command(claudePath, "plugin", "marketplace", "add", "anthropics/"+marketplace) //nolint:gosec
-		add.Stdout = os.Stderr // progress to stderr
+		add.Stdout = os.Stderr                                                                     // progress to stderr
 		add.Stderr = os.Stderr
 		if err := add.Run(); err != nil {
 			fmt.Fprintf(os.Stderr, "setup: warning: could not add Claude plugin marketplace: %v\n", err)

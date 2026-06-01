@@ -127,9 +127,11 @@ kubectl = "disabled"     # opt-in
 [atoms]
 
 # Where to resolve atoms. Override for private mirrors that serve the same API.
+aiRegistry       = "https://ai-atoms.com"        # hooks and shared AI workflow atoms
 personaRegistry  = "https://persona-atoms.com"   # both /agentic/ and /reviewer/ resolve under this
 profileRegistry  = "https://profile-atoms.com"
 skillRegistry    = "https://skill-atoms.com"     # NEW v0.6
+pluginRegistry   = "https://plugin-atoms.com"
 brandRegistry    = "https://brand-atoms.com"
 actionRegistry   = "https://action-atoms.com"    # NEW v0.10 — atomic CI actions (composite/JS/Docker)
 workflowRegistry = "https://workflow-atoms.com"  # v0.9; refocused v0.10 — reusable workflows only

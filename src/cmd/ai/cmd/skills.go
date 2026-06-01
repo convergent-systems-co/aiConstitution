@@ -552,6 +552,44 @@ func copilotSkillsTargetDir() string {
 	return filepath.Join(home, ".copilot", "skills")
 }
 
+// codexSkillsDir returns the canonical ~/.codex/skills/ path.
+// Override priority: $CODEX_SKILLS_DIR env var, then $HOME/.codex/skills/.
+// Returns "" when the directory is absent so install/upgrade skip Codex wiring
+// on machines that have not opted into Codex skills.
+func codexSkillsDir() string {
+	if env, ok := os.LookupEnv("CODEX_SKILLS_DIR"); ok {
+		if env == "" {
+			return ""
+		}
+		if _, err := os.Stat(env); err == nil {
+			return env
+		}
+		return ""
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	dir := filepath.Join(home, ".codex", "skills")
+	if _, err := os.Stat(dir); os.IsNotExist(err) {
+		return ""
+	}
+	return dir
+}
+
+// codexSkillsTargetDir returns the intended ~/.codex/skills path (or the
+// $CODEX_SKILLS_DIR override) without requiring it to already exist.
+func codexSkillsTargetDir() string {
+	if env, ok := os.LookupEnv("CODEX_SKILLS_DIR"); ok {
+		return env
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(home, ".codex", "skills")
+}
+
 // writeSkillMD writes a SKILL.md file for the given atom at destPath,
 // creating parent directories as needed.
 func writeSkillMD(destPath string, atom *skillAtom) error {
@@ -749,6 +787,14 @@ func runSkillsInstall(cmd *cobra.Command, slug string) error {
 		}
 	}
 
+	// Optional: symlink ~/.codex/skills/<slug> → ~/.ai/skills/<slug>
+	if codexDir := codexSkillsDir(); codexDir != "" {
+		linkPath := filepath.Join(codexDir, slug)
+		if symlinkErr := ensureSymlink(destDir, linkPath); symlinkErr != nil {
+			fmt.Fprintf(cmd.ErrOrStderr(), "warning: could not create Codex symlink: %v\n", symlinkErr)
+		}
+	}
+
 	fmt.Fprintf(cmd.OutOrStdout(), "Installed %s v%s\n", slug, atom.Version)
 
 	// If the skill declares dependencies, offer to install them.
@@ -817,6 +863,14 @@ func runSkillsUninstall(cmd *cobra.Command, name string) error {
 		}
 	}
 
+	// Remove symlink from ~/.codex/skills/ if it exists.
+	if codexDir := codexSkillsDir(); codexDir != "" {
+		linkPath := filepath.Join(codexDir, slug)
+		if _, lstatErr := os.Lstat(linkPath); lstatErr == nil {
+			_ = os.Remove(linkPath)
+		}
+	}
+
 	fmt.Fprintf(cmd.OutOrStdout(), "Uninstalled %s\n", slug)
 	return nil
 }
@@ -879,6 +933,17 @@ func runSkillsUpgrade(cmd *cobra.Command, name string) error {
 		}
 	}
 
+	// Re-create symlink in Codex skills dir if it existed before.
+	codexDir := codexSkillsDir()
+	if codexDir != "" {
+		linkPath := filepath.Join(codexDir, slug)
+		if _, lstatErr := os.Lstat(linkPath); lstatErr == nil {
+			if symlinkErr := ensureSymlink(dir, linkPath); symlinkErr != nil {
+				fmt.Fprintf(cmd.ErrOrStderr(), "warning: could not refresh Codex symlink: %v\n", symlinkErr)
+			}
+		}
+	}
+
 	fmt.Fprintf(cmd.OutOrStdout(), "Upgraded %s from v%s to v%s\n", slug, oldVersion, atom.Version)
 	return nil
 }
@@ -909,22 +974,50 @@ func runSkillsUpgradeAll(cmd *cobra.Command) error {
 	return nil
 }
 
-// runSkillsLink creates symlinks for all installed skills in both
-// ~/.claude/skills/ and ~/.copilot/skills/. It is idempotent:
-// running it multiple times over already-linked skills produces no error.
-func runSkillsLink(cmd *cobra.Command, _ []string) error {
+type skillLinkTargets struct {
+	Claude  bool
+	Copilot bool
+	Codex   bool
+}
+
+func (t skillLinkTargets) any() bool {
+	return t.Claude || t.Copilot || t.Codex
+}
+
+func (t skillLinkTargets) withDefaultAll() skillLinkTargets {
+	if t.any() {
+		return t
+	}
+	return skillLinkTargets{Claude: true, Copilot: true, Codex: true}
+}
+
+// runSkillsLink creates symlinks for all installed skills in selected consumer
+// directories. With no target flags, it links all supported targets. It is
+// idempotent: running it multiple times over already-linked skills is safe.
+func runSkillsLink(cmd *cobra.Command, targets skillLinkTargets) error {
 	skillsDir := skillsManifestDir()
 	dirs, err := listSkillDirs(skillsDir)
 	if err != nil {
 		return fmt.Errorf("skills link: list installed: %w", err)
 	}
+	targets = targets.withDefaultAll()
 
 	// `link` is an explicit user action, so create the target dirs if they do
 	// not already exist rather than silently no-op (#479). This uses the
 	// unconditional *target* resolvers, not the existence-gated ones used by
-	// install/upgrade (which skip Copilot wiring on non-Copilot machines).
-	claudeDir := claudeSkillsDir()
-	copilotDir := copilotSkillsTargetDir()
+	// install/upgrade (which skip consumer wiring on machines without it).
+	claudeDir := ""
+	copilotDir := ""
+	codexDir := ""
+	if targets.Claude {
+		claudeDir = claudeSkillsDir()
+	}
+	if targets.Copilot {
+		copilotDir = copilotSkillsTargetDir()
+	}
+	if targets.Codex {
+		codexDir = codexSkillsTargetDir()
+	}
 	if claudeDir != "" {
 		if mkErr := os.MkdirAll(claudeDir, 0o755); mkErr != nil {
 			return fmt.Errorf("skills link: create Claude skills dir %q: %w", claudeDir, mkErr)
@@ -935,8 +1028,13 @@ func runSkillsLink(cmd *cobra.Command, _ []string) error {
 			return fmt.Errorf("skills link: create Copilot skills dir %q: %w", copilotDir, mkErr)
 		}
 	}
+	if codexDir != "" {
+		if mkErr := os.MkdirAll(codexDir, 0o755); mkErr != nil {
+			return fmt.Errorf("skills link: create Codex skills dir %q: %w", codexDir, mkErr)
+		}
+	}
 
-	var linkedClaude, linkedCopilot int
+	var linkedClaude, linkedCopilot, linkedCodex int
 	for _, skillPath := range dirs {
 		slug := filepath.Base(skillPath)
 		if err := repairLegacySkillMD(filepath.Join(skillPath, "SKILL.md")); err != nil && !os.IsNotExist(err) {
@@ -956,28 +1054,44 @@ func runSkillsLink(cmd *cobra.Command, _ []string) error {
 				linkedCopilot++
 			}
 		}
+
+		if codexDir != "" {
+			linkPath := filepath.Join(codexDir, slug)
+			if err := ensureSymlink(skillPath, linkPath); err == nil {
+				linkedCodex++
+			}
+		}
 	}
 
-	fmt.Fprintf(cmd.OutOrStdout(), "Linked %d skill(s) to Claude, %d to Copilot\n", linkedClaude, linkedCopilot)
+	fmt.Fprintf(cmd.OutOrStdout(), "Linked %d skill(s) to Claude, %d to Copilot, %d to Codex\n",
+		linkedClaude, linkedCopilot, linkedCodex)
 	return nil
 }
 
 // newSkillsLinkCmd returns the cobra command for `ai skills link`.
 func newSkillsLinkCmd() *cobra.Command {
-	return &cobra.Command{
+	var targets skillLinkTargets
+	c := &cobra.Command{
 		Use:   "link",
-		Short: "Symlink all installed skills to ~/.claude/skills/ and ~/.copilot/skills/",
+		Short: "Symlink all installed skills to Claude, Copilot, and Codex",
 		Long: `link iterates every installed skill under ~/.ai/skills/ and creates
-symlinks in both consumer directories:
+symlinks in each supported consumer directory:
 
   ~/.claude/skills/<slug>           → ~/.ai/skills/<slug>/
   ~/.copilot/skills/<slug>          → ~/.ai/skills/<slug>/
+  ~/.codex/skills/<slug>            → ~/.ai/skills/<slug>/
 
 Consumer directories that do not exist are silently skipped.
 The command is idempotent: re-running over already-linked skills is safe.`,
 		Args: cobra.NoArgs,
-		RunE: runSkillsLink,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return runSkillsLink(cmd, targets)
+		},
 	}
+	c.Flags().BoolVar(&targets.Claude, "claude", false, "link skills into ~/.claude/skills/")
+	c.Flags().BoolVar(&targets.Copilot, "copilot", false, "link skills into ~/.copilot/skills/")
+	c.Flags().BoolVar(&targets.Codex, "codex", false, "link skills into ~/.codex/skills/")
+	return c
 }
 
 // skillsManifestDir returns the canonical ~/.ai/skills/ path.

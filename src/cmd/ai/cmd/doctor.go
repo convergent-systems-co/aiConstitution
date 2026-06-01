@@ -376,7 +376,8 @@ func checkCompactConstitution(w io.Writer, fix bool, aiRoot, home string) {
 
 // checkInstalledSkills reports whether any skills are installed under the
 // canonical ~/.ai/skills/ directory. When skills are installed but one or more
-// are missing their Claude symlink, it also warns and suggests `ai skills link`.
+// are missing a known consumer symlink, it also warns and suggests
+// `ai skills link`.
 //
 // Output format:
 //
@@ -384,7 +385,7 @@ func checkCompactConstitution(w io.Writer, fix bool, aiRoot, home string) {
 //	WARN  No skills installed
 //	      Run: ai skills available  (to see what's installable)
 //	      Run: ai skills install <name>  (to install)
-//	WARN  Skills installed but not linked to Claude — run: ai skills link
+//	WARN  Skills installed but not linked to <consumer> — run: ai skills link
 func checkInstalledSkills(w io.Writer) error {
 	installedSkills, _ := listSkillDirs(skillsManifestDir())
 	if len(installedSkills) == 0 {
@@ -396,22 +397,28 @@ func checkInstalledSkills(w io.Writer) error {
 
 	fmt.Fprintf(w, "  OK    %d skill(s) installed\n", len(installedSkills))
 
-	// Check whether any installed skill is missing its Claude symlink.
-	claudeDir := claudeSkillsDir()
-	if claudeDir == "" {
-		return nil
+	consumers := []struct {
+		name string
+		dir  string
+	}{
+		{name: "Claude", dir: claudeSkillsDir()},
+		{name: "Copilot", dir: copilotSkillsDir()},
+		{name: "Codex", dir: codexSkillsDir()},
 	}
-	if _, err := os.Stat(claudeDir); err != nil {
-		// Claude dir does not exist — nothing to check.
-		return nil
-	}
-
-	for _, skillPath := range installedSkills {
-		slug := filepath.Base(skillPath)
-		linkPath := filepath.Join(claudeDir, slug)
-		if _, err := os.Lstat(linkPath); os.IsNotExist(err) {
-			fmt.Fprintln(w, "  WARN  Skills installed but not linked to Claude — run: ai skills link")
-			return nil
+	for _, consumer := range consumers {
+		if consumer.dir == "" {
+			continue
+		}
+		if _, err := os.Stat(consumer.dir); err != nil {
+			continue
+		}
+		for _, skillPath := range installedSkills {
+			slug := filepath.Base(skillPath)
+			linkPath := filepath.Join(consumer.dir, slug)
+			if _, err := os.Lstat(linkPath); os.IsNotExist(err) {
+				fmt.Fprintf(w, "  WARN  Skills installed but not linked to %s — run: ai skills link\n", consumer.name)
+				return nil
+			}
 		}
 	}
 	return nil

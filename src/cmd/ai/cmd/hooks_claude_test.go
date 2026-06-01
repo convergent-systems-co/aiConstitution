@@ -154,9 +154,8 @@ func TestPurgeMalformed_PreservesCanonicalGroups(t *testing.T) {
 
 func TestPurgeMalformed_DropsRetiredCommands(t *testing.T) {
 	// Retired wiring (catalog renamed audit→audit-logger; audit-command is a
-	// wrapper post-hook, never a Claude event hook; checkpoint-tick is now
-	// opt-in because it writes HANDOFF.md into working trees) must be scrubbed
-	// even when it appears inside an otherwise-canonical group.
+	// wrapper post-hook, never a Claude event hook) must be scrubbed even
+	// when it appears inside an otherwise-canonical group.
 	settings := map[string]any{
 		"hooks": map[string]any{
 			"PreToolUse": []any{
@@ -171,8 +170,8 @@ func TestPurgeMalformed_DropsRetiredCommands(t *testing.T) {
 			"Stop": []any{
 				map[string]any{
 					"hooks": []any{
-						map[string]any{"type": "command", "command": "ai hooks run audit"}, // retired
-						map[string]any{"type": "command", "command": "ai hooks run checkpoint-tick"},
+						map[string]any{"type": "command", "command": "ai hooks run audit"},         // retired
+						map[string]any{"type": "command", "command": "ai hooks run audit-command"}, // retired
 					},
 				},
 			},

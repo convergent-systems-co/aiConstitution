@@ -109,6 +109,9 @@ func runSkillsCmd(t *testing.T, root string, args ...string) (stdout, stderr str
 	if _, ok := os.LookupEnv("COPILOT_SKILLS_DIR"); !ok {
 		t.Setenv("COPILOT_SKILLS_DIR", t.TempDir())
 	}
+	if _, ok := os.LookupEnv("CODEX_SKILLS_DIR"); !ok {
+		t.Setenv("CODEX_SKILLS_DIR", t.TempDir())
+	}
 
 	var outBuf, errBuf bytes.Buffer
 	c := cmd.NewRootCmd()
@@ -843,10 +846,12 @@ func TestSkillsLink_LinkedToBoth(t *testing.T) {
 
 	claudeDir := t.TempDir()
 	copilotDir := t.TempDir()
+	codexDir := t.TempDir()
 
 	t.Setenv("AI_ROOT", root)
 	t.Setenv("CLAUDE_SKILLS_DIR", claudeDir)
 	t.Setenv("COPILOT_SKILLS_DIR", copilotDir)
+	t.Setenv("CODEX_SKILLS_DIR", codexDir)
 
 	out, _, err := runSkillsCmd(t, root, "skills", "link")
 	if err != nil {
@@ -871,6 +876,14 @@ func TestSkillsLink_LinkedToBoth(t *testing.T) {
 		linkPath := filepath.Join(copilotDir, slug)
 		if _, err := os.Lstat(linkPath); err != nil {
 			t.Errorf("expected Copilot symlink %s; got err: %v", linkPath, err)
+		}
+	}
+
+	// Codex symlinks: ~/.codex/skills/alpha and beta
+	for _, slug := range []string{"alpha", "beta"} {
+		linkPath := filepath.Join(codexDir, slug)
+		if _, err := os.Lstat(linkPath); err != nil {
+			t.Errorf("expected Codex symlink %s; got err: %v", linkPath, err)
 		}
 	}
 }

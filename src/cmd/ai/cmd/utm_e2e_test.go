@@ -203,12 +203,12 @@ func repoRoot(t *testing.T) string {
 		t.Fatal(err)
 	}
 	for {
-		if _, err := os.Stat(filepath.Join(dir, "go.work")); err == nil {
+		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
 			return dir
 		}
 		parent := filepath.Dir(dir)
 		if parent == dir {
-			t.Fatal("could not find repo root (go.work)")
+			t.Fatal("could not find repo root (go.mod)")
 		}
 		dir = parent
 	}

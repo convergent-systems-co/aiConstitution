@@ -156,6 +156,11 @@
       "description": "Atoms registry configuration. Per spec §7.9 + §7.10 + §7.11.",
       "additionalProperties": true,
       "properties": {
+        "aiRegistry": {
+          "type": "string",
+          "format": "uri",
+          "description": "Where to resolve AI atoms, including hook scripts and shared workflow atoms."
+        },
         "personaRegistry": {
           "type": "string",
           "format": "uri",
@@ -170,6 +175,11 @@
           "type": "string",
           "format": "uri",
           "description": "Where to resolve skill atoms. NEW v0.6."
+        },
+        "pluginRegistry": {
+          "type": "string",
+          "format": "uri",
+          "description": "Where to resolve plugin atoms. Override for private mirrors."
         },
         "brandRegistry": {
           "type": "string",
@@ -485,6 +495,25 @@
         "configDir": {
           "type": "string",
           "description": "Override for the config directory. Empty string = use default (per os.UserConfigDir() + /aiConstitution)."
+        }
+      }
+    },
+    "memcore": {
+      "type": "object",
+      "description": "Optional integration with the next-memcore local coordination stack (MongoDB + Kafka). When enabled, the memcore-claim and memcore-session-flush hooks register sessions and flush summaries automatically. Opt-in only — all fields default to off/empty.",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Master switch. When false (default), memcore hooks exit immediately without contacting MongoDB."
+        },
+        "mongoURI": {
+          "type": "string",
+          "description": "MongoDB connection URI. Defaults to mongodb://localhost:27017 when empty."
+        },
+        "mongoDBName": {
+          "type": "string",
+          "description": "MongoDB database name. Defaults to memorycore when empty."
         }
       }
     }

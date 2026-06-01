@@ -93,7 +93,6 @@ holds your per-machine mutable state (settings, mode, cache).
 ## Build from source
 
 ```bash
-go work sync
 make build           # produces dist/ai
 ./dist/ai version
 ```
@@ -107,7 +106,7 @@ Requirements:
 ## Test / lint
 
 ```bash
-make test            # go test ./... -race across workspace modules
+make test            # go test ./... -race
 make lint            # golangci-lint
 ```
 
