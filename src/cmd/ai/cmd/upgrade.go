@@ -17,6 +17,7 @@ import (
 type upgradeOptions struct {
 	DryRun      bool
 	SkipSelf    bool
+	StrictSelf  bool
 	SkipHooks   bool
 	SkipSkills  bool
 	SkipPlugins bool
@@ -55,6 +56,7 @@ skills links, plugin links, and Codex AGENTS.md wiring.`,
 	}
 	c.Flags().BoolVar(&opts.DryRun, "dry-run", false, "print the upgrade plan without changing files")
 	c.Flags().BoolVar(&opts.SkipSelf, "skip-self", false, "skip package-manager/self binary upgrade")
+	c.Flags().BoolVar(&opts.StrictSelf, "strict-self", false, "fail if the self-upgrade command fails")
 	c.Flags().BoolVar(&opts.SkipHooks, "skip-hooks", false, "skip hook and wrapper reconciliation")
 	c.Flags().BoolVar(&opts.SkipSkills, "skip-skills", false, "skip skill deployment links")
 	c.Flags().BoolVar(&opts.SkipPlugins, "skip-plugins", false, "skip plugin deployment links")
@@ -91,7 +93,11 @@ func runUpgrade(cmd *cobra.Command, opts upgradeOptions) error {
 		} else {
 			fmt.Fprintf(out, "Self-upgrade: %s %s\n", selfCmd.Name, strings.Join(selfCmd.Args, " "))
 			if err := runUpgradeExternal(selfCmd.Name, selfCmd.Args...); err != nil {
-				return fmt.Errorf("upgrade: self-upgrade failed: %w", err)
+				if opts.StrictSelf {
+					return fmt.Errorf("upgrade: self-upgrade failed: %w", err)
+				}
+				fmt.Fprintf(out, "warning: self-upgrade failed: %v\n", err)
+				fmt.Fprintln(out, "Continuing with local reconciliation. Re-run with --strict-self to fail here.")
 			}
 		}
 	}
@@ -154,14 +160,6 @@ func detectSelfUpgradeCommand() upgradeCommand {
 	if runtime.GOOS == "darwin" && strings.Contains(exe, "/Cellar/ai/") {
 		if _, err := exec.LookPath("brew"); err == nil {
 			return upgradeCommand{Name: "brew", Args: []string{"upgrade", "ai"}}
-		}
-	}
-	if strings.Contains(exe, "/go/bin/") || strings.Contains(exe, "/bin/ai") {
-		if _, err := exec.LookPath("go"); err == nil {
-			return upgradeCommand{
-				Name: "go",
-				Args: []string{"install", "github.com/convergent-systems-co/aiConstitution/src/cmd/ai@latest"},
-			}
 		}
 	}
 	return upgradeCommand{}
