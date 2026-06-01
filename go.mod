@@ -1,4 +1,4 @@
-module github.com/convergent-systems-co/aiConstitution/src/cmd/ai
+module github.com/convergent-systems-co/aiConstitution
 
 go 1.26.0
 
@@ -6,8 +6,9 @@ require (
 	github.com/BurntSushi/toml v1.6.0
 	github.com/charmbracelet/bubbletea v1.3.10
 	github.com/charmbracelet/x/term v0.2.2
-	github.com/convergent-systems-co/aiConstitution/src/internal v0.0.0-20260527145119-3c8a82d79014
 	github.com/spf13/cobra v1.10.2
+	go.yaml.in/yaml/v3 v3.0.4
+	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (
@@ -30,5 +31,4 @@ require (
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
 	golang.org/x/sys v0.36.0 // indirect
 	golang.org/x/text v0.3.8 // indirect
-	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

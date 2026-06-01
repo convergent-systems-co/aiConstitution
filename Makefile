@@ -12,33 +12,17 @@ build: ## Build the binary into dist/
 	mkdir -p dist
 	$(GO) build $(GOFLAGS) -o dist/$(APP) ./src/cmd/$(APP)
 
-test: ## Run unit tests across workspace modules
-	@set -e; \
-	$(GO) list -m -f '{{.Dir}}' | while IFS= read -r dir; do \
-		if (cd "$$dir" && $(GO) list ./... 2>/dev/null | grep -q .); then \
-			(cd "$$dir" && $(GO) test ./... -race); \
-		fi; \
-	done
+test: ## Run unit tests
+	$(GO) test ./... -race
 
-lint: ## Run golangci-lint across workspace modules
-	@set -e; \
-	$(GO) list -m -f '{{.Dir}}' | while IFS= read -r dir; do \
-		if (cd "$$dir" && $(GO) list ./... 2>/dev/null | grep -q .); then \
-			(cd "$$dir" && golangci-lint run); \
-		fi; \
-	done
+lint: ## Run golangci-lint
+	golangci-lint run ./...
 
 fmt: ## Run gofmt
 	gofmt -s -w .
 
-tidy: ## go work sync + go mod tidy per workspace module
-	$(GO) work sync
-	@set -e; \
-	$(GO) list -m -f '{{.Dir}}' | while IFS= read -r dir; do \
-		if (cd "$$dir" && $(GO) list ./... 2>/dev/null | grep -q .); then \
-			(cd "$$dir" && $(GO) mod tidy); \
-		fi; \
-	done
+tidy: ## go mod tidy
+	$(GO) mod tidy
 
 docs: ## Regenerate README command table from registered commands
 	go run ./src/cmd/ai/cmd/gen_docs.go > /tmp/cmd-table.md

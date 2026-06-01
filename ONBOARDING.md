@@ -19,7 +19,7 @@ The binary reads governance data from `~/.ai/` on the user's machine. It does no
 
 | Dependency | Minimum version | Notes |
 |---|---|---|
-| Go | 1.26 | Workspace uses `go 1.26.3` in `go.work`; CI targets `1.26` |
+| Go | 1.26 | `go.mod` declares `go 1.26.0`; CI targets `1.26` |
 | `gh` CLI | any recent | Required for upstream contribution flows (`ai persona share`, etc.) |
 | `make` | any | Thin wrapper around `go` commands |
 | `golangci-lint` | v2.12.2 | Required for `make lint`; install via `brew install golangci-lint` or the official binary |
@@ -32,9 +32,6 @@ The binary reads governance data from `~/.ai/` on the user's machine. It does no
 git clone https://github.com/convergent-systems-co/aiConstitution.git
 cd aiConstitution
 
-# Sync workspace modules (required before first build)
-go work sync
-
 # Build — produces dist/ai
 make build
 
@@ -45,7 +42,7 @@ make build
 ## Run tests
 
 ```bash
-# All tests across workspace modules, with race detector
+# All tests, with race detector
 make test
 
 # Lint
@@ -54,7 +51,7 @@ make lint
 # Format
 make fmt
 
-# Tidy all workspace module go.sum files
+# Tidy go.mod / go.sum
 make tidy
 ```
 
@@ -113,7 +110,7 @@ src/
       hooks/         Python hook source → ~/.ai/hooks/ at setup
       wrappers/      git/gh wrapper templates → ~/.ai/bin/ at setup
     internal/        Binary-internal packages (buildinfo, etc.)
-  internal/          Workspace-internal packages shared across modules
+  internal/          Shared packages (compress, config, wizard, constitution, …)
   pkg/               Public packages
 governance/          Policy JSON, wizard pointers, seed answers
   schemas/           JSON Schemas validating config files
@@ -126,7 +123,7 @@ SPEC.md              Authoritative implementation specification (v1.0.0-draft)
 GOALS.md             G1–G7 goals, non-goals, anti-goals
 ARCHITECTURE.md      Navigational architecture overview
 Makefile             Build, test, lint, fmt, tidy, clean targets
-go.work              Go workspace — three modules: src/cmd/ai, src/internal, src/pkg
+go.mod               Single Go module: github.com/convergent-systems-co/aiConstitution
 ```
 
 ## How to contribute
@@ -161,8 +158,8 @@ Every PR must pass three jobs (`.github/workflows/ci.yml`):
 
 | Job | What it runs |
 |---|---|
-| `lint` | `golangci-lint` across all workspace modules |
-| `test` | `go test ./... -race -cover` across all workspace modules |
+| `lint` | `golangci-lint run ./...` |
+| `test` | `go test ./... -race -cover` |
 | `build` | `make build` — verifies the binary compiles |
 
 ### Where contributions go
