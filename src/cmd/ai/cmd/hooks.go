@@ -583,7 +583,11 @@ func installAllHooksAndWire(hooksDir, home string, force bool) error {
 	}
 
 	// Step 2: install active hook atoms that carry a script field.
+	// installed = newly written this run; skipped = already on disk and
+	// preserved (the default idempotent path). Both are reported so a re-run
+	// over an existing install does not look like a no-op.
 	installed := 0
+	skipped := 0
 	for _, a := range atoms {
 		lc := strings.ToLower(a.Lifecycle)
 		if a.Type != "hook" || a.Script == "" || lc == "deprecated" || lc == "retired" {
@@ -599,7 +603,8 @@ func installAllHooksAndWire(hooksDir, home string, force bool) error {
 		dest := filepath.Join(hooksDir, filename+ext)
 		if !force {
 			if _, statErr := os.Stat(dest); statErr == nil {
-				continue // skip if already installed
+				skipped++
+				continue
 			}
 		}
 		// 0755 is intentional: hooks must be executable.
@@ -615,8 +620,13 @@ func installAllHooksAndWire(hooksDir, home string, force bool) error {
 		fmt.Printf("Warning: could not extract infrastructure files: %v\n", infraErr)
 	}
 
-	fmt.Printf("Installed %d hook(s) from ai-atoms.com + %d infrastructure file(s) from binary\n",
-		installed, len(written))
+	if installed == 0 && len(written) == 0 && skipped > 0 {
+		fmt.Printf("All %d hook(s) from ai-atoms.com already present in %s; nothing to do (pass --force to overwrite).\n",
+			skipped, hooksDir)
+	} else {
+		fmt.Printf("Installed %d new hook(s), %d already present, from ai-atoms.com + %d infrastructure file(s) from binary\n",
+			installed, skipped, len(written))
+	}
 
 	// Step 4: wire hooks into ~/.claude/settings.json.
 	// CLAUDE_CONFIG_DIR overrides the default ~/.claude location for testing.
