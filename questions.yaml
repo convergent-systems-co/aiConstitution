@@ -801,17 +801,18 @@ phases:
         persists_to_section: "§5.5"
 
       - qid: Q36b
-        prompt: "Enable Claude-designed plugins to extend the agent's capabilities?"
+        prompt: "Enable atom-backed plugins to extend the agent's capabilities?"
         framing: >-
-          Plugins are Claude-specific extensions installed via the `claude`
-          CLI (or equivalent). `ai` knows the conventional ones and offers
-          to enable them. The shipped catalog currently includes
-          `superpowers` (a Claude-designed plugin providing
-          subagent-driven-development and executing-plans patterns).
+          Plugins are installed from plugin-atoms.com into ~/.ai/plugins/.
+          Claude can also install native Claude plugin surfaces where
+          available; Codex and Copilot consume the same installed plugin
+          manifests and SKILL.md guidance through their instruction surfaces.
+          The shipped catalog currently includes `superpowers`
+          (subagent-driven-development and executing-plans patterns).
           Skip if you'd rather decide later — `ai plugins enable <name>`
           works any time.
         time: "~15s"
-        applies_when: "'claude-code' in Q36"
+        applies_when: "'claude-code' in Q36 or 'codex' in Q36 or 'copilot-cli' in Q36"
         options:
           - { label: "Yes — pick from list", value: "pick" }
           - { label: "Skip — enable manually later", value: "skip" }
@@ -822,9 +823,9 @@ phases:
         persists_to_section: "[plugins] enabled"
 
       - qid: Q36c
-        prompt: "Which Claude plugins?"
+        prompt: "Which plugins?"
         framing: >-
-          Multi-select. `superpowers` is the established Claude plugin
+          Multi-select. `superpowers` is the established workflow plugin
           (subagent-driven-development, executing-plans). The other five
           are spec'd in §11.1 as plugin candidates — they wrap `ai` CLI
           verbs in guided multi-step workflows. Declining a plugin
@@ -833,7 +834,7 @@ phases:
         time: "~45s"
         applies_when: "Q36b == pick"
         options:
-          - { label: "superpowers (Claude-designed; subagent-driven-development, executing-plans)", value: "superpowers" }
+          - { label: "superpowers (subagent-driven-development, executing-plans)", value: "superpowers" }
           - { label: "amendment-author (guides `ai memory codify` + `ai amend` flow)", value: "amendment-author", note: "Falls back to project-manager persona" }
           - { label: "hook-author (multi-language hook authoring with `ai hooks propose`)", value: "hook-author", note: "Falls back to tech-lead persona" }
           - { label: "atom-publisher (guided persona/profile/skill publication)", value: "atom-publisher", note: "Falls back to documentation-reviewer persona" }
@@ -847,13 +848,15 @@ phases:
         persists_to_section: "[plugins] enabled"
 
       - qid: Q36b-copilot
-        prompt: "About Copilot plugins — a note"
+        prompt: "About non-Claude plugin surfaces — a note"
         framing: >-
-          GitHub Copilot CLI does not have a native plugin system equivalent
-          to Claude Code plugins. The `ai` system is Claude-plugin-aware;
-          Copilot parity is planned for a future release. No action required.
+          GitHub Copilot CLI and Codex do not expose the same native plugin
+          installer as Claude Code. `ai plugins install` still installs
+          plugin-atoms.com bundles locally under ~/.ai/plugins/ so those tools
+          can consume the manifest and SKILL.md guidance through their
+          instruction files. No action required.
         time: "~5s"
-        applies_when: "'copilot-cli' in Q36 and 'claude-code' not in Q36"
+        applies_when: "('copilot-cli' in Q36 or 'codex' in Q36) and 'claude-code' not in Q36"
         options:
           - { label: "Understood — continue", value: "ack" }
         allow_free_text: false
@@ -1311,6 +1314,28 @@ phases:
         allow_chat: true
         allow_defer: true
         persists_to: Writing.md
+
+      # Q50 — next-memcore integration (optional)
+      - qid: Q50
+        prompt: "Integrate with next-memcore session coordination?"
+        framing: >-
+          next-memcore is a local coordination stack (MongoDB + Kafka) that
+          tracks active Claude Code sessions per repo, surfaces handoffs, and
+          detects branch collisions across parallel agents. When enabled, two
+          hooks fire automatically: memcore-claim (UserPromptSubmit — registers
+          your session on first prompt) and memcore-session-flush (Stop — writes
+          a summary to the memory store on exit). Both hooks are silent no-ops if
+          MongoDB is unreachable. Requires the next-memcore Docker stack running
+          locally (docker compose up in SET-Apps/next-memory-core).
+        time: "~15s"
+        options:
+          - { label: "Yes — enable memcore hooks", value: "enabled" }
+          - { label: "No — skip (default)",        value: "disabled" }
+        allow_free_text: false
+        allow_chat: true
+        allow_defer: true
+        persists_to: ~/.config/aiConstitution/settings.toml
+        persists_to_section: "[memcore] enabled"
 
 # End of canonical question taxonomy.
 #

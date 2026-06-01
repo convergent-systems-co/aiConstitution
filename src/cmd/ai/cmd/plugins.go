@@ -40,10 +40,12 @@ type pluginsState struct {
 func newPluginsCmd() *cobra.Command {
 	c := &cobra.Command{
 		Use:   "plugins",
-		Short: "Manage Claude plugins that extend the agent's workflow surface",
-		Long: `plugins are Claude-specific extensions (e.g., superpowers,
+		Short: "Manage atom-backed plugins that extend the agent workflow surface",
+		Long: `plugins are atom-backed workflow extensions (e.g., superpowers,
 amendment-author, hook-author, atom-publisher, review-panel,
 memory-curator) that wrap CLI verbs in guided multi-step workflows.
+Claude can install native Claude plugins where available; Codex and Copilot
+consume the installed ~/.ai/plugins/<name>/ manifests and SKILL.md guidance.
 
 See SPEC.md §11.`,
 	}
@@ -51,18 +53,147 @@ See SPEC.md §11.`,
 	c.AddCommand(
 		&cobra.Command{
 			Use:   "list",
-			Short: "List all installed Claude plugins",
+			Short: "List all installed plugins",
 			RunE: func(cmd *cobra.Command, _ []string) error {
 				return runPluginsList(cmd)
 			},
 		},
 		newPluginsInstallCmd(),
+		newPluginsLinkCmd(),
 		newPluginsEnableCmd(),
 		newPluginsDisableCmd(),
 		newPluginsStatusCmd(),
 		newPluginsUpdateCmd(),
 	)
 	return c
+}
+
+type pluginLinkTargets struct {
+	Claude  bool
+	Copilot bool
+	Codex   bool
+}
+
+func (t pluginLinkTargets) any() bool {
+	return t.Claude || t.Copilot || t.Codex
+}
+
+func (t pluginLinkTargets) withDefaultAll() pluginLinkTargets {
+	if t.any() {
+		return t
+	}
+	return pluginLinkTargets{Claude: true, Copilot: true, Codex: true}
+}
+
+func claudePluginsTargetDir() string {
+	if env, ok := os.LookupEnv("CLAUDE_PLUGINS_DIR"); ok {
+		return env
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(home, ".claude", "plugins", "aiConstitution")
+}
+
+func copilotPluginsTargetDir() string {
+	if env, ok := os.LookupEnv("COPILOT_PLUGINS_DIR"); ok {
+		return env
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(home, ".copilot", "plugins")
+}
+
+func codexPluginsTargetDir() string {
+	if env, ok := os.LookupEnv("CODEX_PLUGINS_DIR"); ok {
+		return env
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(home, ".codex", "plugins")
+}
+
+func newPluginsLinkCmd() *cobra.Command {
+	var targets pluginLinkTargets
+	c := &cobra.Command{
+		Use:   "link",
+		Short: "Symlink installed plugins to Claude, Copilot, and Codex",
+		Long: `link iterates installed plugin atoms under ~/.ai/plugins/ and creates
+symlinks in each selected consumer directory:
+
+  ~/.claude/plugins/aiConstitution/<name> → ~/.ai/plugins/<name>/
+  ~/.copilot/plugins/<name>               → ~/.ai/plugins/<name>/
+  ~/.codex/plugins/<name>                 → ~/.ai/plugins/<name>/
+
+With no target flags, all supported targets are linked.`,
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return runPluginsLink(cmd, targets)
+		},
+	}
+	c.Flags().BoolVar(&targets.Claude, "claude", false, "link plugins into ~/.claude/plugins/aiConstitution/")
+	c.Flags().BoolVar(&targets.Copilot, "copilot", false, "link plugins into ~/.copilot/plugins/")
+	c.Flags().BoolVar(&targets.Codex, "codex", false, "link plugins into ~/.codex/plugins/")
+	return c
+}
+
+func runPluginsLink(cmd *cobra.Command, targets pluginLinkTargets) error {
+	pluginsDir := paths.PluginsDir()
+	entries, err := os.ReadDir(pluginsDir)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			fmt.Fprintln(cmd.OutOrStdout(), "(no plugins installed)")
+			return nil
+		}
+		return fmt.Errorf("plugins link: read plugins dir: %w", err)
+	}
+	targets = targets.withDefaultAll()
+
+	targetDirs := []struct {
+		name string
+		dir  string
+		on   bool
+	}{
+		{name: "Claude", dir: claudePluginsTargetDir(), on: targets.Claude},
+		{name: "Copilot", dir: copilotPluginsTargetDir(), on: targets.Copilot},
+		{name: "Codex", dir: codexPluginsTargetDir(), on: targets.Codex},
+	}
+	linked := map[string]int{"Claude": 0, "Copilot": 0, "Codex": 0}
+	for _, target := range targetDirs {
+		if !target.on || target.dir == "" {
+			continue
+		}
+		if err := os.MkdirAll(target.dir, 0o755); err != nil {
+			return fmt.Errorf("plugins link: create %s plugins dir %q: %w", target.name, target.dir, err)
+		}
+	}
+
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		pluginDir := filepath.Join(pluginsDir, entry.Name())
+		if _, err := os.Stat(filepath.Join(pluginDir, "manifest.yaml")); err != nil {
+			continue
+		}
+		for _, target := range targetDirs {
+			if !target.on || target.dir == "" {
+				continue
+			}
+			if err := ensureSymlink(pluginDir, filepath.Join(target.dir, entry.Name())); err == nil {
+				linked[target.name]++
+			}
+		}
+	}
+
+	fmt.Fprintf(cmd.OutOrStdout(), "Linked %d plugin(s) to Claude, %d to Copilot, %d to Codex\n",
+		linked["Claude"], linked["Copilot"], linked["Codex"])
+	return nil
 }
 
 // newPluginsInstallCmd implements `ai plugins install <url-or-path> [--force]`.
@@ -83,7 +214,7 @@ Sources (checked in order):
   name@version  Resolved from https://plugin-atoms.com/<name>/<version>/plugin.tar.gz
   https://...   Direct URL download
   /path/to/...  Local file path`,
-		Args:  cobra.ExactArgs(1),
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runPluginsInstall(cmd, args[0], force)
 		},
@@ -398,14 +529,14 @@ func runPluginsUpdate(cmd *cobra.Command, name string) error {
 
 // --- helpers ----------------------------------------------------------------
 
-
 // resolvePluginAtomURL resolves a bare plugin name or name@version to the
 // canonical plugin-atoms.com download URL. Direct URLs and local paths are
 // returned unchanged.
 //
 // Resolution format:
-//   name          → https://plugin-atoms.com/<name>/latest/plugin.tar.gz
-//   name@version  → https://plugin-atoms.com/<name>/<version>/plugin.tar.gz
+//
+//	name          → https://plugin-atoms.com/<name>/latest/plugin.tar.gz
+//	name@version  → https://plugin-atoms.com/<name>/<version>/plugin.tar.gz
 func resolvePluginAtomURL(source string) string {
 	// Already a URL or local path — leave as-is.
 	if strings.HasPrefix(source, "https://") ||

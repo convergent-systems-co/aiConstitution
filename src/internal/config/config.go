@@ -44,6 +44,17 @@ type Settings struct {
 	Wizard          WizardSettings          `toml:"wizard"`
 	Sync            SyncSettings            `toml:"sync"`
 	Paths           PathsSettings           `toml:"paths"`
+	Memcore         MemcoreSettings         `toml:"memcore"`
+}
+
+// MemcoreSettings carries the [memcore] section — opt-in integration with
+// the next-memcore local coordination stack (MongoDB + Kafka).
+// When Enabled is false the memcore-claim and memcore-session-flush hooks
+// exit 0 immediately without contacting MongoDB.
+type MemcoreSettings struct {
+	Enabled     bool   `toml:"enabled"`
+	MongoURI    string `toml:"mongoURI"`
+	MongoDBName string `toml:"mongoDBName"`
 }
 
 // UpstreamSettings carries the [upstream] section of settings.toml —
@@ -103,9 +114,11 @@ type CommandWrappersSettings struct {
 // AtomsSettings carries the [atoms] section — registry URL overrides
 // and content-hash verification flag.
 type AtomsSettings struct {
+	AIRegistry        string `toml:"aiRegistry"`
 	PersonaRegistry   string `toml:"personaRegistry"`
 	ProfileRegistry   string `toml:"profileRegistry"`
 	SkillRegistry     string `toml:"skillRegistry"`
+	PluginRegistry    string `toml:"pluginRegistry"`
 	BrandRegistry     string `toml:"brandRegistry"`
 	VerifyContentHash bool   `toml:"verifyContentHash"`
 }
@@ -178,7 +191,7 @@ func Defaults() Settings {
 			IncludeAuditOverrides:  true,
 			IncludeAuditViolations: true,
 		},
-		Update: UpdateSettings{AutoMigratePrompt: true, AutoMigrateApprove: false},
+		Update:    UpdateSettings{AutoMigratePrompt: true, AutoMigrateApprove: false},
 		Telemetry: TelemetrySettings{InstallPing: false},
 		SecretScanning: SecretScanningSettings{
 			InstallScope:        "all-repos",
@@ -196,9 +209,11 @@ func Defaults() Settings {
 			},
 		},
 		Atoms: AtomsSettings{
+			AIRegistry:        "https://ai-atoms.com",
 			PersonaRegistry:   "https://persona-atoms.com",
 			ProfileRegistry:   "https://profile-atoms.com",
 			SkillRegistry:     "https://skill-atoms.com",
+			PluginRegistry:    "https://plugin-atoms.com",
 			BrandRegistry:     "https://brand-atoms.com",
 			VerifyContentHash: true,
 		},
@@ -206,9 +221,9 @@ func Defaults() Settings {
 		Drafts:   DraftsSettings{PublishNudgeAfterDays: 30, SuppressNudge: false},
 		Personas: PersonasSettings{Default: []string{"common"}},
 		Focus:    FocusSettings{DefaultMode: "none", PreferStableVersions: true},
-		Wizard:  WizardSettings{LastSeenWizardVersion: "0.2"},
-		Sync:    SyncSettings{IncludeSettingsFile: true},
-		Paths:   PathsSettings{AIRoot: "", ConfigDir: ""},
+		Wizard:   WizardSettings{LastSeenWizardVersion: "0.2"},
+		Sync:     SyncSettings{IncludeSettingsFile: true},
+		Paths:    PathsSettings{AIRoot: "", ConfigDir: ""},
 	}
 }
 
@@ -269,6 +284,7 @@ func Save(s Settings) error {
 //	shareNewHooks       -> s.Upstream.ShareNewHooks      (bool)
 //	reviewCadenceDays   -> s.Review.CadenceDays          (int)
 //	syncIncludeSettings -> s.Sync.IncludeSettingsFile    (bool)
+//	memcoreEnabled      -> s.Memcore.Enabled             (bool)
 func ApplyAnswers(s *Settings, answers map[string]string) {
 	if s == nil || len(answers) == 0 {
 		return
@@ -288,6 +304,10 @@ func ApplyAnswers(s *Settings, answers map[string]string) {
 		case "syncIncludeSettings":
 			if b, ok := parseBoolish(v); ok {
 				s.Sync.IncludeSettingsFile = b
+			}
+		case "memcoreEnabled":
+			if b, ok := parseBoolish(v); ok {
+				s.Memcore.Enabled = b
 			}
 		}
 	}
