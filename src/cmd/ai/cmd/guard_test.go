@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"strings"
 	"testing"
+
+	"github.com/convergent-systems-co/aiConstitution/src/internal/audit"
 )
 
 func TestGuardProtectedBranch(t *testing.T) {
@@ -108,5 +110,36 @@ func TestGuardCobraAcceptsGitModeArgument(t *testing.T) {
 	}
 	if strings.Contains(err.Error(), "unknown flag") {
 		t.Fatalf("guard should treat --git as a mode argument, got %v", err)
+	}
+}
+
+func TestGuardRequiresScopedApproval(t *testing.T) {
+	t.Setenv("AI_CONSTITUTION_APPROVED_MUTATION", "1")
+	if err := guardGitCommand([]string{"worktree", "add"}); err == nil {
+		t.Fatal("legacy boolean approval env should not authorize mutation")
+	}
+}
+
+func TestGuardScopedApprovalRecordsAudit(t *testing.T) {
+	t.Setenv(guardApprovalScopeEnv, "git:worktree:add")
+	var got []audit.Event
+	old := guardAppendAuditEvent
+	guardAppendAuditEvent = func(e audit.Event) error {
+		got = append(got, e)
+		return nil
+	}
+	t.Cleanup(func() { guardAppendAuditEvent = old })
+
+	if err := guardGitCommand([]string{"worktree", "add"}); err != nil {
+		t.Fatalf("scoped approval should authorize worktree add: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("expected one audit event, got %d", len(got))
+	}
+	if got[0].Probe != "git:worktree:add" {
+		t.Fatalf("audit probe = %q, want git:worktree:add", got[0].Probe)
+	}
+	if got[0].Kind != audit.KindSignal {
+		t.Fatalf("audit kind = %q, want %q", got[0].Kind, audit.KindSignal)
 	}
 }

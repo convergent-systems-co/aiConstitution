@@ -44,6 +44,6 @@ func runGuard(args ...string) error {
 	cmd := exec.Command("go", guardArgs...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	cmd.Env = append(os.Environ(), "AI_CONSTITUTION_APPROVED_MUTATION=1")
+	cmd.Env = append(os.Environ(), "AI_CONSTITUTION_APPROVAL_SCOPE=git:worktree:add")
 	return cmd.Run()
 }
