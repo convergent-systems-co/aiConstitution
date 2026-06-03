@@ -7,9 +7,15 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"time"
 
+	"github.com/convergent-systems-co/aiConstitution/src/internal/audit"
 	"github.com/spf13/cobra"
 )
+
+const guardApprovalScopeEnv = "AI_CONSTITUTION_APPROVAL_SCOPE"
+
+var guardAppendAuditEvent = audit.AppendEvent
 
 type guardBranchPolicy struct {
 	protectedNames map[string]bool
@@ -123,16 +129,55 @@ func guardGitCommand(args []string) error {
 	subcommand := args[0]
 	switch subcommand {
 	case "commit", "merge", "rebase", "cherry-pick", "revert", "am", "pull", "worktree":
-		if os.Getenv("AI_CONSTITUTION_APPROVED_MUTATION") != "1" {
-			return fmt.Errorf("git %s requires AI_CONSTITUTION_APPROVED_MUTATION=1 and an explicit approved entrypoint", subcommand)
+		if err := guardRequireScopedApproval(args); err != nil {
+			return err
 		}
 	case "push":
-		if os.Getenv("AI_CONSTITUTION_APPROVED_MUTATION") != "1" {
-			return fmt.Errorf("git push requires AI_CONSTITUTION_APPROVED_MUTATION=1 and an explicit approved entrypoint")
+		if err := guardRequireScopedApproval(args); err != nil {
+			return err
 		}
 		return guardPush(args[1:])
 	}
 	return nil
+}
+
+func guardRequireScopedApproval(args []string) error {
+	scope := guardApprovalScope(args)
+	if scope == "" {
+		return nil
+	}
+	if got := os.Getenv(guardApprovalScopeEnv); got != scope {
+		return fmt.Errorf("git %s requires %s=%q and an explicit approved entrypoint", args[0], guardApprovalScopeEnv, scope)
+	}
+	if err := guardRecordScopedApproval(scope, args); err != nil {
+		return err
+	}
+	return nil
+}
+
+func guardApprovalScope(args []string) string {
+	if len(args) == 0 {
+		return ""
+	}
+	if args[0] == "worktree" && len(args) > 1 {
+		return "git:worktree:" + args[1]
+	}
+	return "git:" + args[0]
+}
+
+func guardRecordScopedApproval(scope string, args []string) error {
+	if guardAppendAuditEvent == nil {
+		return nil
+	}
+	return guardAppendAuditEvent(audit.Event{
+		Chronon:      time.Now().UTC(),
+		CWD:          guardGetwd(),
+		Actor:        audit.ActorAssistant,
+		Kind:         audit.KindSignal,
+		Stimulus:     "scoped mutation approval accepted",
+		Probe:        scope,
+		ProbePayload: strings.Join(args, " "),
+	})
 }
 
 func guardGitHook(args []string, stdin io.Reader) error {
