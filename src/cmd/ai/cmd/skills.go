@@ -759,6 +759,10 @@ func runSkillsInstall(cmd *cobra.Command, slug string) error {
 		}
 	}
 
+	if skillAtomIsDependencyBundle(atom) {
+		return runSkillsInstallBundle(cmd, slug, atom)
+	}
+
 	skillsDir := skillsManifestDir()
 	destDir := filepath.Join(skillsDir, slug)
 	destMD := filepath.Join(destDir, "SKILL.md")
@@ -824,6 +828,23 @@ func runSkillsInstall(cmd *cobra.Command, slug string) error {
 		}
 	}
 
+	return nil
+}
+
+func skillAtomIsDependencyBundle(atom *skillAtom) bool {
+	return atom != nil &&
+		len(atom.DependsOn) > 0 &&
+		strings.TrimSpace(atom.SystemPromptFragment) == ""
+}
+
+func runSkillsInstallBundle(cmd *cobra.Command, slug string, atom *skillAtom) error {
+	fmt.Fprintf(cmd.OutOrStdout(), "Materializing %s bundle dependencies: %s\n", slug, strings.Join(atom.DependsOn, ", "))
+	for _, dep := range atom.DependsOn {
+		fmt.Fprintf(cmd.OutOrStdout(), "Installing %s...\n", dep)
+		if depErr := runSkillsInstall(cmd, dep); depErr != nil {
+			fmt.Fprintf(cmd.ErrOrStderr(), "warning: failed to install %s: %v\n", dep, depErr)
+		}
+	}
 	return nil
 }
 

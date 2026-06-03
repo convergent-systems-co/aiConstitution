@@ -1199,13 +1199,14 @@ func TestSkillsInstall_InstallsDependencies(t *testing.T) {
 	// "make" depends on "make-commit" and "make-review"; all in the catalog.
 	atoms := []map[string]interface{}{
 		{
-			"type":        "skill",
-			"id":          "skill/make",
-			"version":     "1.0.0",
-			"name":        "make",
-			"description": "Run make tasks.",
-			"lifecycle":   "stable",
-			"depends_on":  []string{"make-commit", "make-review"},
+			"type":                   "skill",
+			"id":                     "skill/make",
+			"version":                "1.0.0",
+			"name":                   "make",
+			"description":            "Run make tasks.",
+			"lifecycle":              "stable",
+			"depends_on":             []string{"make-commit", "make-review"},
+			"system_prompt_fragment": "Dispatch make tasks.",
 		},
 		{
 			"type":        "skill",
