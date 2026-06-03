@@ -17,6 +17,31 @@ func TestGuardProtectedBranch(t *testing.T) {
 	}
 }
 
+func TestGuardBranchPolicyAllowsApprovedWorktreeAddFromProtectedBranch(t *testing.T) {
+	policy := defaultGuardBranchPolicy
+	if !policy.isProtectedBranch("main") {
+		t.Fatal("main should be protected")
+	}
+	if !policy.allowsProtectedBranchGit([]string{"worktree", "add", ".worktrees/example", "-b", "example", "main"}) {
+		t.Fatal("worktree add should be the protected-branch escape hatch")
+	}
+}
+
+func TestGuardBranchPolicyBlocksOtherProtectedBranchGitMutations(t *testing.T) {
+	policy := defaultGuardBranchPolicy
+	blocked := [][]string{
+		{"commit"},
+		{"merge", "feature"},
+		{"worktree", "remove", ".worktrees/example"},
+		{"push", "origin", "main"},
+	}
+	for _, args := range blocked {
+		if policy.allowsProtectedBranchGit(args) {
+			t.Fatalf("protected branch policy should not allow git args %v", args)
+		}
+	}
+}
+
 func TestGuardRemoteRefName(t *testing.T) {
 	cases := map[string]string{
 		"main":                    "main",
