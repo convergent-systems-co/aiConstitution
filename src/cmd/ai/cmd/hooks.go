@@ -246,9 +246,9 @@ them to ~/.ai/hooks/, alongside infrastructure files from the binary.
                                           aiConstitution hook guidance
 
   --force                overwrite existing files
-  --repo=<path>          (with no positional) install a pre-commit
-                         hook into the specified repo's .git/hooks/
-                         that defers to ~/.ai/hooks/secret-precommit.py
+  --repo=<path>          (with no positional) install the repo-managed
+                         Git hook set into the specified repo's
+                         .git/hooks/
   --claude               wire ~/.ai/hooks/*.py into .claude/settings.json
   --claude-root=<path>   directory containing .claude/ (default ".")
   --copilot              symlink Constitution.runtime.md into ~/.copilot/instructions/
@@ -294,10 +294,10 @@ Per SPEC.md §3.10 + §10.2 + §14.1.`,
 					return nil
 				}
 			}
-			return runHooksInstall(installRepo, target, installAllHooks || installAll, installForce)
+			return runHooksInstall(installRepo, target, installAllHooks || installAll, installForce, cmd.OutOrStdout())
 		},
 	}
-	install.Flags().StringVar(&installRepo, "repo", "", "install a pre-commit shim into the specified repo")
+	install.Flags().StringVar(&installRepo, "repo", "", "install repo-managed git hooks into the specified repo")
 	install.Flags().BoolVar(&installAll, "all-future-clones", false, "(reserved; wires into `ai clone` per SPEC §10.2)")
 	install.Flags().BoolVar(&installAllHooks, "all", false, "install all catalog hooks + infrastructure files to ~/.ai/hooks/")
 	install.Flags().BoolVar(&installForce, "force", false, "overwrite existing files")
@@ -529,7 +529,7 @@ func runHooksInstallClaude(cmd *cobra.Command, claudeRoot string) error {
 // runHooksInstall is the top-level dispatcher for the various
 // install modes. Extracted from newHooksCmd's RunE closure to keep
 // the cobra constructor under gocyclo's threshold.
-func runHooksInstall(repo, target string, all, force bool) error {
+func runHooksInstall(repo, target string, all, force bool, out io.Writer) error {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return err
@@ -542,7 +542,7 @@ func runHooksInstall(repo, target string, all, force bool) error {
 	binDir := filepath.Join(aiRoot, "bin")
 
 	if repo != "" {
-		return installRepoPrecommit(repo, hooksDir)
+		return installRepoPrecommit(repo, out)
 	}
 	if all {
 		return installAllHooksAndWire(hooksDir, home, force)
@@ -1196,36 +1196,10 @@ func runHooksEvaluate(cmd *cobra.Command) error {
 	return nil
 }
 
-// installRepoPrecommit writes <repo>/.git/hooks/pre-commit that defers
-// to the canonical ~/.ai/hooks/secret-precommit.py. Idempotent.
-func installRepoPrecommit(repoDir, hooksDir string) error {
-	gitDir := filepath.Join(repoDir, ".git")
-	if _, err := os.Stat(gitDir); err != nil {
-		return fmt.Errorf("%s is not a git repo (.git/ missing)", repoDir)
-	}
-	hookPath := filepath.Clean(filepath.Join(hooksDir, "secret-precommit.py"))
-	if _, err := os.Stat(hookPath); err != nil {
-		return fmt.Errorf("canonical %s missing — run `ai hooks install --all` first", hookPath)
-	}
-	dst := filepath.Clean(filepath.Join(gitDir, "hooks", "pre-commit"))
-	if _, err := os.Stat(dst); err == nil {
-		fmt.Println("pre-commit already present at", dst, "— leaving in place")
-		return nil
-	}
-	// Use the portable `ai hooks run` invocation rather than hardcoding python3 or
-	// bash, which are not available on all platforms (e.g. Windows).
-	slug := strings.TrimSuffix(filepath.Base(hookPath), ".py")
-	body := fmt.Sprintf("#!/usr/bin/env ai-hooks-run\n# Installed by `ai hooks install --repo=%s` (SPEC.md §10.2).\nai hooks run %s\n", repoDir, slug)
-	if err := os.MkdirAll(filepath.Dir(dst), 0o750); err != nil {
-		return err
-	}
-	// 0o755 is intentional: this IS a git pre-commit hook; git
-	// requires the executable bit to invoke it.
-	if err := os.WriteFile(dst, []byte(body), 0o755); err != nil { //nolint:gosec // G306: required executable
-		return err
-	}
-	fmt.Println("installed", dst)
-	return nil
+// installRepoPrecommit preserves the existing function name for callers while
+// installing the full repo-managed hook set.
+func installRepoPrecommit(repoDir string, out io.Writer) error {
+	return installRepoManagedGitHooks(repoDir, fmt.Sprintf("ai hooks install --repo=%s", repoDir), out)
 }
 
 // ─── hooks run ────────────────────────────────────────────────────────────
