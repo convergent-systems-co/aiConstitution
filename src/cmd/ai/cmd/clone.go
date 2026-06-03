@@ -28,8 +28,8 @@ func newCloneCmd() *cobra.Command {
 		Use:   "clone <url> [<dir>]",
 		Short: "Clone a repo with identity routing + post-clone hook install",
 		Long: `clone runs ` + "`" + `git clone` + "`" + ` (intentionally not bypassing the
-~/.ai/bin/git wrapper) and then installs the canonical pre-commit
-secret-scan hook into the freshly-cloned tree, per
+~/.ai/bin/git wrapper) and then installs the repo-managed Git hook
+set into the freshly-cloned tree, per
 SPEC.md §6 + §10.2.
 
 Identity routing reads metadata/projects.json from the aiConstitution
@@ -43,7 +43,7 @@ Args:
 
 Flags:
   --identity=<name>     Force a specific identity from metadata/projects.json.
-  --no-precommit        Skip post-clone secret-precommit hook install.
+  --no-precommit        Skip post-clone repo hook install.
 
 See SPEC.md §6 + §10.2 + Common.md §4.7.`,
 		Args: cobra.RangeArgs(1, 2),
@@ -82,12 +82,12 @@ See SPEC.md §6 + §10.2 + Common.md §4.7.`,
 			if noPrecommit {
 				return nil
 			}
-			return installPrecommitHook(target)
+			return installPrecommitHook(cmd.OutOrStdout(), target)
 		},
 	}
 
 	c.Flags().StringVar(&identityName, "identity", "", "force a specific identity from metadata/projects.json")
-	c.Flags().BoolVar(&noPrecommit, "no-precommit", false, "skip the post-clone secret-precommit hook install")
+	c.Flags().BoolVar(&noPrecommit, "no-precommit", false, "skip the post-clone repo hook install")
 
 	return c
 }
@@ -175,41 +175,8 @@ func repoNameFromURL(url string) string {
 	return strings.TrimSuffix(url, ".git")
 }
 
-// installPrecommitHook writes .git/hooks/pre-commit into the cloned
-// repo that defers to ~/.ai/hooks/secret-precommit.py. Idempotent —
-// skips if the hook is already present.
-func installPrecommitHook(repoDir string) error {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		notice("clone:", "could not resolve $HOME; skipping pre-commit install:", err)
-		return nil
-	}
-	aiRoot := os.Getenv("AI_ROOT")
-	if aiRoot == "" {
-		aiRoot = filepath.Join(home, ".ai")
-	}
-	hookPath := filepath.Clean(filepath.Join(aiRoot, "hooks", "secret-precommit.py"))
-	if _, err := os.Stat(hookPath); err != nil {
-		notice("clone:", hookPath, "not present; skipping pre-commit install (run `ai hooks install --all` to fix).")
-		return nil
-	}
-	dst := filepath.Clean(filepath.Join(repoDir, ".git", "hooks", "pre-commit"))
-	if _, err := os.Stat(dst); err == nil {
-		notice("clone:", "pre-commit already exists at", dst, "— leaving in place.")
-		return nil
-	}
-	body := fmt.Sprintf(`#!/usr/bin/env bash
-# Installed by `+"`"+`ai clone`+"`"+` (SPEC.md §10.2).
-exec python3 %q "$@"
-`, hookPath)
-	if err := os.MkdirAll(filepath.Dir(dst), 0o750); err != nil {
-		return err
-	}
-	// 0o755 is intentional: this IS a git pre-commit hook; git
-	// requires the executable bit to invoke it.
-	if err := os.WriteFile(dst, []byte(body), 0o755); err != nil { //nolint:gosec // G306: required executable
-		return err
-	}
-	notice("clone:", "installed pre-commit secret hook at", dst)
-	return nil
+// installPrecommitHook keeps the public clone flag behavior while delegating
+// to the shared repo-managed hook installer.
+func installPrecommitHook(out io.Writer, repoDir string) error {
+	return installRepoManagedGitHooks(repoDir, "ai clone", out)
 }

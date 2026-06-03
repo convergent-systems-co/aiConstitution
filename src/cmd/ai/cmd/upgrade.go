@@ -181,10 +181,10 @@ func reconcileAfterUpgrade(cmd *cobra.Command, opts upgradeOptions) error {
 	fmt.Fprintln(out, "Regenerated Constitution.compact.md and Constitution.runtime.md")
 
 	if !opts.SkipHooks {
-		if err := runHooksInstall("", "command-wrappers", false, false); err != nil {
+		if err := runHooksInstall("", "command-wrappers", false, false, out); err != nil {
 			fmt.Fprintf(out, "warning: command-wrapper reconciliation failed: %v\n", err)
 		}
-		if err := runHooksInstall("", "", true, false); err != nil {
+		if err := runHooksInstall("", "", true, false, out); err != nil {
 			fmt.Fprintf(out, "warning: hook reconciliation failed: %v\n", err)
 		}
 	}

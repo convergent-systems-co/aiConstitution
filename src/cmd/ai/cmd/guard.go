@@ -22,7 +22,8 @@ func newGuardCmd() *cobra.Command {
 		Short: "Run repo-local constitution guard checks",
 		Long: `guard is the installed runtime entrypoint for repo-managed Git hooks
 and explicit governance checks. It avoids requiring Go in hook execution paths.`,
-		SilenceUsage: true,
+		DisableFlagParsing: true,
+		SilenceUsage:       true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runGuard(args, cmd.OutOrStdout(), cmd.ErrOrStderr(), os.Stdin)
 		},

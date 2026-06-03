@@ -68,3 +68,20 @@ func TestGuardCommandPrintsErrorPrefix(t *testing.T) {
 		t.Fatalf("expected guard error prefix, got %q", stderr.String())
 	}
 }
+
+func TestGuardCobraAcceptsGitModeArgument(t *testing.T) {
+	cmd := newGuardCmd()
+	var stdout, stderr bytes.Buffer
+	cmd.SetOut(&stdout)
+	cmd.SetErr(&stderr)
+	cmd.SetIn(strings.NewReader(""))
+	cmd.SetArgs([]string{"--git", "commit"})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected guard to block unapproved commit")
+	}
+	if strings.Contains(err.Error(), "unknown flag") {
+		t.Fatalf("guard should treat --git as a mode argument, got %v", err)
+	}
+}
