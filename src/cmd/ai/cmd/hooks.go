@@ -211,11 +211,11 @@ Prints [✓] or [✗] per hook. Exit 1 if any [✗].`,
 		},
 	})
 
-	// install — fetches hooks from ai-atoms.com catalog into ~/.ai/hooks/ (hooks)
-	// or ~/.ai/bin/ (command-wrappers). Special target names:
-	//   --all                    → every catalog hook + infrastructure files
-	//   command-wrappers         → both wrapper templates (git, gh)
-	//   <name>                   → one hook from the catalog by slug
+	c.AddCommand(propose, newHooksInstallCmd())
+	return c
+}
+
+func newHooksInstallCmd() *cobra.Command {
 	var installRepo string
 	var installAll bool
 	var installAllHooks bool
@@ -305,9 +305,7 @@ Per SPEC.md §3.10 + §10.2 + §14.1.`,
 	install.Flags().StringVar(&installClaudeRoot, "claude-root", ".", "directory containing .claude/ (default: current dir)")
 	install.Flags().BoolVar(&installCopilot, "copilot", false, "symlink Constitution.runtime.md into ~/.copilot/instructions/")
 	install.Flags().BoolVar(&installCodex, "codex", false, "update AGENTS.md in cwd with aiConstitution hook guidance")
-
-	c.AddCommand(propose, install)
-	return c
+	return install
 }
 
 func fileContains(path, needle string) bool {

@@ -1,0 +1,11 @@
+#!/bin/sh
+set -eu
+
+message_file="${1:?commit message file required}"
+
+if grep -Eiq '(^|[[:space:]])(AI-authored|Generated-by:.*(AI|Codex|Copilot|Claude)|Co-authored-by:.*(OpenAI|Codex|Copilot|Claude))' "$message_file"; then
+	if ! grep -Eq '^Co-authored-by: .+ <.+>$' "$message_file"; then
+		printf '%s\n' "commit-msg: AI-authored commits require a Co-authored-by trailer" >&2
+		exit 1
+	fi
+fi
