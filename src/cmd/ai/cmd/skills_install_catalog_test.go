@@ -125,13 +125,14 @@ func TestSkillsInstall_InstallsDependencies_Catalog(t *testing.T) {
 
 	payload := fakeCatalog([]map[string]any{
 		{
-			"type":        "skill",
-			"id":          "skill/make",
-			"version":     "1.0.0",
-			"name":        "make",
-			"description": "Unified make dispatcher.",
-			"lifecycle":   "stable",
-			"depends_on":  []string{"make-work"},
+			"type":                   "skill",
+			"id":                     "skill/make",
+			"version":                "1.0.0",
+			"name":                   "make",
+			"description":            "Unified make dispatcher.",
+			"lifecycle":              "stable",
+			"depends_on":             []string{"make-work"},
+			"system_prompt_fragment": "Dispatch make subcommands.",
 		},
 		{
 			"type":        "skill",
@@ -159,5 +160,60 @@ func TestSkillsInstall_InstallsDependencies_Catalog(t *testing.T) {
 	depMDPath := filepath.Join(root, "skills", "make-work", "SKILL.md")
 	if _, statErr := os.Stat(depMDPath); os.IsNotExist(statErr) {
 		t.Errorf("dependency make-work was not installed (SKILL.md missing at %s)", depMDPath)
+	}
+}
+
+func TestSkillsInstall_BundleMaterializesDependenciesOnly(t *testing.T) {
+	root := t.TempDir()
+
+	payload := fakeCatalog([]map[string]any{
+		{
+			"type":        "skill",
+			"id":          "skill/make",
+			"version":     "1.0.0",
+			"name":        "make",
+			"description": "Dependency-only make bundle.",
+			"lifecycle":   "stable",
+			"depends_on":  []string{"make-work", "make-test"},
+		},
+		{
+			"type":                   "skill",
+			"id":                     "skill/make-work",
+			"version":                "1.0.0",
+			"name":                   "make-work",
+			"description":            "Work sprint skill.",
+			"lifecycle":              "stable",
+			"system_prompt_fragment": "Run sprint work.",
+		},
+		{
+			"type":                   "skill",
+			"id":                     "skill/make-test",
+			"version":                "1.0.0",
+			"name":                   "make-test",
+			"description":            "Test runner skill.",
+			"lifecycle":              "stable",
+			"system_prompt_fragment": "Run tests.",
+		},
+	})
+	srv := startCatalogServer(t, payload)
+	setAiAtomsCatalogURL(t, srv.URL+"/catalog.json")
+
+	out, _, err := runSkillsCmd(t, root, "skills", "install", "make")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !strings.Contains(out, "Materializing make bundle dependencies: make-work, make-test") {
+		t.Errorf("expected bundle materialization message; got:\n%s", out)
+	}
+	parentMDPath := filepath.Join(root, "skills", "make", "SKILL.md")
+	if _, statErr := os.Stat(parentMDPath); !os.IsNotExist(statErr) {
+		t.Errorf("dependency-only bundle should not write parent SKILL.md at %s", parentMDPath)
+	}
+	for _, dep := range []string{"make-work", "make-test"} {
+		depMDPath := filepath.Join(root, "skills", dep, "SKILL.md")
+		if _, statErr := os.Stat(depMDPath); os.IsNotExist(statErr) {
+			t.Errorf("dependency %s was not installed (SKILL.md missing at %s)", dep, depMDPath)
+		}
 	}
 }
