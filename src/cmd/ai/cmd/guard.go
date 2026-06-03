@@ -11,9 +11,15 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var guardProtectedBranchNames = map[string]bool{
-	"main":   true,
-	"master": true,
+type guardBranchPolicy struct {
+	protectedNames map[string]bool
+}
+
+var defaultGuardBranchPolicy = guardBranchPolicy{
+	protectedNames: map[string]bool{
+		"main":   true,
+		"master": true,
+	},
 }
 
 func newGuardCmd() *cobra.Command {
@@ -48,14 +54,15 @@ func runGuardChecks(args []string, stdout io.Writer, stdin io.Reader) error {
 	case args[0] == "--state":
 		return printGuardState(stdout)
 	case args[0] == "--git":
-		if err := guardState(requireCleanTree); err != nil {
+		gitArgs := args[1:]
+		if err := guardGitState(gitArgs, requireCleanTree); err != nil {
 			return err
 		}
-		return guardGitCommand(args[1:])
+		return guardGitCommand(gitArgs)
 	case args[0] == "--git-hook":
 		return guardGitHook(args[1:], stdin)
 	default:
-		if err := guardState(requireCleanTree); err != nil {
+		if err := guardGitState(args, requireCleanTree); err != nil {
 			return err
 		}
 		return guardGitCommand(args)
@@ -89,6 +96,17 @@ const (
 func guardState(policy guardDirtyPolicy) error {
 	branch := guardCurrentBranch()
 	if guardProtectedBranch(branch) {
+		return fmt.Errorf("refusing edits or mutations on protected branch %q", branch)
+	}
+	if policy == requireCleanTree && guardDirty() && os.Getenv("AI_CONSTITUTION_DIRTY_ACK") != "1" {
+		return fmt.Errorf("working tree is dirty; set AI_CONSTITUTION_DIRTY_ACK=1 only after explicitly acknowledging the dirty state")
+	}
+	return nil
+}
+
+func guardGitState(args []string, policy guardDirtyPolicy) error {
+	branch := guardCurrentBranch()
+	if guardProtectedBranch(branch) && !defaultGuardBranchPolicy.allowsProtectedBranchGit(args) {
 		return fmt.Errorf("refusing edits or mutations on protected branch %q", branch)
 	}
 	if policy == requireCleanTree && guardDirty() && os.Getenv("AI_CONSTITUTION_DIRTY_ACK") != "1" {
@@ -189,10 +207,18 @@ func guardDirty() bool {
 }
 
 func guardProtectedBranch(branch string) bool {
-	if guardProtectedBranchNames[branch] {
-		return true
+	return defaultGuardBranchPolicy.isProtectedBranch(branch)
+}
+
+func (p guardBranchPolicy) isProtectedBranch(branch string) bool {
+	return p.protectedNames[branch] || strings.HasPrefix(branch, "release/")
+}
+
+func (p guardBranchPolicy) allowsProtectedBranchGit(args []string) bool {
+	if len(args) < 2 {
+		return false
 	}
-	return strings.HasPrefix(branch, "release/")
+	return args[0] == "worktree" && args[1] == "add"
 }
 
 func guardRemoteRefName(ref string) string {
