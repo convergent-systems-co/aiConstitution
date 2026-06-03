@@ -293,11 +293,16 @@ func TestDoctorSkillsCheck_WithSkills(t *testing.T) {
 	// Create a Claude skills dir with symlinks already present so the
 	// unlinked-skills check does not produce a WARN in this count-focused test.
 	claudeDir := t.TempDir()
+	copilotDir := t.TempDir()
 	t.Setenv("CLAUDE_SKILLS_DIR", claudeDir)
+	t.Setenv("COPILOT_SKILLS_DIR", copilotDir)
 	t.Setenv("CODEX_SKILLS_DIR", "")
 	for _, slug := range slugs {
 		skillDir := filepath.Join(root, "skills", slug)
 		if err := os.Symlink(skillDir, filepath.Join(claudeDir, slug)); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(skillDir, filepath.Join(copilotDir, slug)); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -365,10 +370,12 @@ func TestDoctorLinkedSkills_NoWarn(t *testing.T) {
 
 	slugs := []string{"alpha", "beta"}
 	claudeDir := t.TempDir()
+	copilotDir := t.TempDir()
 	t.Setenv("CLAUDE_SKILLS_DIR", claudeDir)
+	t.Setenv("COPILOT_SKILLS_DIR", copilotDir)
 	t.Setenv("CODEX_SKILLS_DIR", "")
 
-	// Create skill dirs and corresponding symlinks in the Claude dir.
+	// Create skill dirs and corresponding symlinks in each enabled consumer dir.
 	for _, slug := range slugs {
 		skillDir := filepath.Join(root, "skills", slug)
 		if err := os.MkdirAll(skillDir, 0o755); err != nil {
@@ -376,6 +383,9 @@ func TestDoctorLinkedSkills_NoWarn(t *testing.T) {
 		}
 		// Create a proper symlink so the check sees them as linked.
 		if err := os.Symlink(skillDir, filepath.Join(claudeDir, slug)); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(skillDir, filepath.Join(copilotDir, slug)); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -564,6 +574,60 @@ func TestCheckHookWiring_CheckpointTickRequiredWarnsWhenUnwired(t *testing.T) {
 	}
 	if !strings.Contains(got, "ai hooks install --claude") {
 		t.Errorf("expected install guidance; got:\n%s", got)
+	}
+}
+
+func TestCheckToolIntegrationsReportsPresentAndMissingSurfaces(t *testing.T) {
+	home := t.TempDir()
+	cwd := t.TempDir()
+
+	copilotDir := filepath.Join(home, ".copilot", "instructions")
+	if err := os.MkdirAll(copilotDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(copilotDir, "constitution.md"), []byte("# constitution"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cursorDir := filepath.Join(cwd, ".cursor", "rules")
+	if err := os.MkdirAll(cursorDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.WriteFile(filepath.Join(cwd, "AGENTS.md"), []byte("@~/.ai/Constitution.compact.md\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var out bytes.Buffer
+	checkToolIntegrations(&out, home, cwd)
+	got := out.String()
+	if !strings.Contains(got, "Copilot symlink present") {
+		t.Fatalf("expected Copilot OK line, got:\n%s", got)
+	}
+	if !strings.Contains(got, "Cursor integration missing or stale") {
+		t.Fatalf("expected Cursor warning, got:\n%s", got)
+	}
+	if !strings.Contains(got, "Codex integration present") {
+		t.Fatalf("expected Codex OK line, got:\n%s", got)
+	}
+}
+
+func TestCheckWrapperPathWarnsWhenMissingOrShadowed(t *testing.T) {
+	var missing bytes.Buffer
+	checkWrapperPath(&missing, filepath.Join(t.TempDir(), "bin"), "")
+	if !strings.Contains(missing.String(), "command wrappers not on PATH") {
+		t.Fatalf("expected missing PATH warning, got:\n%s", missing.String())
+	}
+
+	if runtime.GOOS == "windows" {
+		t.Skip("shadowed system-bin check is POSIX-only")
+	}
+	binDir := filepath.Join(t.TempDir(), "ai", "bin")
+	pathVar := strings.Join([]string{"/usr/local/bin", binDir}, string(os.PathListSeparator))
+	var shadowed bytes.Buffer
+	checkWrapperPath(&shadowed, binDir, pathVar)
+	if !strings.Contains(shadowed.String(), "command wrappers shadowed") {
+		t.Fatalf("expected shadowed PATH warning, got:\n%s", shadowed.String())
 	}
 }
 

@@ -74,6 +74,48 @@ func TestStatus_HooksSection(t *testing.T) {
 	}
 }
 
+func TestStatusAcceptsAuditLoggerHookName(t *testing.T) {
+	aiRoot := t.TempDir()
+	t.Setenv("AI_ROOT", aiRoot)
+	hooksDir := filepath.Join(aiRoot, "hooks")
+	if err := os.MkdirAll(hooksDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"audit-logger.py", "branch-guard.py", "secret-block.py", "worktree-guard.py"} {
+		if err := os.WriteFile(filepath.Join(hooksDir, name), []byte("# hook"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	warnings := criticalDoctorChecks(aiRoot, t.TempDir())
+	for _, warning := range warnings {
+		if strings.Contains(warning, "audit") {
+			t.Fatalf("unexpected audit hook warning with audit-logger.py installed: %v", warnings)
+		}
+	}
+}
+
+func TestStatusAcceptsLegacyAuditHookAlias(t *testing.T) {
+	aiRoot := t.TempDir()
+	t.Setenv("AI_ROOT", aiRoot)
+	hooksDir := filepath.Join(aiRoot, "hooks")
+	if err := os.MkdirAll(hooksDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"audit.py", "branch-guard.py", "secret-block.py", "worktree-guard.py"} {
+		if err := os.WriteFile(filepath.Join(hooksDir, name), []byte("# hook"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	warnings := criticalDoctorChecks(aiRoot, t.TempDir())
+	for _, warning := range warnings {
+		if strings.Contains(warning, "audit") {
+			t.Fatalf("unexpected audit hook warning with legacy audit.py installed: %v", warnings)
+		}
+	}
+}
+
 func TestStatus_MemorySection(t *testing.T) {
 	aiRoot := t.TempDir()
 	t.Setenv("AI_ROOT", aiRoot)

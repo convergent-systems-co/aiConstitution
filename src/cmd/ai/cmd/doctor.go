@@ -73,6 +73,8 @@ func runDoctor(w io.Writer, fix bool, resetHead string) error {
 	checkDerivativeFiles(w)
 	checkHookWiring(w, paths.AIRoot(), homeDir())
 	checkWrapperHookDrift(w)
+	checkWrapperPath(w, paths.BinDir(), os.Getenv("PATH"))
+	checkToolIntegrations(w, homeDir(), mustGetwd())
 	checkPythonAvailable(w, fix)
 	checkCompactConstitution(w, fix, paths.AIRoot(), homeDir())
 	_ = checkInstalledSkills(w)
@@ -84,6 +86,14 @@ func runDoctor(w io.Writer, fix bool, resetHead string) error {
 func homeDir() string {
 	h, _ := os.UserHomeDir()
 	return h
+}
+
+func mustGetwd() string {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return "."
+	}
+	return cwd
 }
 
 // fileExists returns true if path exists and is accessible.
@@ -555,6 +565,20 @@ func checkBinPath(binDir, pathVar string) (PathStatus, string) {
 	return PathOK, fmt.Sprintf("%s before system bins", binDir)
 }
 
+func checkWrapperPath(w io.Writer, binDir, pathVar string) {
+	status, message := checkBinPath(binDir, pathVar)
+	switch status {
+	case PathOK:
+		if message != "" {
+			fmt.Fprintf(w, "[✓] command wrappers on PATH: %s\n", message)
+		}
+	case PathMissing:
+		fmt.Fprintf(w, "[⚠] command wrappers not on PATH: %s — run: ai hooks install command-wrappers and add ~/.ai/bin early to PATH\n", message)
+	case PathShadowed:
+		fmt.Fprintf(w, "[⚠] command wrappers shadowed: %s — move ~/.ai/bin before system Git/GitHub CLI paths\n", message)
+	}
+}
+
 type doctorStatus int
 
 const (
@@ -602,4 +626,44 @@ func checkDoctorAgentsMD(cwd string) doctorResult {
 		return doctorResult{status: doctorOK}
 	}
 	return doctorResult{status: doctorWarn}
+}
+
+func checkToolIntegrations(w io.Writer, home, cwd string) {
+	results := []doctorResult{
+		checkDoctorCopilot(home),
+		checkDoctorCursor(cwd),
+		checkDoctorAgentsMD(cwd),
+	}
+	results[0].name = "Copilot"
+	results[1].name = "Cursor"
+	results[2].name = "Codex"
+	for _, result := range results {
+		switch result.status {
+		case doctorOK:
+			if result.message == "" {
+				result.message = result.name + " integration present"
+			}
+			fmt.Fprintf(w, "[✓] %s\n", result.message)
+		case doctorWarn:
+			if result.message == "" {
+				result.message = result.name + " integration missing or stale"
+			}
+			fmt.Fprintf(w, "[⚠] %s — run: %s\n", result.message, integrationRepairCommand(result.name))
+		case doctorSkip:
+			// Tool surface absent; do not warn on machines that have not opted in.
+		}
+	}
+}
+
+func integrationRepairCommand(name string) string {
+	switch name {
+	case "Copilot":
+		return "ai hooks install --copilot"
+	case "Cursor":
+		return "ai init-integrate --cursor"
+	case "Codex":
+		return "ai init-integrate --codex"
+	default:
+		return "ai doctor --fix"
+	}
 }

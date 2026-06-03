@@ -30,24 +30,56 @@ Writing governs prose.
 // if absent.
 const copilotTemplate = `# Copilot Instructions
 
-Load and follow ~/.ai/{Constitution,Common,Code,Writing}.md strictly.
+Load and follow ~/.ai/Constitution.compact.md strictly.
 
-These four files are the authoritative governance for every task in
-this workspace. The Constitution file is the meta-rule layer, Common
-holds the universal operating rules, Code governs technical work, and
-Writing governs prose.
+This file is the authoritative governance for every task in this workspace.
+
+## Operating Rules
+
+- Never edit the primary checkout unless the principal explicitly says to do so.
+- Before edits, report pwd, current branch, worktree path, and dirty status.
+- Work on a feature branch or canonical worktree: <repo>/.worktrees/<name>/
+  for repo-local work, or ~/.ai/worktrees/<name>/ for persistent cross-repo
+  work.
+- Never create, switch, or remove worktrees unless the principal has approved
+  that operation in the current conversation.
+- Never commit, push, merge, rebase, cherry-pick, revert, or open/merge a PR
+  unless make-build, make build-pr, or an equivalent explicit release/PR
+  command has been invoked by the principal.
+- If the current branch is main or matches release/*, stop before edits.
+- Prefer repository entrypoints such as make guard, make worktree BRANCH=...,
+  and make build-pr over ad hoc Git or PR commands when present.
+- Treat Claude Code hooks as optional defense-in-depth. For Copilot, the
+  portable enforcement plane is repository instructions, guard scripts, Make
+  targets, and Git hooks.
 `
 
 // agentsTemplate is the body written to ~/.ai/AGENTS.md (for Codex
 // and other AGENTS.md-aware tools) if absent.
 const agentsTemplate = `# AGENTS Instructions
 
-Load and follow ~/.ai/{Constitution,Common,Code,Writing}.md strictly.
+Load and follow ~/.ai/Constitution.compact.md strictly.
 
-These four files are the authoritative governance for every task in
-this workspace. The Constitution file is the meta-rule layer, Common
-holds the universal operating rules, Code governs technical work, and
-Writing governs prose.
+This file is the authoritative governance for every task in this workspace.
+
+## Operating Rules
+
+- Never edit the primary checkout unless the principal explicitly says to do so.
+- Before edits, report pwd, current branch, worktree path, and dirty status.
+- Work on a feature branch or canonical worktree: <repo>/.worktrees/<name>/
+  for repo-local work, or ~/.ai/worktrees/<name>/ for persistent cross-repo
+  work.
+- Never create, switch, or remove worktrees unless the principal has approved
+  that operation in the current conversation.
+- Never commit, push, merge, rebase, cherry-pick, revert, or open/merge a PR
+  unless make-build, make build-pr, or an equivalent explicit release/PR
+  command has been invoked by the principal.
+- If the current branch is main or matches release/*, stop before edits.
+- Prefer repository entrypoints such as make guard, make worktree BRANCH=...,
+  and make build-pr over ad hoc Git or PR commands when present.
+- Treat Claude Code hooks as optional defense-in-depth. For Codex, the portable
+  enforcement plane is repository instructions, guard scripts, Make targets,
+  and Git hooks.
 `
 
 // EnsureToolFiles ensures the ~/.ai/ directory tree and the three AI

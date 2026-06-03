@@ -1,0 +1,4 @@
+#!/bin/sh
+set -eu
+
+exec ai guard --git-hook pre-commit

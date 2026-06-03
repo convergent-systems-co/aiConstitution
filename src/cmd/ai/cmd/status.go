@@ -122,9 +122,9 @@ func runStatus(cmd *cobra.Command) error {
 	fmt.Fprintf(out, "  Wired:     %d in ~/.claude/settings.json\n", wiredCount)
 
 	// Check for expected hooks not wired
-	requiredWired := []string{"audit.py", "branch-guard.py"}
+	requiredWired := []string{"audit-logger.py", "branch-guard.py"}
 	for _, rw := range requiredWired {
-		if !containsStr(wiredNames, rw) {
+		if !hookNamePresent(wiredNames, rw) {
 			fmt.Fprintf(out, "  ⚠ %s not wired in settings.json\n", rw)
 		}
 	}
@@ -329,9 +329,9 @@ func criticalDoctorChecks(root, home string) []string {
 	}
 
 	// Check 5: hook files
-	requiredHooks := []string{"audit.py", "branch-guard.py", "secret-block.py", "worktree-guard.py"}
+	requiredHooks := []string{"audit-logger.py", "branch-guard.py", "secret-block.py", "worktree-guard.py"}
 	for _, hook := range requiredHooks {
-		if _, err := os.Stat(filepath.Join(root, "hooks", hook)); os.IsNotExist(err) {
+		if !hookFilePresent(filepath.Join(root, "hooks"), hook) {
 			warnings = append(warnings, "Hook "+hook+" not found in ~/.ai/hooks/")
 		}
 	}
@@ -348,4 +348,19 @@ func containsStr(slice []string, s string) bool {
 		}
 	}
 	return false
+}
+
+func hookNamePresent(names []string, required string) bool {
+	if containsStr(names, required) {
+		return true
+	}
+	return required == "audit-logger.py" && containsStr(names, "audit.py")
+}
+
+func hookFilePresent(hooksDir, required string) bool {
+	if _, err := os.Stat(filepath.Join(hooksDir, required)); err == nil {
+		return true
+	}
+	_, legacyErr := os.Stat(filepath.Join(hooksDir, "audit.py"))
+	return required == "audit-logger.py" && legacyErr == nil
 }

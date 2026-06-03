@@ -23,6 +23,31 @@ Load the following governance document before acting:
 
 This document governs all AI behavior for this repository. See [aiConstitution](https://github.com/convergent-systems-co/aiConstitution) for details.
 
+## Repository Intent
+
+This repository is governed by the user's constitution from ` + "`" + `~/.ai/` + "`" + `. Do not
+commit user memory, audit logs, secrets, or generated local state into a
+project repository.
+
+## Codex Operating Rules
+
+- Never edit the primary checkout unless the principal explicitly says to do so.
+- Before edits, report ` + "`" + `pwd` + "`" + `, current branch, worktree path, and dirty status.
+- Work on a feature branch or canonical worktree: ` + "`" + `<repo>/.worktrees/<name>/` + "`" + `
+  for repo-local work, or ` + "`" + `~/.ai/worktrees/<name>/` + "`" + ` for persistent cross-repo
+  work.
+- Never create, switch, or remove worktrees unless the principal has approved
+  that operation in the current conversation.
+- Never commit, push, merge, rebase, cherry-pick, revert, or open/merge a PR
+  unless ` + "`" + `make-build` + "`" + `, ` + "`" + `make build-pr` + "`" + `, or an equivalent explicit release/PR
+  command has been invoked by the principal.
+- If the current branch is ` + "`" + `main` + "`" + ` or matches ` + "`" + `release/*` + "`" + `, stop before edits.
+- Prefer repository entrypoints such as ` + "`" + `make guard` + "`" + `, ` + "`" + `make worktree BRANCH=...` + "`" + `,
+  and ` + "`" + `make build-pr` + "`" + ` over ad hoc Git or PR commands when present.
+- Treat Claude Code hooks as optional defense-in-depth. For Codex, the portable
+  enforcement plane is repository instructions, guard scripts, Make targets,
+  and Git hooks.
+
 ## aiConstitution Atoms
 
 Use the local aiConstitution atom cache and tool surfaces when available:
