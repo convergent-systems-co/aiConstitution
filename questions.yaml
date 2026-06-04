@@ -1234,6 +1234,31 @@ phases:
         persists_to: governance/sync.yaml
         persists_to_section: remote
 
+      - qid: Q50
+        prompt: "Set up automated audit and memory reviews?"
+        framing: >-
+          A weekly audit review scans ~/.ai/audit/violations/ and overrides/,
+          proposes constitutional amendments, and recompacts. A monthly memory
+          review checks for stale or missing memories. Both invoke `claude`
+          non-interactively via the platform scheduler (launchd on macOS,
+          crontab on Linux, Task Scheduler on Windows). Requires the `claude`
+          CLI on PATH.
+        time: "~15s"
+        options:
+          - label: "Yes — weekly audit, monthly memory (recommended)"
+            value: "default"
+            note: "Audit every Sunday 8pm; memory on the 1st of each month"
+          - label: "Weekly for both"
+            value: "weekly-both"
+          - label: "Monthly for both"
+            value: "monthly-both"
+          - label: "Skip — configure later"
+            value: "skip"
+        allow_free_text: false
+        allow_chat: false
+        allow_defer: true
+        persists_to: governance/sync.yaml
+
       - qid: Q45
         prompt: "Schedule a quarterly `ai restore --dest=/tmp/...` dry-run as a calendar reminder?"
         framing: >-
