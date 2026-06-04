@@ -106,9 +106,12 @@ func cleanHookGroup(m map[string]any) (map[string]any, bool) {
 //   - "ai hooks run audit"            → catalog renamed to "audit-logger".
 //   - "ai hooks run audit-command"    → wrapper postHook (invoked by ~/.ai/bin/{git,gh});
 //     never a Claude Code event hook. Earlier canonicalWiring wrongly placed it in PreToolUse.
+//   - "ai hooks run checkpoint-tick"  → legacy HANDOFF.md tick, removed; purge from
+//     any settings.json that was wired while it was active.
 var retiredHookCommands = map[string]bool{
-	"ai hooks run audit":         true,
-	"ai hooks run audit-command": true,
+	"ai hooks run audit":           true,
+	"ai hooks run audit-command":   true,
+	"ai hooks run checkpoint-tick": true,
 }
 
 // isRetiredHookCmd reports whether cmd matches a known retired wiring that

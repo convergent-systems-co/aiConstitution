@@ -179,7 +179,6 @@ func checkHookWiring(w io.Writer, aiRoot, home string) {
 		"branch-guard.py",
 		"secret-block.py",
 		"worktree-guard.py",
-		"checkpoint-tick.py",
 	}
 	legacyOptionalHooks := []string{}
 

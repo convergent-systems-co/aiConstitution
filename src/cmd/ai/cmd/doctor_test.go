@@ -550,33 +550,6 @@ func TestCheckHookWiring_NoSettings(t *testing.T) {
 	}
 }
 
-func TestCheckHookWiring_CheckpointTickRequiredWarnsWhenUnwired(t *testing.T) {
-	aiRoot := t.TempDir()
-	home := t.TempDir()
-
-	hooksDir := filepath.Join(aiRoot, "hooks")
-	if err := os.MkdirAll(hooksDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(hooksDir, "checkpoint-tick.py"), []byte("# hook"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-
-	settingsPath := filepath.Join(home, ".claude", "settings.json")
-	writeSettingsJSON(t, settingsPath, []string{"audit-logger.py"})
-
-	var out bytes.Buffer
-	checkHookWiring(&out, aiRoot, home)
-
-	got := out.String()
-	if !strings.Contains(got, "checkpoint-tick.py installed but not wired") {
-		t.Errorf("expected required checkpoint-tick warning; got:\n%s", got)
-	}
-	if !strings.Contains(got, "ai hooks install --claude") {
-		t.Errorf("expected install guidance; got:\n%s", got)
-	}
-}
-
 func TestCheckToolIntegrationsReportsPresentAndMissingSurfaces(t *testing.T) {
 	home := t.TempDir()
 	cwd := t.TempDir()
