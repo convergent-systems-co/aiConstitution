@@ -560,8 +560,8 @@ func TestSettingsJSON_ValidAfterRepairingCorruption(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(out), "ai hooks run checkpoint-tick") {
-		t.Errorf("settings.json should include checkpoint-tick in Stop wiring:\n%s", out)
+	if strings.Contains(string(out), "ai hooks run checkpoint-tick") {
+		t.Errorf("settings.json should purge retired checkpoint-tick wiring:\n%s", out)
 	}
 }
 

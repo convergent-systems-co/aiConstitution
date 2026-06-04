@@ -722,7 +722,7 @@ func canonicalWiring(_ string) []eventHookSpec {
 		)},
 		{event: "PostToolUse", hooks: h("audit-logger.py")},
 		// memcore-session-flush.py is opt-in (AI_MEMCORE_ENABLED=1) — no-ops silently when unset.
-		{event: "Stop", hooks: h("audit-logger.py", "checkpoint-tick.py", "memcore-session-flush.py")},
+		{event: "Stop", hooks: h("audit-logger.py", "memcore-session-flush.py")},
 		{event: "SessionEnd", hooks: h("audit-logger.py")},
 		{event: "SubagentStop", hooks: h("audit-logger.py")},
 		{event: "PreCompact", hooks: h("audit-logger.py")},
@@ -1116,8 +1116,6 @@ func syntheticEvent(hookName string) string {
 		return `{"tool_name":"Bash","tool_input":{"command":"terraform plan"}}`
 	case "worktree-guard.py":
 		return `{"tool_name":"Bash","tool_input":{"command":"git status"}}`
-	case "checkpoint-tick.py":
-		return `{"type":"Stop"}`
 	default:
 		return `{"tool_name":"Bash","tool_input":{"command":"echo test"}}`
 	}
