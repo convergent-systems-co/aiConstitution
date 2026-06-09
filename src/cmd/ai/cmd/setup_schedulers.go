@@ -161,7 +161,7 @@ func writeReviewPrompts(aiRoot string) error {
 	}
 	for name, content := range files {
 		p := filepath.Join(dir, name)
-		if err := os.WriteFile(p, []byte(content), 0o640); err != nil {
+		if err := os.WriteFile(p, []byte(content), 0o600); err != nil {
 			return err
 		}
 	}
@@ -169,10 +169,10 @@ func writeReviewPrompts(aiRoot string) error {
 	// Write platform-appropriate review script.
 	if runtime.GOOS == "windows" {
 		script := filepath.Join(dir, "review.ps1")
-		return os.WriteFile(script, []byte(windowsReviewScript), 0o640)
+		return os.WriteFile(script, []byte(windowsReviewScript), 0o600)
 	}
 	script := filepath.Join(dir, "review.sh")
-	if err := os.WriteFile(script, []byte(posixReviewScript), 0o750); err != nil { //nolint:gosec
+	if err := os.WriteFile(script, []byte(posixReviewScript), 0o700); err != nil { //nolint:gosec
 		return err
 	}
 	return nil
