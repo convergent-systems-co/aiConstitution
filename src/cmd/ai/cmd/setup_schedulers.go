@@ -191,7 +191,7 @@ func installMacOSReviewSchedule(aiRoot, homeDir string) error {
 	if err != nil {
 		return err
 	}
-	f, err := os.OpenFile(plistPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o640)
+	f, err := os.OpenFile(plistPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
 	if err != nil {
 		return err
 	}
