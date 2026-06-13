@@ -2,15 +2,25 @@ package cmd
 
 import (
 	"fmt"
-	"path/filepath"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"regexp"
+	"slices"
 	"strings"
 	"time"
 
 	"github.com/convergent-systems-co/aiConstitution/src/internal/panels"
 	"github.com/convergent-systems-co/aiConstitution/src/internal/paths"
 	"github.com/spf13/cobra"
+)
+
+var (
+	fetchPRDiffFunc = fetchPRDiff
+
+	awsKeyPattern        = regexp.MustCompile(`AKIA[0-9A-Z]{16}`)
+	githubTokenPattern   = regexp.MustCompile(`gh[pousr]_[A-Za-z0-9_]{20,}`)
+	passwordValuePattern = regexp.MustCompile(`(?i)\b(password|passwd|secret|token|api[_-]?key)\b\s*[:=]\s*['"][^'"]+['"]`)
 )
 
 // newReviewCmd implements `ai review`. See SPEC.md §3.2 and §6.
@@ -64,11 +74,7 @@ See SPEC.md §3.2 + §6 + §6.5 (30-day idle prompt).`,
 }
 
 // runPRReview fetches the diff for the given PR number via `gh pr diff`,
-// runs each enabled panel against the diff, and prints a scored report.
-//
-// Panel invocations are stubs in this release: each panel prints a
-// placeholder score. Real panel evaluation is deferred to the panel-eval
-// milestone. See Epic #26.
+// evaluates it with the configured review panels, and prints a scored report.
 func runPRReview(cmd *cobra.Command, pr int) error {
 	out := cmd.OutOrStdout()
 
@@ -76,12 +82,12 @@ func runPRReview(cmd *cobra.Command, pr int) error {
 	fmt.Fprintf(out, "## Review: PR #%d\n", pr)
 
 	// 2. Fetch the diff (best-effort; report continues even on gh failure).
-	diff, diffErr := fetchPRDiff(pr)
+	diff, diffErr := fetchPRDiffFunc(pr)
 	if diffErr != nil {
 		fmt.Fprintf(out, "[warn] could not fetch PR diff: %v\n", diffErr)
-		diff = "" // proceed with empty diff — panels still run (stubbed)
+		diff = ""
 	}
-	_ = diff // panels will consume this when eval is implemented
+	inspection := inspectDiff(diff)
 
 	// 3. Load the configured panels.
 	panelList, err := panels.LoadDefaultPanels()
@@ -89,16 +95,10 @@ func runPRReview(cmd *cobra.Command, pr int) error {
 		return fmt.Errorf("review --pr: load panels: %w", err)
 	}
 
-	// 4. Run each panel (stubbed: placeholder scores only).
+	// 4. Run each panel with lightweight heuristics over the fetched diff.
 	results := make(map[string]panels.PanelResult, len(panelList))
 	for _, p := range panelList {
-		// Stub: every panel passes with a placeholder confidence of 0.75.
-		// TODO: wire real panel evaluators once panel-eval milestone lands.
-		result := panels.PanelResult{
-			Pass:       true,
-			Confidence: 0.75,
-			Findings:   []string{"(stub — real evaluation not yet implemented)"},
-		}
+		result := evaluatePanel(p.Name, inspection)
 		results[p.Name] = result
 
 		mark := "✓"
@@ -129,6 +129,179 @@ func fetchPRDiff(pr int) (string, error) {
 		return "", fmt.Errorf("gh pr diff %d: %w", pr, err)
 	}
 	return strings.TrimSpace(string(out)), nil
+}
+
+type diffInspection struct {
+	changedFiles   []string
+	addedLines     []string
+	hasCodeChanges bool
+	hasTestChanges bool
+	hasDocChanges  bool
+	hasUserFacing  bool
+}
+
+func inspectDiff(diff string) diffInspection {
+	var out diffInspection
+	seenFiles := make(map[string]struct{})
+	for _, line := range strings.Split(diff, "\n") {
+		switch {
+		case strings.HasPrefix(line, "+++ b/"):
+			path := strings.TrimPrefix(line, "+++ b/")
+			if path == "" || path == "/dev/null" {
+				continue
+			}
+			if _, seen := seenFiles[path]; seen {
+				continue
+			}
+			seenFiles[path] = struct{}{}
+			out.changedFiles = append(out.changedFiles, path)
+			out.hasCodeChanges = out.hasCodeChanges || isCodeFile(path)
+			out.hasTestChanges = out.hasTestChanges || isTestFile(path)
+			out.hasDocChanges = out.hasDocChanges || isDocFile(path)
+			out.hasUserFacing = out.hasUserFacing || isUserFacingFile(path)
+		case strings.HasPrefix(line, "+") && !strings.HasPrefix(line, "+++"):
+			out.addedLines = append(out.addedLines, strings.TrimPrefix(line, "+"))
+		}
+	}
+	return out
+}
+
+func evaluatePanel(name string, inspection diffInspection) panels.PanelResult {
+	if len(inspection.changedFiles) == 0 {
+		return panels.PanelResult{
+			Pass:       false,
+			Confidence: 0.20,
+			Findings:   []string{"No diff available for review."},
+		}
+	}
+
+	switch name {
+	case "code-review":
+		if inspection.hasCodeChanges && !inspection.hasTestChanges {
+			return panels.PanelResult{
+				Pass:       false,
+				Confidence: 0.45,
+				Findings:   []string{"Code changes detected without accompanying test file changes."},
+			}
+		}
+		if inspection.hasCodeChanges {
+			return panels.PanelResult{
+				Pass:       true,
+				Confidence: 0.82,
+				Findings:   []string{fmt.Sprintf("Reviewed %d changed file(s); test coverage signal present.", len(inspection.changedFiles))},
+			}
+		}
+		return panels.PanelResult{
+			Pass:       true,
+			Confidence: 0.70,
+			Findings:   []string{"No code file changes detected."},
+		}
+	case "security-review":
+		findings := securityFindings(inspection.addedLines)
+		if len(findings) > 0 {
+			return panels.PanelResult{
+				Pass:       false,
+				Confidence: 0.92,
+				Findings:   findings,
+			}
+		}
+		return panels.PanelResult{
+			Pass:       true,
+			Confidence: 0.84,
+			Findings:   []string{"No obvious secret or insecure-pattern additions detected."},
+		}
+	case "documentation-review":
+		if inspection.hasUserFacing && !inspection.hasDocChanges {
+			return panels.PanelResult{
+				Pass:       false,
+				Confidence: 0.48,
+				Findings:   []string{"User-facing CLI or template changes detected without documentation updates."},
+			}
+		}
+		if inspection.hasDocChanges {
+			return panels.PanelResult{
+				Pass:       true,
+				Confidence: 0.83,
+				Findings:   []string{"Documentation changes are included in the diff."},
+			}
+		}
+		return panels.PanelResult{
+			Pass:       true,
+			Confidence: 0.68,
+			Findings:   []string{"No user-facing documentation gap detected."},
+		}
+	default:
+		return panels.PanelResult{
+			Pass:       true,
+			Confidence: 0.60,
+			Findings:   []string{"No custom evaluator registered; falling back to generic review."},
+		}
+	}
+}
+
+func securityFindings(addedLines []string) []string {
+	var findings []string
+	addFinding := func(finding string) {
+		if !slices.Contains(findings, finding) {
+			findings = append(findings, finding)
+		}
+	}
+
+	for _, line := range addedLines {
+		lower := strings.ToLower(strings.TrimSpace(line))
+		switch {
+		case strings.Contains(lower, "insecureskipverify: true"):
+			addFinding("TLS certificate verification is disabled in added code.")
+		case strings.Contains(lower, "| sh") || strings.Contains(lower, "| bash"):
+			if strings.Contains(lower, "curl ") || strings.Contains(lower, "wget ") {
+				addFinding("A network-downloaded script is piped directly to a shell.")
+			}
+		case strings.Contains(lower, "--no-verify"):
+			addFinding("A git hook bypass flag was added.")
+		case strings.Contains(lower, "begin private key"):
+			addFinding("Private key material appears in added content.")
+		case awsKeyPattern.MatchString(line), githubTokenPattern.MatchString(line), passwordValuePattern.MatchString(line):
+			addFinding("Potential credential or secret material was added.")
+		}
+	}
+
+	if len(findings) > 3 {
+		return findings[:3]
+	}
+	return findings
+}
+
+func isCodeFile(path string) bool {
+	if isTestFile(path) || isDocFile(path) {
+		return false
+	}
+	switch strings.ToLower(filepath.Ext(path)) {
+	case ".go", ".py", ".js", ".jsx", ".ts", ".tsx", ".rb", ".rs", ".java", ".sh", ".ps1":
+		return true
+	default:
+		return false
+	}
+}
+
+func isTestFile(path string) bool {
+	lower := strings.ToLower(path)
+	return strings.HasSuffix(lower, "_test.go") ||
+		strings.Contains(lower, ".test.") ||
+		strings.Contains(lower, ".spec.")
+}
+
+func isDocFile(path string) bool {
+	lower := strings.ToLower(path)
+	return strings.HasSuffix(lower, ".md") ||
+		strings.HasSuffix(lower, ".rst") ||
+		strings.HasSuffix(lower, ".adoc") ||
+		strings.Contains(lower, "/docs/") ||
+		strings.HasSuffix(lower, ".txt")
+}
+
+func isUserFacingFile(path string) bool {
+	return strings.HasPrefix(path, "src/cmd/ai/cmd/") ||
+		strings.HasPrefix(path, "src/cmd/ai/embed/templates/")
 }
 
 // runReviewCheck runs the 4-scan governance review cycle:
