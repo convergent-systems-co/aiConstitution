@@ -174,6 +174,27 @@ binary version independently — the binary tracks `SemVer` over the
 
 ---
 
+## [1.9.0] — 2026-06-13
+
+### Added
+
+- **`ai compress --wire` wires Codex and Copilot** in addition to Claude Code — creates/updates `AGENTS.md` `@-include` in cwd and `~/.copilot/instructions/constitution.md` symlink (#515).
+- **`ai compress --check` reports wiring status** for Claude Code, Codex, and Copilot — `[✓]` / `[ ]` per tool with repair hint; appended after `--check --personas` staleness report (#515).
+- **Explicit `[HARD]`/`[SOFT]`/`[MAY]` gate markers** in constitution rule headers — marker takes precedence over `inferGate()` keyword inference, eliminating false-hard classifications (#514).
+- **Version tracking in compact form** — `renderCompactConstitution` reads the version from the source `Constitution.md` header; compact header shows `compact-<version>` instead of hardcoded `compact-1.0` (#514).
+- **No blank lines between compact rules** — `marshalCompact` and `CompactRules` emit `\n` not `\n\n`, saving ~30% tokens in the compact form (#514).
+- **§4.11 Agentic Git Lifecycle in `constitution.tmpl`** — four rules (commit before done, push before done, verify branch before first edit, checkpoint commits) baked into the technical template (#514).
+- **Platform-native governance review scheduler** — `ai setup` installs a launchd/systemd/Task Scheduler job that runs `ai compress` + `ai doctor` weekly (#509).
+
+### Fixed
+
+- `setup.go` and `doctor.go` updated to pass version parameter to `renderCompactConstitution` after signature change (#514).
+- Removed `--dangerously-skip-permissions` from review scheduler invocation (#513).
+- Tightened review-scheduler plist permissions to `0600` (#511).
+- Removed legacy `checkpoint-tick` (HANDOFF.md) hook; isolated tests from real env (#510).
+
+---
+
 ## [Unreleased]
 
 ### Spec — v0.10: GitHub Actions trinity
