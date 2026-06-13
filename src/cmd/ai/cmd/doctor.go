@@ -175,9 +175,10 @@ func readWiredHookNames(settingsPath string) map[string]bool {
 // governedHook describes a hook that enforces one or more governance rules.
 // The mapping lives here — not in the hook scripts — so hooks stay policy-agnostic.
 type governedHook struct {
-	slug  string // bare name, no extension
-	rules []string
-	desc  string // one-line plain-English description of what it checks
+	slug     string   // bare name, no extension
+	rules    []string
+	desc     string // one-line plain-English description of what it checks
+	wrapHint string // non-empty when full coverage requires the ai git shim
 }
 
 // governedHooks is the canonical rule→hook mapping for the ai constitution.
@@ -218,6 +219,12 @@ var governedHooks = []governedHook{
 		rules: []string{"§1.3.4", "§1.5.5", "§5.2"},
 		desc:  "logs every tool use to the audit trail",
 	},
+	{
+		slug:     "push-guard",
+		rules:    []string{"§3.2.10"},
+		desc:     "blocks force-pushes to protected branches",
+		wrapHint: "routes every git push through this guard regardless of caller — run: ai setup --git-shim",
+	},
 }
 
 // checkGovernedHookCoverage reports which governance-mapped hooks are not yet
@@ -234,11 +241,25 @@ func checkGovernedHookCoverage(w io.Writer, aiRoot string) {
 	}
 	if len(missing) == 0 {
 		fmt.Fprintln(w, "[✓] Governance hook coverage complete")
-		return
+	} else {
+		for _, gh := range missing {
+			fmt.Fprintf(w, "[⚠] %s not installed — covers %s (%s) — run: ai hooks install %s\n",
+				gh.slug, strings.Join(gh.rules, ", "), gh.desc, gh.slug)
+		}
 	}
-	for _, gh := range missing {
-		fmt.Fprintf(w, "[⚠] %s not installed — covers %s (%s) — run: ai hooks install %s\n",
-			gh.slug, strings.Join(gh.rules, ", "), gh.desc, gh.slug)
+	// Report wrap hints for installed hooks that only achieve full coverage
+	// when git is routed through the ai shim. Advisory only — never a failure.
+	for _, gh := range governedHooks {
+		if gh.wrapHint == "" {
+			continue
+		}
+		if !fileExists(filepath.Join(hooksDir, gh.slug+".py")) {
+			continue // already reported as missing above
+		}
+		shimPath := filepath.Join(homeDir(), ".ai", "bin", "git")
+		if !fileExists(shimPath) {
+			fmt.Fprintf(w, "[i] %s has partial coverage — %s\n", gh.slug, gh.wrapHint)
+		}
 	}
 }
 
