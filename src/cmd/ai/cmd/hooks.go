@@ -211,6 +211,24 @@ Prints [✓] or [✗] per hook. Exit 1 if any [✗].`,
 		},
 	})
 
+	// uninstall — removes a hook file and scrubs its wiring from settings.json
+	c.AddCommand(&cobra.Command{
+		Use:   "uninstall <name>",
+		Short: "Remove a hook and scrub its wiring from all client configs",
+		Long: `uninstall removes the named hook from ~/.ai/hooks/ and purges every
+reference to it from ~/.claude/settings.json.
+
+  ai hooks uninstall checkpoint-tick   remove a deprecated hook
+  ai hooks uninstall my-hook           remove a custom hook
+
+The hook file is deleted permanently. Run 'ai hooks install <name>' to
+re-install from the ai-atoms.com catalog.`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runHooksUninstall(args[0], cmd.OutOrStdout())
+		},
+	})
+
 	c.AddCommand(propose, newHooksInstallCmd())
 	return c
 }
@@ -1314,6 +1332,143 @@ func runHooksCopilotInstall(aiRoot, home string) error {
 	_ = os.Remove(link)
 	if err := symlinkOrCopy(target, link); err != nil {
 		return fmt.Errorf("hooks copilot: symlink: %w", err)
+	}
+	return nil
+}
+
+// ─── hooks uninstall ──────────────────────────────────────────────────────
+
+// runHooksUninstall removes a hook file from ~/.ai/hooks/ and scrubs every
+// wiring entry that references it from ~/.claude/settings.json.
+//
+// The slug may be provided with or without an extension (e.g. "checkpoint-tick"
+// and "checkpoint-tick.py" are both accepted).
+func runHooksUninstall(name string, out io.Writer) error {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("hooks uninstall: resolve home: %w", err)
+	}
+	aiRoot := os.Getenv("AI_ROOT")
+	if aiRoot == "" {
+		aiRoot = filepath.Join(home, ".ai")
+	}
+	hooksDir := filepath.Join(aiRoot, "hooks")
+
+	// Normalise: strip extension to get bare slug.
+	slug := strings.TrimSuffix(strings.TrimSuffix(name, ".py"), ".sh")
+
+	// Remove the hook file (try .py then .sh).
+	var removed bool
+	for _, ext := range []string{".py", ".sh"} {
+		hookPath := filepath.Join(hooksDir, slug+ext)
+		if removeErr := os.Remove(hookPath); removeErr == nil {
+			fmt.Fprintf(out, "Removed: %s\n", hookPath)
+			removed = true
+			break
+		} else if !os.IsNotExist(removeErr) {
+			return fmt.Errorf("hooks uninstall: remove %s: %w", hookPath, removeErr)
+		}
+	}
+	if !removed {
+		fmt.Fprintf(out, "Not found: %s (nothing to remove from disk)\n", filepath.Join(hooksDir, slug+".py"))
+	}
+
+	// Scrub wiring from ~/.claude/settings.json.
+	// CLAUDE_CONFIG_DIR is respected for testing.
+	claudeConfigDir := os.Getenv("CLAUDE_CONFIG_DIR")
+	if claudeConfigDir == "" {
+		claudeConfigDir = filepath.Join(home, ".claude")
+	}
+	settingsPath := filepath.Join(claudeConfigDir, "settings.json")
+	wiringCmd := "ai hooks run " + slug
+	if scrubErr := scrubHookWiring(settingsPath, wiringCmd); scrubErr != nil {
+		fmt.Fprintf(out, "Warning: could not update %s: %v\n", settingsPath, scrubErr)
+	} else {
+		fmt.Fprintf(out, "Scrubbed wiring for %q from %s\n", wiringCmd, settingsPath)
+	}
+
+	return nil
+}
+
+// scrubHookWiring removes all hook entries with the given command string from
+// a settings.json file. It is a targeted removal: only the matching command
+// is removed; all other wiring and settings keys are preserved.
+func scrubHookWiring(settingsPath, targetCmd string) error {
+	data, err := os.ReadFile(filepath.Clean(settingsPath))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil // nothing to scrub
+		}
+		return fmt.Errorf("read %s: %w", settingsPath, err)
+	}
+	var raw map[string]any
+	if jsonErr := json.Unmarshal(data, &raw); jsonErr != nil {
+		return fmt.Errorf("parse %s: %w", settingsPath, jsonErr)
+	}
+
+	hooksMap, _ := raw["hooks"].(map[string]any)
+	if hooksMap == nil {
+		return nil // no hooks section — nothing to scrub
+	}
+
+	changed := false
+	for event, val := range hooksMap {
+		entries, ok := val.([]any)
+		if !ok {
+			continue
+		}
+		var newGroups []any
+		for _, entry := range entries {
+			m, ok := entry.(map[string]any)
+			if !ok {
+				newGroups = append(newGroups, entry)
+				continue
+			}
+			// Group format: {"hooks": [...]}
+			if hookList, ok := m["hooks"].([]any); ok {
+				var newList []any
+				for _, h := range hookList {
+					if hm, ok := h.(map[string]any); ok {
+						if cmd, _ := hm["command"].(string); cmd == targetCmd {
+							changed = true
+							continue // drop this entry
+						}
+					}
+					newList = append(newList, h)
+				}
+				if len(newList) == 0 {
+					// Drop the entire group if it has no remaining hooks.
+					changed = true
+					continue
+				}
+				m["hooks"] = newList
+				newGroups = append(newGroups, m)
+				continue
+			}
+			// Flat format: {"type": "...", "command": "..."}
+			if cmd, _ := m["command"].(string); cmd == targetCmd {
+				changed = true
+				continue
+			}
+			newGroups = append(newGroups, m)
+		}
+		if len(newGroups) == 0 {
+			delete(hooksMap, event)
+		} else {
+			hooksMap[event] = newGroups
+		}
+	}
+	if !changed {
+		return nil // nothing matched — file unchanged
+	}
+
+	raw["hooks"] = hooksMap
+	out, err := json.MarshalIndent(raw, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshal settings: %w", err)
+	}
+	if err := os.WriteFile(settingsPath, out, 0o644); err != nil { //nolint:gosec // G306: settings.json is user-readable
+		return fmt.Errorf("write %s: %w", settingsPath, err)
 	}
 	return nil
 }
