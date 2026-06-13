@@ -10,6 +10,13 @@ Spec version (separate cadence from binary): see
 binary version independently — the binary tracks `SemVer` over the
 **implemented** surface; the spec tracks decisions and architecture.
 
+## [Unreleased]
+
+### Added
+
+- `ai hooks uninstall <slug>`: removes a hook file from `~/.ai/hooks/` and scrubs all wiring entries for it from `~/.claude/settings.json`
+- `ai doctor`: deprecation check — warns when a retired hook (e.g. `checkpoint-tick`) is still installed on disk and advises `ai hooks uninstall`
+
 ## [1.3.0] — 2026-05-28
 
 ### Added

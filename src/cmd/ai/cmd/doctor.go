@@ -71,6 +71,7 @@ func runDoctor(w io.Writer, fix bool, resetHead string) error {
 	checkTerminalNotifier(w)
 	checkPersonasBlock(w)
 	checkDerivativeFiles(w)
+	checkDeprecatedHooks(w, paths.AIRoot())
 	checkHookWiring(w, paths.AIRoot(), homeDir())
 	checkGovernedHookCoverage(w, paths.AIRoot())
 	checkWrapperHookDrift(w)
@@ -230,6 +231,32 @@ var governedHooks = []governedHook{
 		rules: []string{"§4.1.1", "§4.1.3", "§4.1.6", "§4.1.7", "§4.1.8", "§4.1.9", "§4.1.10", "§4.3.3", "§4.5.1", "§5.1.3"},
 		desc:  "LLM review of commit diff for rules requiring semantic understanding — requires an API key (ANTHROPIC_API_KEY, OPENAI_API_KEY, or GOOGLE_API_KEY)",
 	},
+}
+
+// deprecatedHooks lists hook slugs that were previously part of the governed set
+// but have since been retired. ai doctor warns if they are still on disk.
+var deprecatedHooks = []struct {
+	slug   string
+	reason string
+}{
+	{
+		slug:   "checkpoint-tick",
+		reason: "replaced by dirty-tree-guard; no longer part of the constitution",
+	},
+}
+
+// checkDeprecatedHooks warns when a retired hook is still installed on disk.
+// These hooks were once part of the governed set but are no longer needed.
+// Continuing to run them is harmless but misleading; users should remove them.
+func checkDeprecatedHooks(w io.Writer, aiRoot string) {
+	hooksDir := filepath.Join(aiRoot, "hooks")
+	for _, d := range deprecatedHooks {
+		hookPath := filepath.Join(hooksDir, d.slug+".py")
+		if fileExists(hookPath) {
+			fmt.Fprintf(w, "[⚠] %s.py is deprecated (%s) — run: ai hooks uninstall --wire %s\n",
+				d.slug, d.reason, d.slug)
+		}
+	}
 }
 
 // checkGovernedHookCoverage reports which governance-mapped hooks are not yet
