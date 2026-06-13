@@ -253,7 +253,7 @@ func checkDeprecatedHooks(w io.Writer, aiRoot string) {
 	for _, d := range deprecatedHooks {
 		hookPath := filepath.Join(hooksDir, d.slug+".py")
 		if fileExists(hookPath) {
-			fmt.Fprintf(w, "[⚠] %s.py is deprecated (%s) — run: ai hooks uninstall %s\n",
+			fmt.Fprintf(w, "[⚠] %s.py is deprecated (%s) — run: ai hooks uninstall --wire %s\n",
 				d.slug, d.reason, d.slug)
 		}
 	}

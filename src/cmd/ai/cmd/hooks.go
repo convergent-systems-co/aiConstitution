@@ -211,23 +211,30 @@ Prints [✓] or [✗] per hook. Exit 1 if any [✗].`,
 		},
 	})
 
-	// uninstall — removes a hook file and scrubs its wiring from settings.json
-	c.AddCommand(&cobra.Command{
+	// uninstall — removes a hook file; --wire also scrubs client wiring
+	var uninstallWire bool
+	uninstall := &cobra.Command{
 		Use:   "uninstall <name>",
-		Short: "Remove a hook and scrub its wiring from all client configs",
-		Long: `uninstall removes the named hook from ~/.ai/hooks/ and purges every
-reference to it from ~/.claude/settings.json.
+		Short: "Remove a hook from ~/.ai/hooks/; --wire also scrubs client wiring",
+		Long: `uninstall removes the named hook file from ~/.ai/hooks/.
 
-  ai hooks uninstall checkpoint-tick   remove a deprecated hook
-  ai hooks uninstall my-hook           remove a custom hook
+  ai hooks uninstall checkpoint-tick          remove the hook file only
+  ai hooks uninstall --wire checkpoint-tick   remove file + scrub wiring
+                                              from ~/.claude/settings.json
+
+--wire mirrors 'ai hooks install --claude': it is the explicit opt-in for
+touching client config files. Without --wire, uninstall is a local-only
+operation that never modifies settings.json or any other client config.
 
 The hook file is deleted permanently. Run 'ai hooks install <name>' to
 re-install from the ai-atoms.com catalog.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runHooksUninstall(args[0], cmd.OutOrStdout())
+			return runHooksUninstall(args[0], uninstallWire, cmd.OutOrStdout())
 		},
-	})
+	}
+	uninstall.Flags().BoolVar(&uninstallWire, "wire", false, "also scrub wiring from ~/.claude/settings.json")
+	c.AddCommand(uninstall)
 
 	c.AddCommand(propose, newHooksInstallCmd())
 	return c
@@ -1338,12 +1345,13 @@ func runHooksCopilotInstall(aiRoot, home string) error {
 
 // ─── hooks uninstall ──────────────────────────────────────────────────────
 
-// runHooksUninstall removes a hook file from ~/.ai/hooks/ and scrubs every
-// wiring entry that references it from ~/.claude/settings.json.
+// runHooksUninstall removes a hook file from ~/.ai/hooks/. When wire is true
+// it also scrubs every wiring entry that references the hook from
+// ~/.claude/settings.json (mirrors the --wire flag on the CLI command).
 //
 // The slug may be provided with or without an extension (e.g. "checkpoint-tick"
 // and "checkpoint-tick.py" are both accepted).
-func runHooksUninstall(name string, out io.Writer) error {
+func runHooksUninstall(name string, wire bool, out io.Writer) error {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return fmt.Errorf("hooks uninstall: resolve home: %w", err)
@@ -1373,7 +1381,12 @@ func runHooksUninstall(name string, out io.Writer) error {
 		fmt.Fprintf(out, "Not found: %s (nothing to remove from disk)\n", filepath.Join(hooksDir, slug+".py"))
 	}
 
-	// Scrub wiring from ~/.claude/settings.json.
+	if !wire {
+		fmt.Fprintf(out, "Hint: pass --wire to also scrub wiring from ~/.claude/settings.json\n")
+		return nil
+	}
+
+	// --wire: scrub from ~/.claude/settings.json.
 	// CLAUDE_CONFIG_DIR is respected for testing.
 	claudeConfigDir := os.Getenv("CLAUDE_CONFIG_DIR")
 	if claudeConfigDir == "" {

@@ -133,20 +133,74 @@ func TestScrubHookWiring_PreservesOtherKeys(t *testing.T) {
 
 // ─── runHooksUninstall tests ───────────────────────────────────────────────
 
-func TestRunHooksUninstall_RemovesFileAndScrubsWiring(t *testing.T) {
+func TestRunHooksUninstall_RemovesFileOnly_NoWire(t *testing.T) {
 	tmpDir := t.TempDir()
 	hooksDir := filepath.Join(tmpDir, "hooks")
 	if err := os.MkdirAll(hooksDir, 0o750); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-
-	// Write a fake hook file.
 	hookFile := filepath.Join(hooksDir, "checkpoint-tick.py")
 	if err := os.WriteFile(hookFile, []byte("#!/usr/bin/env python3\npass\n"), 0o755); err != nil {
 		t.Fatalf("write hook: %v", err)
 	}
+	claudeDir := filepath.Join(tmpDir, "claude")
+	if err := os.MkdirAll(claudeDir, 0o750); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	// Write settings.json with wiring — should NOT be touched without --wire.
+	settings := map[string]any{
+		"hooks": map[string]any{
+			"Stop": []any{
+				map[string]any{
+					"hooks": []any{
+						map[string]any{"type": "command", "command": "ai hooks run checkpoint-tick"},
+					},
+				},
+			},
+		},
+	}
+	settingsPath := filepath.Join(claudeDir, "settings.json")
+	settingsData, _ := json.MarshalIndent(settings, "", "  ")
+	if err := os.WriteFile(settingsPath, settingsData, 0o644); err != nil {
+		t.Fatalf("write settings: %v", err)
+	}
+	before, _ := os.ReadFile(settingsPath)
 
-	// Write a fake settings.json with wiring for this hook.
+	t.Setenv("AI_ROOT", tmpDir)
+	t.Setenv("CLAUDE_CONFIG_DIR", claudeDir)
+
+	var out bytes.Buffer
+	if err := runHooksUninstall("checkpoint-tick", false, &out); err != nil {
+		t.Fatalf("runHooksUninstall: %v", err)
+	}
+
+	// File must be gone.
+	if _, err := os.Stat(hookFile); !os.IsNotExist(err) {
+		t.Error("expected hook file to be removed")
+	}
+
+	// settings.json must be untouched.
+	after, _ := os.ReadFile(settingsPath)
+	if string(before) != string(after) {
+		t.Error("expected settings.json to be unchanged without --wire")
+	}
+
+	// Output should contain the --wire hint.
+	if !strings.Contains(out.String(), "--wire") {
+		t.Errorf("expected --wire hint in output, got: %s", out.String())
+	}
+}
+
+func TestRunHooksUninstall_WireFlag_ScrubsWiring(t *testing.T) {
+	tmpDir := t.TempDir()
+	hooksDir := filepath.Join(tmpDir, "hooks")
+	if err := os.MkdirAll(hooksDir, 0o750); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	hookFile := filepath.Join(hooksDir, "checkpoint-tick.py")
+	if err := os.WriteFile(hookFile, []byte("#!/usr/bin/env python3\npass\n"), 0o755); err != nil {
+		t.Fatalf("write hook: %v", err)
+	}
 	claudeDir := filepath.Join(tmpDir, "claude")
 	if err := os.MkdirAll(claudeDir, 0o750); err != nil {
 		t.Fatalf("mkdir claude dir: %v", err)
@@ -173,7 +227,7 @@ func TestRunHooksUninstall_RemovesFileAndScrubsWiring(t *testing.T) {
 	t.Setenv("CLAUDE_CONFIG_DIR", claudeDir)
 
 	var out bytes.Buffer
-	if err := runHooksUninstall("checkpoint-tick", &out); err != nil {
+	if err := runHooksUninstall("checkpoint-tick", true, &out); err != nil {
 		t.Fatalf("runHooksUninstall: %v", err)
 	}
 
@@ -182,24 +236,19 @@ func TestRunHooksUninstall_RemovesFileAndScrubsWiring(t *testing.T) {
 		t.Error("expected hook file to be removed")
 	}
 
-	// Wiring for checkpoint-tick must be scrubbed.
+	// Wiring for checkpoint-tick must be scrubbed; audit-logger must remain.
 	raw := readSettingsAny(t, settingsPath)
 	hooksMap := raw["hooks"].(map[string]any)
 	stopEntries := hooksMap["Stop"].([]any)
-	if len(stopEntries) != 1 {
-		t.Fatalf("expected 1 group in Stop, got %d", len(stopEntries))
-	}
 	group := stopEntries[0].(map[string]any)
 	hookList := group["hooks"].([]any)
 	if len(hookList) != 1 {
 		t.Fatalf("expected 1 hook remaining, got %d", len(hookList))
 	}
-	entry := hookList[0].(map[string]any)
-	if entry["command"] != "ai hooks run audit-logger" {
-		t.Errorf("expected only audit-logger to remain, got %q", entry["command"])
+	if hookList[0].(map[string]any)["command"] != "ai hooks run audit-logger" {
+		t.Errorf("expected audit-logger to remain")
 	}
 
-	// Output should confirm removal.
 	got := out.String()
 	if !strings.Contains(got, "Removed") {
 		t.Errorf("expected 'Removed' in output, got: %s", got)
@@ -229,7 +278,7 @@ func TestRunHooksUninstall_AcceptsExtension(t *testing.T) {
 
 	var out bytes.Buffer
 	// Pass with ".py" extension — should still work.
-	if err := runHooksUninstall("my-hook.py", &out); err != nil {
+	if err := runHooksUninstall("my-hook.py", false, &out); err != nil {
 		t.Fatalf("runHooksUninstall: %v", err)
 	}
 	if _, err := os.Stat(hookFile); !os.IsNotExist(err) {
@@ -251,7 +300,7 @@ func TestRunHooksUninstall_NotInstalled_IsNoop(t *testing.T) {
 	t.Setenv("CLAUDE_CONFIG_DIR", claudeDir)
 
 	var out bytes.Buffer
-	if err := runHooksUninstall("nonexistent", &out); err != nil {
+	if err := runHooksUninstall("nonexistent", false, &out); err != nil {
 		t.Fatalf("expected nil for nonexistent hook, got: %v", err)
 	}
 	if !strings.Contains(out.String(), "Not found") {
@@ -278,8 +327,8 @@ func TestCheckDeprecatedHooks_WhenPresentWarns(t *testing.T) {
 	if !strings.Contains(got, "[⚠]") || !strings.Contains(got, "checkpoint-tick") {
 		t.Errorf("expected deprecation warning for checkpoint-tick, got: %q", got)
 	}
-	if !strings.Contains(got, "ai hooks uninstall checkpoint-tick") {
-		t.Errorf("expected uninstall hint, got: %q", got)
+	if !strings.Contains(got, "ai hooks uninstall --wire checkpoint-tick") {
+		t.Errorf("expected uninstall --wire hint, got: %q", got)
 	}
 }
 
