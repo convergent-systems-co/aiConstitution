@@ -225,6 +225,11 @@ var governedHooks = []governedHook{
 		desc:     "blocks force-pushes to protected branches",
 		wrapHint: "routes every git push through this guard regardless of caller — run: ai setup --git-shim",
 	},
+	{
+		slug:  "agentic-review",
+		rules: []string{"§4.1.1", "§4.1.3", "§4.1.6", "§4.1.7", "§4.1.8", "§4.1.9", "§4.1.10", "§4.3.3", "§4.5.1", "§5.1.3"},
+		desc:  "LLM review of commit diff for rules requiring semantic understanding — requires an API key (ANTHROPIC_API_KEY, OPENAI_API_KEY, or GOOGLE_API_KEY)",
+	},
 }
 
 // checkGovernedHookCoverage reports which governance-mapped hooks are not yet
