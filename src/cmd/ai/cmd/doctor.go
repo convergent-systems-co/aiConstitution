@@ -344,7 +344,7 @@ func checkCompactConstitution(w io.Writer, fix bool, aiRoot, home string) {
 			// Generate compact form.
 			values, _ := extractPersonalValues(aiRoot)
 			full, readErr := os.ReadFile(fullPath) //nolint:gosec
-			compact := renderCompactConstitution(values, string(full))
+			compact := renderCompactConstitution(values, string(full), extractConstitutionVersion(string(full)))
 			if readErr == nil {
 				if writeErr := os.WriteFile(compactPath, []byte(compact), 0o600); writeErr == nil {
 					fmt.Fprintf(w, "[✓] Generated Constitution.compact.md (%d bytes)\n", len(compact))

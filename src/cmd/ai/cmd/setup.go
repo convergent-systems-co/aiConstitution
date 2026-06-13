@@ -245,7 +245,7 @@ func runSetupPostWizard(aiRoot, claudeDir, copilotDir string, answers map[string
 	// This is what Claude Code and Copilot receive; the full Constitution.md is
 	// the human-readable source of truth.
 	values, _ := extractPersonalValues(aiRoot)
-	compact := renderCompactConstitution(values, rendered)
+	compact := renderCompactConstitution(values, rendered, extractConstitutionVersion(rendered))
 	compactPath := filepath.Join(aiRoot, "Constitution.compact.md")
 	if err := os.WriteFile(compactPath, []byte(compact), 0o600); err != nil { //nolint:gosec
 		return fmt.Errorf("setup: write Constitution.compact.md: %w", err)
