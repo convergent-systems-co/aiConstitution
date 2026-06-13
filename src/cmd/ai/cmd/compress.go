@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -115,6 +116,12 @@ func runCompressPersonas(cmd *cobra.Command, personaSlug string, check bool) err
 		_, _ = fmt.Fprintf(out, "  wrote %s + %s\n", s.FileName, filepath.Base(compactPath))
 	}
 
+	if check {
+		home, _ := os.UserHomeDir()
+		cwd, _ := os.Getwd()
+		checkWiring(out, home, cwd, root)
+	}
+
 	if stale > 0 {
 		return fmt.Errorf("compress: %d derivative(s) are stale — run `ai compress --personas` to regenerate", stale)
 	}
@@ -202,7 +209,8 @@ func runCompress(cmd *cobra.Command, wire bool, output string) error {
 		return fmt.Errorf("compress: read constitution: %w", err)
 	}
 
-	compact := renderCompactConstitution(values, string(constitutionContent))
+	version := extractConstitutionVersion(string(constitutionContent))
+	compact := renderCompactConstitution(values, string(constitutionContent), version)
 
 	dest := output
 	if dest == "" {
@@ -216,18 +224,37 @@ func runCompress(cmd *cobra.Command, wire bool, output string) error {
 		"Constitution.compact.md: %d bytes (~%.0fK tokens)\n",
 		len(compact), float64(len(compact))/4000)
 
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("compress: get home dir: %w", err)
+	}
+
+	cwd, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("compress: get cwd: %w", err)
+	}
+
 	if wire {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return fmt.Errorf("compress --wire: %w", err)
-		}
 		if err := rewireClaudeMDToCompact(home, aiRoot); err != nil {
 			return fmt.Errorf("compress --wire: %w", err)
 		}
 		_, _ = fmt.Fprintln(cmd.OutOrStdout(), "[✓] ~/.claude/CLAUDE.md → Constitution.compact.md")
-		_, _ = fmt.Fprintln(cmd.OutOrStdout(), "Start a new Claude Code session to load it.")
+
+		if err := rewireCopilotToCompact(home, aiRoot); err != nil {
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "[⚠] Copilot: %v\n", err)
+		} else {
+			_, _ = fmt.Fprintln(cmd.OutOrStdout(), "[✓] ~/.copilot/instructions/constitution.md → Constitution.compact.md")
+		}
+
+		if err := rewireCodexToCompact(cwd, aiRoot); err != nil {
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "[⚠] Codex: %v\n", err)
+		} else {
+			_, _ = fmt.Fprintln(cmd.OutOrStdout(), "[✓] AGENTS.md → Constitution.compact.md")
+		}
+
+		_, _ = fmt.Fprintln(cmd.OutOrStdout(), "Start a new Claude Code / Codex / Copilot session to load it.")
 	} else {
-		_, _ = fmt.Fprintln(cmd.OutOrStdout(), "Run 'ai compress --wire' to activate in Claude Code.")
+		checkWiring(cmd.OutOrStdout(), home, cwd, aiRoot)
 	}
 	return nil
 }
@@ -299,12 +326,12 @@ func extractHeaderField(content, field string) string {
 // When content is non-empty (a fully-generated Constitution.md), it uses
 // ParseSectionsAny + CompactRules to produce §ID-prefixed rule lines per section.
 // When content is empty (pre-setup), it falls back to a minimal hand-written body.
-func renderCompactConstitution(v personalValues, content string) string {
+func renderCompactConstitution(v personalValues, content, version string) string {
 	var sb strings.Builder
 
 	// Part 1: Personal-values header (always hand-written).
 	sb.WriteString(fmt.Sprintf("# AI Constitution (Compact) — %s\n\n", v.Principal))
-	sb.WriteString("> Operative rules. Human document: Constitution.md | Version: compact-1.0\n\n")
+	sb.WriteString(fmt.Sprintf("> Operative rules. Human document: Constitution.md | Version: compact-%s\n\n", version))
 	sb.WriteString("## Identity\n")
 	sb.WriteString(fmt.Sprintf("- **Principal:** %s\n", v.Principal))
 	sb.WriteString(fmt.Sprintf("- **Tools:** %s\n", v.Tools))
@@ -393,4 +420,94 @@ func rewireClaudeMDToCompact(home, aiRoot string) error {
 
 	_ = aiRoot
 	return os.WriteFile(claudeMD, []byte(content), 0o640) //nolint:gosec
+}
+
+// rewireCopilotToCompact creates or updates the Copilot instructions symlink
+// at ~/.copilot/instructions/constitution.md → Constitution.compact.md.
+// Skips silently when ~/.copilot/ does not exist (Copilot not installed).
+func rewireCopilotToCompact(home, aiRoot string) error {
+	copilotDir := filepath.Join(home, ".copilot")
+	if _, err := os.Stat(copilotDir); os.IsNotExist(err) {
+		return fmt.Errorf("~/.copilot/ not found — install GitHub Copilot CLI first")
+	}
+
+	compactPath := filepath.Join(aiRoot, "Constitution.compact.md")
+	if _, err := os.Stat(compactPath); err != nil {
+		return fmt.Errorf("Constitution.compact.md not found at %s", compactPath)
+	}
+
+	dir := filepath.Join(copilotDir, "instructions")
+	if err := os.MkdirAll(dir, 0o750); err != nil {
+		return fmt.Errorf("mkdir %s: %w", dir, err)
+	}
+
+	link := filepath.Join(dir, "constitution.md")
+	// Remove stale symlink or file before recreating.
+	_ = os.Remove(link)
+	return symlinkOrCopy(compactPath, link)
+}
+
+// rewireCodexToCompact updates AGENTS.md in cwd to include Constitution.compact.md.
+// If AGENTS.md already contains any @~/.ai/Constitution include, it replaces
+// the old path with the compact form. If AGENTS.md exists but has no include,
+// it appends one. If AGENTS.md does not exist, it creates a minimal one.
+func rewireCodexToCompact(cwd, aiRoot string) error {
+	_ = aiRoot
+	agentsPath := filepath.Join(cwd, "AGENTS.md")
+	const compactInclude = "@~/.ai/Constitution.compact.md"
+
+	data, err := os.ReadFile(agentsPath) //nolint:gosec
+	if os.IsNotExist(err) {
+		// Create a minimal AGENTS.md with the @-include.
+		content := agentsFileHeader + "\n" + compactInclude + "\n"
+		return os.WriteFile(agentsPath, []byte(content), 0o644) //nolint:gosec
+	}
+	if err != nil {
+		return fmt.Errorf("reading %s: %w", agentsPath, err)
+	}
+
+	content := string(data)
+	// Replace full Constitution include with compact, idempotent on compact.
+	content = strings.ReplaceAll(content, "@~/.ai/Constitution.md", compactInclude)
+
+	if !strings.Contains(content, compactInclude) {
+		content = strings.TrimRight(content, "\n") + "\n" + compactInclude + "\n"
+	}
+
+	return os.WriteFile(agentsPath, []byte(content), 0o644) //nolint:gosec
+}
+
+// checkWiring reports which tools are and are not wired to Constitution.compact.md.
+// Called when --wire is absent so the user knows what still needs activation.
+func checkWiring(w io.Writer, home, cwd, aiRoot string) {
+	compactInclude := "@~/.ai/Constitution.compact.md"
+
+	// Claude Code.
+	claudeMD := filepath.Join(home, ".claude", "CLAUDE.md")
+	if data, err := os.ReadFile(claudeMD); err == nil && strings.Contains(string(data), compactInclude) { //nolint:gosec
+		fmt.Fprintf(w, "[✓] Claude Code wired\n") //nolint:errcheck
+	} else {
+		fmt.Fprintf(w, "[ ] Claude Code — run: ai compress --wire\n") //nolint:errcheck
+	}
+
+	// Copilot.
+	copilotLink := filepath.Join(home, ".copilot", "instructions", "constitution.md")
+	if _, err := os.Lstat(copilotLink); err == nil {
+		fmt.Fprintf(w, "[✓] Copilot wired\n") //nolint:errcheck
+	} else {
+		fmt.Fprintf(w, "[ ] Copilot — run: ai compress --wire\n") //nolint:errcheck
+	}
+
+	// Codex.
+	agentsPath := filepath.Join(cwd, "AGENTS.md")
+	if data, err := os.ReadFile(agentsPath); err == nil { //nolint:gosec
+		content := string(data)
+		if strings.Contains(content, compactInclude) || strings.Contains(content, "@~/.ai/Constitution.md") {
+			fmt.Fprintf(w, "[✓] Codex (AGENTS.md) wired\n") //nolint:errcheck
+		} else {
+			fmt.Fprintf(w, "[ ] Codex — run: ai compress --wire (in repo root)\n") //nolint:errcheck
+		}
+	} else {
+		fmt.Fprintf(w, "[ ] Codex — no AGENTS.md in cwd; run: ai compress --wire\n") //nolint:errcheck
+	}
 }

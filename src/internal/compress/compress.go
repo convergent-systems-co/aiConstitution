@@ -52,17 +52,23 @@ type rule struct {
 }
 
 // ruleHeadRe matches rule opening lines:
-//   **N.M Label.** rest...         (two-level, e.g. §3.4)
-//   **N.M.K Label.** rest...       (three-level, e.g. §4.2.1)
-//   **PN. Label.** rest...         (letter-digit, e.g. P1, U1)
-//   **Label.** rest...             (unlabelled — auto-ID assigned)
-var ruleHeadRe = regexp.MustCompile(`^\s*\*\*(?:(\d+(?:\.\d+)+)|[A-Z]\d+\.|)([^*]+?)\.*\*\*(.*)$`)
+//
+//	**N.M Label.** rest...              (two-level, e.g. §3.4)
+//	**N.M.K Label.** rest...            (three-level, e.g. §4.2.1)
+//	**N.M.K [HARD] Label.** rest...     (explicit gate marker — preferred over inferGate)
+//	**PN. Label.** rest...              (letter-digit, e.g. P1, U1)
+//	**Label.** rest...                  (unlabelled — auto-ID assigned)
+//
+// Groups: (1) numeric ID, (2) explicit gate token (HARD/SOFT/MAY) or empty, (3) label, (4) trailing rest.
+var ruleHeadRe = regexp.MustCompile(`^\s*\*\*(?:(\d+(?:\.\d+)+)|[A-Z]\d+\.|)\s*(?:\[(HARD|SOFT|MAY)\]\s*)?([^*]+?)\.*\*\*(.*)$`)
 
 // bulletSubRuleRe matches bullet-prefixed sub-rules with explicit N.M[.K] IDs:
-//   - **13.1 Capacity gate.** rest...
-//   - **4.1.1 Names reveal intent.** rest...
-// Group 1: the full numeric ID; Group 2: the label; Group 3: trailing content.
-var bulletSubRuleRe = regexp.MustCompile(`^[-*]\s+\*\*(\d+(?:\.\d+)+)\s+([^*]+?)\.*\*\*(.*)$`)
+//
+//	- **13.1 Capacity gate.** rest...
+//	- **4.1.1 [HARD] Names reveal intent.** rest...
+//
+// Groups: (1) full numeric ID, (2) explicit gate token or empty, (3) label, (4) trailing content.
+var bulletSubRuleRe = regexp.MustCompile(`^[-*]\s+\*\*(\d+(?:\.\d+)+)\s+(?:\[(HARD|SOFT|MAY)\]\s*)?([^*]+?)\.*\*\*(.*)$`)
 
 // parseBulletSubRule attempts to parse one line as a bullet sub-rule.
 // Returns nil when the line does not match the N.M bullet format.
@@ -71,14 +77,15 @@ func parseBulletSubRule(line string) *rule {
 	if m == nil {
 		return nil
 	}
-	label := strings.TrimSpace(m[2])
-	content := strings.TrimSpace(strings.TrimLeft(m[3], " —-:"))
+	// Groups: (1) ID, (2) explicit gate or empty, (3) label, (4) trailing content.
+	label := strings.TrimSpace(m[3])
+	content := strings.TrimSpace(strings.TrimLeft(m[4], " —-:"))
 	if label == "" {
 		return nil
 	}
 	return &rule{
 		ID:             m[1],
-		Gate:           inferGate(content),
+		Gate:           resolveGate(m[2], content),
 		NonOverridable: strings.Contains(content, "(Non-overridable.)") || strings.Contains(content, "*(Non-overridable.)*"),
 		Label:          label,
 		Content:        content,
@@ -145,7 +152,7 @@ func CompactRules(s constitution.Section) string {
 		if r.NonOverridable {
 			noTag = " [NON-OVERRIDABLE]"
 		}
-		sb.WriteString(fmt.Sprintf("§%s %s%s %s — %s\n\n", r.ID, gateTag, noTag, r.Label, r.Content))
+		sb.WriteString(fmt.Sprintf("§%s %s%s %s — %s\n", r.ID, gateTag, noTag, r.Label, r.Content))
 	}
 	return strings.TrimRight(sb.String(), "\n")
 }
@@ -163,6 +170,7 @@ func parseRuleBlock(sectionNum, ruleIdx int, block string) *rule {
 		return nil
 	}
 
+	// Groups: (1) numeric ID, (2) explicit gate or empty, (3) label, (4) trailing rest.
 	var id string
 	if m[1] != "" {
 		id = m[1]
@@ -170,19 +178,37 @@ func parseRuleBlock(sectionNum, ruleIdx int, block string) *rule {
 		id = fmt.Sprintf("%d.%d", sectionNum, ruleIdx)
 	}
 
-	label := strings.TrimSpace(m[2])
-	content := strings.TrimSpace(m[3] + " " + rest)
+	label := strings.TrimSpace(m[3])
+	content := strings.TrimSpace(m[4] + " " + rest)
 	if label == "" || content == "" {
 		return nil
 	}
 
 	return &rule{
 		ID:             id,
-		Gate:           inferGate(content),
+		Gate:           resolveGate(m[2], content),
 		NonOverridable: strings.Contains(content, "(Non-overridable.)") || strings.Contains(content, "*(Non-overridable.)*"),
 		Label:          label,
 		Content:        content,
 	}
+}
+
+// resolveGate returns the gate string for a rule. When explicit is non-empty
+// (parsed from a [HARD]/[SOFT]/[MAY] marker in the rule header) it takes
+// precedence over keyword inference. This eliminates false-hard classifications
+// caused by MUST appearing in a sub-clause of an otherwise SOFT rule.
+func resolveGate(explicit, content string) string {
+	if explicit != "" {
+		switch strings.ToUpper(explicit) {
+		case "HARD":
+			return "hard"
+		case "SOFT":
+			return "soft"
+		case "MAY":
+			return "permission"
+		}
+	}
+	return inferGate(content)
 }
 
 func inferGate(content string) string {
@@ -242,7 +268,7 @@ func marshalCompact(s constitution.Section, version string, rules []rule) []byte
 		if r.NonOverridable {
 			noTag = " [NON-OVERRIDABLE]"
 		}
-		sb.WriteString(fmt.Sprintf("§%s %s%s %s — %s\n\n", r.ID, gateTag, noTag, r.Label, r.Content))
+		sb.WriteString(fmt.Sprintf("§%s %s%s %s — %s\n", r.ID, gateTag, noTag, r.Label, r.Content))
 	}
 	return []byte(sb.String())
 }

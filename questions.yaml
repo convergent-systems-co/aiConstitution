@@ -1007,22 +1007,6 @@ phases:
         persists_to: Common.md
         persists_to_section: "§5.1"
 
-      - qid: Q40
-        prompt: "Install 30-minute background `/checkpoint auto` tick?"
-        framing: >-
-          The legacy tick writes a HANDOFF.md every 30 minutes, which can
-          create noisy untracked files in working repos. Leave it off by
-          default; prefer GitHub issues for continuity until issue-backed
-          checkpointing lands. Legacy enablement may require manual wiring.
-        time: "~10s"
-        options:
-          - { label: "Yes (deprecated legacy behavior)", value: "enabled" }
-          - { label: "No (default)",                 value: "disabled" }
-        allow_free_text: false
-        allow_chat: true
-        allow_defer: false
-        persists_to: hook/registration
-
       - qid: Q41
         prompt: "Context-window capacity gate — canonical 80%?"
         framing: >-
@@ -1236,6 +1220,31 @@ phases:
         allow_defer: true
         persists_to: governance/sync.yaml
         persists_to_section: remote
+
+      - qid: Q50
+        prompt: "Set up automated audit and memory reviews?"
+        framing: >-
+          A weekly audit review scans ~/.ai/audit/violations/ and overrides/,
+          proposes constitutional amendments, and recompacts. A monthly memory
+          review checks for stale or missing memories. Both invoke `claude`
+          non-interactively via the platform scheduler (launchd on macOS,
+          crontab on Linux, Task Scheduler on Windows). Requires the `claude`
+          CLI on PATH.
+        time: "~15s"
+        options:
+          - label: "Yes — weekly audit, monthly memory (recommended)"
+            value: "default"
+            note: "Audit every Sunday 8pm; memory on the 1st of each month"
+          - label: "Weekly for both"
+            value: "weekly-both"
+          - label: "Monthly for both"
+            value: "monthly-both"
+          - label: "Skip — configure later"
+            value: "skip"
+        allow_free_text: false
+        allow_chat: false
+        allow_defer: true
+        persists_to: governance/sync.yaml
 
       - qid: Q45
         prompt: "Schedule a quarterly `ai restore --dest=/tmp/...` dry-run as a calendar reminder?"
