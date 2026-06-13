@@ -72,6 +72,7 @@ func runDoctor(w io.Writer, fix bool, resetHead string) error {
 	checkPersonasBlock(w)
 	checkDerivativeFiles(w)
 	checkHookWiring(w, paths.AIRoot(), homeDir())
+	checkGovernedHookCoverage(w, paths.AIRoot())
 	checkWrapperHookDrift(w)
 	checkWrapperPath(w, paths.BinDir(), os.Getenv("PATH"))
 	checkToolIntegrations(w, homeDir(), mustGetwd())
@@ -171,6 +172,76 @@ func readWiredHookNames(settingsPath string) map[string]bool {
 	return wired
 }
 
+// governedHook describes a hook that enforces one or more governance rules.
+// The mapping lives here — not in the hook scripts — so hooks stay policy-agnostic.
+type governedHook struct {
+	slug  string // bare name, no extension
+	rules []string
+	desc  string // one-line plain-English description of what it checks
+}
+
+// governedHooks is the canonical rule→hook mapping for the ai constitution.
+// Add entries here when a new hook covers a governance rule.
+var governedHooks = []governedHook{
+	{
+		slug:  "branch-guard",
+		rules: []string{"§3.2.10"},
+		desc:  "blocks direct mutation of protected branches",
+	},
+	{
+		slug:  "secret-block",
+		rules: []string{"§3.5", "§4.1 (P4)", "§4.7.1"},
+		desc:  "blocks secrets from appearing in tool outputs and artifacts",
+	},
+	{
+		slug:  "worktree-guard",
+		rules: []string{"§3.2.10", "§4.11.3"},
+		desc:  "enforces canonical worktree placement",
+	},
+	{
+		slug:  "dirty-tree-guard",
+		rules: []string{"§4.11.1", "§4.11.2", "§13.2"},
+		desc:  "detects uncommitted changes and unpushed commits at session end",
+	},
+	{
+		slug:  "test-coverage-gate",
+		rules: []string{"§4.3.1"},
+		desc:  "detects source changes without corresponding test changes",
+	},
+	{
+		slug:  "no-commented-code",
+		rules: []string{"§4.1.5"},
+		desc:  "detects commented-out executable code in written files",
+	},
+	{
+		slug:  "audit-logger",
+		rules: []string{"§1.3.4", "§1.5.5", "§5.2"},
+		desc:  "logs every tool use to the audit trail",
+	},
+}
+
+// checkGovernedHookCoverage reports which governance-mapped hooks are not yet
+// installed in the hooks directory. Does not check wiring — that is
+// checkHookWiring's job. This check tells you about gaps in coverage, not
+// gaps in wiring.
+func checkGovernedHookCoverage(w io.Writer, aiRoot string) {
+	hooksDir := filepath.Join(aiRoot, "hooks")
+	var missing []governedHook
+	for _, gh := range governedHooks {
+		if !fileExists(filepath.Join(hooksDir, gh.slug+".py")) {
+			missing = append(missing, gh)
+		}
+	}
+	if len(missing) == 0 {
+		fmt.Fprintln(w, "[✓] Governance hook coverage complete")
+		return
+	}
+	for _, gh := range missing {
+		fmt.Fprintf(w, "[⚠] %s not installed — covers %s (%s) — run: ai hooks install %s\n",
+			gh.slug, strings.Join(gh.rules, ", "), gh.desc, gh.slug)
+	}
+}
+
 // checkHookWiring verifies that each required hook that is installed in the
 // hooks directory is also wired in ~/.claude/settings.json.
 func checkHookWiring(w io.Writer, aiRoot, home string) {
@@ -179,7 +250,7 @@ func checkHookWiring(w io.Writer, aiRoot, home string) {
 		"branch-guard.py",
 		"secret-block.py",
 		"worktree-guard.py",
-		"checkpoint-tick.py",
+		"dirty-tree-guard.py",
 	}
 	legacyOptionalHooks := []string{}
 
