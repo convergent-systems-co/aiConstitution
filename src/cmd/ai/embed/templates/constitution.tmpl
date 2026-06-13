@@ -551,6 +551,29 @@ Before declaring substantive work complete, ask: Hidden assumptions? Undocumente
 - **Threat scenarios, not exploit recipes.**
 - **Redact PII and secrets** per §3.4.
 - **Generalize internal paths and identifiers** unless the specific path is the finding.
+
+### §{{.SectionNum}}.11 Agentic Git Lifecycle
+
+**Audience:** Any AI agent that writes, modifies, or generates code files in a git repository — regardless of role (Developer, TDD Tester, IaC Developer, Tech Lead, etc.).
+
+**Why this section exists:** Agentic workers complete tasks and signal "done" without the muscle memory that human developers have. The rules in §{{.SectionNum}}.10.2 apply to humans in an interactive session. This section closes the gap for agents operating autonomously within a multi-agent pipeline (e.g., `/make sprint`).
+
+**{{.SectionNum}}.11.1 Commit Before Done.** Before signaling task completion (returning a result, handing off to the next pipeline stage, or ending a session), a code-producing agent MUST commit all modified and new tracked files. An agent whose working tree is dirty at handoff has not completed its task.
+
+- "Commit" means a proper `git commit` with a Conventional Commits message per §{{.SectionNum}}.10.2 — not a stash, not a WIP note, not a file save.
+- If there is nothing to commit (no changes), this rule is satisfied. Run `git status` to verify.
+- If a file was intentionally excluded from the commit (e.g., a generated artifact, a secret), that exclusion MUST be stated explicitly in the handoff output.
+
+**{{.SectionNum}}.11.2 Push Before Done.** Immediately after committing (§{{.SectionNum}}.11.1), a code-producing agent MUST push the branch to origin if a remote named `origin` exists.
+
+- Check: `git remote get-url origin` — if it returns a URL, push.
+- Push means `git push origin <branch>` (or `git push --set-upstream origin <branch>` if the branch has no upstream yet).
+- A commit that has not been pushed is reachable only from the local filesystem. If the worktree is removed or the session ends, it is functionally lost.
+- Force-push is forbidden per §3.2.2 unless the principal has explicitly authorized it for this branch.
+
+**{{.SectionNum}}.11.3 Verify Branch Before First Edit.** Before making the first file modification in a git repository, an agent MUST verify that `HEAD` is on a non-protected branch. Run `git branch --show-current`. If the output is `main` (or any branch in the protected set per §3.2.10), STOP. Do not edit files. Create or switch to a feature branch first (via `git worktree add` per §3.59 — do not use `git checkout -b` in the primary worktree).
+
+**{{.SectionNum}}.11.4 Checkpoint Commits on Long Tasks.** For tasks that span more than ~30 minutes of wall-clock work or more than 5 logical changes, an agent SHOULD create intermediate checkpoint commits rather than accumulating all changes into one commit at the end. Checkpoint commit messages use the prefix `chore(wip):` and MUST be squashed or amended before the PR is opened.
 {{end}}
 {{if eq .Template "prose"}}
 ### §{{.SectionNum}}.1 Voice, Style, and Authorship
