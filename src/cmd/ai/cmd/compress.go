@@ -202,7 +202,8 @@ func runCompress(cmd *cobra.Command, wire bool, output string) error {
 		return fmt.Errorf("compress: read constitution: %w", err)
 	}
 
-	compact := renderCompactConstitution(values, string(constitutionContent))
+	version := extractConstitutionVersion(string(constitutionContent))
+	compact := renderCompactConstitution(values, string(constitutionContent), version)
 
 	dest := output
 	if dest == "" {
@@ -299,12 +300,12 @@ func extractHeaderField(content, field string) string {
 // When content is non-empty (a fully-generated Constitution.md), it uses
 // ParseSectionsAny + CompactRules to produce §ID-prefixed rule lines per section.
 // When content is empty (pre-setup), it falls back to a minimal hand-written body.
-func renderCompactConstitution(v personalValues, content string) string {
+func renderCompactConstitution(v personalValues, content, version string) string {
 	var sb strings.Builder
 
 	// Part 1: Personal-values header (always hand-written).
 	sb.WriteString(fmt.Sprintf("# AI Constitution (Compact) — %s\n\n", v.Principal))
-	sb.WriteString("> Operative rules. Human document: Constitution.md | Version: compact-1.0\n\n")
+	sb.WriteString(fmt.Sprintf("> Operative rules. Human document: Constitution.md | Version: compact-%s\n\n", version))
 	sb.WriteString("## Identity\n")
 	sb.WriteString(fmt.Sprintf("- **Principal:** %s\n", v.Principal))
 	sb.WriteString(fmt.Sprintf("- **Tools:** %s\n", v.Tools))

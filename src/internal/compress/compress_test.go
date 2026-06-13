@@ -242,3 +242,78 @@ func TestCompactRules_EmptySection(t *testing.T) {
 		t.Errorf("expected empty string for section with no rules, got %q", out)
 	}
 }
+
+// TestExplicitGateMarker_OverridesInferGate verifies that [HARD]/[SOFT]/[MAY]
+// in the rule header takes precedence over keyword-based gate inference.
+func TestExplicitGateMarker_OverridesInferGate(t *testing.T) {
+	// Rule body has MUST (would infer hard) but header says [SOFT] — header wins.
+	body := "**4.11.4 [SOFT] Checkpoint Commits.** For long tasks an agent SHOULD checkpoint. Checkpoints MUST be squashed before PR."
+	s := section(4, "Technical", body)
+	ds, err := compress.Extract(s, "1.2")
+	if err != nil {
+		t.Fatalf("Extract() error = %v", err)
+	}
+	yaml := string(ds.YAML)
+	if !strings.Contains(yaml, `id: "4.11.4"`) && !strings.Contains(yaml, "id: 4.11.4") {
+		t.Errorf("YAML missing rule id 4.11.4, got:\n%s", yaml)
+	}
+	if !strings.Contains(yaml, "gate: soft") {
+		t.Errorf("explicit [SOFT] header should override MUST in body; got:\n%s", yaml)
+	}
+}
+
+// TestExplicitGateMarker_HardOverridesShouldBody verifies [HARD] in header
+// overrides a SHOULD-only body (would otherwise infer soft).
+func TestExplicitGateMarker_HardOverridesShouldBody(t *testing.T) {
+	body := "**4.9.3 [HARD] Docs evolve with code.** A PR that changes behavior SHOULD update the relevant docs."
+	s := section(4, "Technical", body)
+	ds, err := compress.Extract(s, "1.2")
+	if err != nil {
+		t.Fatalf("Extract() error = %v", err)
+	}
+	if !strings.Contains(string(ds.YAML), "gate: hard") {
+		t.Errorf("explicit [HARD] header should override SHOULD body; got:\n%s", string(ds.YAML))
+	}
+}
+
+// TestExplicitGateMarker_BulletSubRule verifies explicit gate on a bullet sub-rule.
+func TestExplicitGateMarker_BulletSubRule(t *testing.T) {
+	body := "**U13. Context discipline.** Treat it as a budget.\n\n" +
+		"- **13.1 [SOFT] Capacity gate.** At 80% utilization, consider stopping. MUST NOT compact on dirty tree."
+	s := section(3, "Universal", body)
+	ds, err := compress.Extract(s, "1.2")
+	if err != nil {
+		t.Fatalf("Extract() error = %v", err)
+	}
+	yaml := string(ds.YAML)
+	// 13.1 has explicit [SOFT] — should not be hard despite MUST NOT in body
+	if !strings.Contains(yaml, `id: "13.1"`) {
+		t.Errorf("YAML missing sub-rule id 13.1:\n%s", yaml)
+	}
+	// Should have at least one soft gate in the output
+	if !strings.Contains(yaml, "gate: soft") {
+		t.Errorf("explicit [SOFT] on bullet sub-rule should produce soft gate;\n%s", yaml)
+	}
+}
+
+// TestCompactRules_NoBlankLinesBetweenRules verifies that CompactRules emits
+// one newline per rule (not two), eliminating blank lines between rules.
+func TestCompactRules_NoBlankLinesBetweenRules(t *testing.T) {
+	body := "**P1. Honesty.** MUST NOT fabricate.\n\n**P2. Cost.** Ask before exceeding.\n\n**P3. Pace.** SHOULD not rush."
+	s := section(1, "Common", body)
+	out := compress.CompactRules(s)
+	lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
+	// Expect exactly 3 lines, no blank lines between rules.
+	nonEmpty := 0
+	for _, l := range lines {
+		if strings.TrimSpace(l) != "" {
+			nonEmpty++
+		}
+	}
+	if nonEmpty != 3 {
+		t.Errorf("expected 3 non-empty rule lines, got %d:\n%s", nonEmpty, out)
+	}
+	if strings.Contains(out, "\n\n") {
+		t.Errorf("CompactRules must not emit blank lines between rules, got:\n%s", out)
+	}
+}
