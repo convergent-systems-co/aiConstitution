@@ -38,7 +38,7 @@ jobs:
       # https://github.blog/security/vulnerability-research/how-to-catch-github-actions-workflow-injections-before-attackers-do/).
       PREVIEW: ${{ github.event.inputs.preview }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Compute deploy branch label
         id: branch
